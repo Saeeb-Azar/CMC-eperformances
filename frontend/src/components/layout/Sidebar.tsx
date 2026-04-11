@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
+  Radio,
   LayoutDashboard,
-  Activity,
   Package,
   Server,
   BarChart3,
@@ -13,8 +13,8 @@ import {
 import { useState } from 'react';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/live', icon: Activity, label: 'Live Monitor' },
+  { to: '/', icon: Radio, label: 'CMC Live Flow' },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/orders', icon: Package, label: 'Orders' },
   { to: '/machines', icon: Server, label: 'Machines' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
