@@ -1,4 +1,4 @@
-import Header from '../components/layout/Header';
+import Topbar from '../components/layout/Topbar';
 import {
   BarChart,
   Bar,
@@ -47,9 +47,9 @@ const carrierPerf = [
 export default function AnalyticsPage() {
   return (
     <div>
-      <Header title="Analytics" subtitle="Deep insights into machine performance and package data" />
+      <Topbar title="Analytics" subtitle="Deep insights into machine performance and package data" />
 
-      <div className="p-8 space-y-6">
+      <div className="page-content stack-5">
         <div className="grid grid-cols-2 gap-4">
           {/* Weight distribution */}
           <div className="bg-surface rounded-xl border border-border p-5">

@@ -1,4 +1,4 @@
-import Header from '../components/layout/Header';
+import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import {
   Server,
@@ -73,9 +73,9 @@ const demoMachines = [
 export default function MachinesPage() {
   return (
     <div>
-      <Header title="Machines" subtitle="Manage and monitor your CMC CartonWrap machines" />
+      <Topbar title="Machines" subtitle="Manage and monitor your CMC CartonWrap machines" />
 
-      <div className="p-8 space-y-4">
+      <div className="page-content stack-5">
         {demoMachines.map((m) => (
           <div key={m.id} className="bg-surface rounded-xl border border-border overflow-hidden">
             {/* Machine header */}

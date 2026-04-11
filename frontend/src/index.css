@@ -1,45 +1,33 @@
 @import "tailwindcss";
 
+/* Design system layers */
+@import "./styles/tokens.css";
+@import "./styles/globals.css";
+@import "./styles/layout.css";
+@import "./styles/components/sidebar.css";
+@import "./styles/components/topbar.css";
+@import "./styles/components/buttons.css";
+@import "./styles/components/cards.css";
+@import "./styles/components/ui.css";
+
+/* Tailwind theme overrides using tokens */
 @theme {
-  --color-sidebar: #262526;
-  --color-sidebar-hover: #363536;
-  --color-sidebar-active: #464546;
-  --color-sidebar-border: #3a393a;
-
-  --color-surface: #ffffff;
-  --color-surface-secondary: #f8f8f8;
-  --color-surface-tertiary: #f0f0f0;
-
-  --color-text-primary: #1a1a1a;
-  --color-text-secondary: #6b7280;
-  --color-text-muted: #9ca3af;
-  --color-text-on-dark: #e5e5e5;
-  --color-text-on-dark-muted: #9a999a;
-
-  --color-accent: #4f8c5e;
-  --color-accent-hover: #3d7a4c;
-  --color-danger: #dc2626;
-  --color-warning: #f59e0b;
-  --color-info: #3b82f6;
-
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
+  --color-sidebar: var(--clr-brand);
+  --color-sidebar-hover: var(--clr-brand-light);
+  --color-sidebar-active: var(--clr-brand-lighter);
+  --color-sidebar-border: var(--clr-brand-border);
+  --color-surface: var(--clr-surface);
+  --color-surface-secondary: var(--clr-bg);
+  --color-surface-tertiary: var(--clr-surface-sunken);
+  --color-text-primary: var(--clr-text);
+  --color-text-secondary: var(--clr-text-secondary);
+  --color-text-muted: var(--clr-text-muted);
+  --color-text-on-dark: var(--clr-text-inverse);
+  --color-text-on-dark-muted: var(--clr-text-inverse-muted);
+  --color-accent: var(--clr-accent);
+  --color-danger: var(--clr-danger);
+  --color-warning: var(--clr-warning);
+  --color-info: var(--clr-info);
+  --color-border: var(--clr-border);
+  --color-border-light: var(--clr-border-light);
 }
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: var(--color-surface-secondary);
-  color: var(--color-text-primary);
-  -webkit-font-smoothing: antialiased;
-}
-
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }

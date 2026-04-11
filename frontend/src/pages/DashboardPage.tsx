@@ -1,4 +1,4 @@
-import Header from '../components/layout/Header';
+import Topbar from '../components/layout/Topbar';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import {
@@ -57,9 +57,9 @@ const recentOrders = [
 export default function DashboardPage() {
   return (
     <div>
-      <Header title="Dashboard" subtitle="Real-time overview of all machines" />
+      <Topbar title="Dashboard" subtitle="Real-time overview of all machines" />
 
-      <div className="p-8 space-y-6">
+      <div className="page-content stack-5">
         {/* KPI Cards */}
         <div className="grid grid-cols-4 gap-4">
           <StatCard

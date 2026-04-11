@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import {
   Radio,
   LayoutDashboard,
@@ -8,95 +8,83 @@ import {
   FileText,
   Settings,
   LogOut,
-  ChevronDown,
+  Zap,
 } from 'lucide-react';
-import { useState } from 'react';
 
-const navItems = [
-  { to: '/', icon: Radio, label: 'CMC Live Flow' },
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/orders', icon: Package, label: 'Orders' },
-  { to: '/machines', icon: Server, label: 'Machines' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/audit', icon: FileText, label: 'Audit Log' },
+const navGroups = [
+  {
+    label: 'Monitor',
+    items: [
+      { to: '/', icon: Radio, label: 'Live Flow', badge: null },
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Overview', badge: null },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { to: '/orders', icon: Package, label: 'Packages', badge: null },
+      { to: '/machines', icon: Server, label: 'Machines', badge: null },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { to: '/analytics', icon: BarChart3, label: 'Analytics', badge: null },
+      { to: '/audit', icon: FileText, label: 'Logs', badge: null },
+    ],
+  },
 ];
 
 export default function Sidebar() {
-  const navigate = useNavigate();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    navigate('/login');
-  };
-
   return (
-    <aside className="w-64 bg-sidebar h-screen flex flex-col fixed left-0 top-0 z-40">
+    <aside className="sidebar">
       {/* Logo */}
-      <div className="px-5 py-6 border-b border-sidebar-border">
-        <h1 className="text-lg font-semibold text-white tracking-tight">
-          ePerformances
-        </h1>
-        <p className="text-xs text-text-on-dark-muted mt-0.5">CMC CartonWrap</p>
+      <div className="sidebar__logo">
+        <div className="sidebar__logo-mark">
+          <Zap size={16} color="white" />
+        </div>
+        <div className="sidebar__logo-text">
+          <h1>ePerformances</h1>
+          <p>CMC CartonWrap</p>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                isActive
-                  ? 'bg-sidebar-active text-white'
-                  : 'text-text-on-dark-muted hover:bg-sidebar-hover hover:text-text-on-dark'
-              }`
-            }
-          >
-            <Icon size={18} />
-            <span>{label}</span>
-          </NavLink>
+      {/* Nav groups */}
+      <nav className="sidebar__nav">
+        {navGroups.map((group) => (
+          <div key={group.label} className="sidebar__group">
+            <div className="sidebar__group-label">{group.label}</div>
+            {group.items.map(({ to, icon: Icon, label, badge }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) =>
+                  `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`
+                }
+              >
+                <Icon size={18} className="sidebar__link-icon" />
+                <span>{label}</span>
+                {badge && <span className="sidebar__link-badge">{badge}</span>}
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
 
-      {/* Bottom section */}
-      <div className="px-3 pb-4 border-t border-sidebar-border pt-4 space-y-1">
-        <button
-          onClick={() => setSettingsOpen(!settingsOpen)}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-text-on-dark-muted hover:bg-sidebar-hover hover:text-text-on-dark w-full transition-colors"
-        >
-          <Settings size={18} />
+      {/* Bottom */}
+      <div className="sidebar__bottom">
+        <NavLink to="/settings" className="sidebar__link">
+          <Settings size={18} className="sidebar__link-icon" />
           <span>Settings</span>
-          <ChevronDown
-            size={14}
-            className={`ml-auto transition-transform ${settingsOpen ? 'rotate-180' : ''}`}
-          />
-        </button>
-        {settingsOpen && (
-          <div className="pl-9 space-y-1">
-            <NavLink
-              to="/settings"
-              className="block px-3 py-1.5 text-xs text-text-on-dark-muted hover:text-text-on-dark rounded transition-colors"
-            >
-              GENERAL
-            </NavLink>
-          </div>
-        )}
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-text-on-dark-muted hover:bg-sidebar-hover hover:text-text-on-dark w-full transition-colors"
-        >
-          <LogOut size={18} />
-          <span>Logout</span>
+        </NavLink>
+        <button className="sidebar__link">
+          <LogOut size={18} className="sidebar__link-icon" />
+          <span>Log out</span>
         </button>
       </div>
 
-      <div className="px-5 pb-4">
-        <p className="text-xs text-text-on-dark-muted">&copy; 2026, ePerformances</p>
-      </div>
+      <div className="sidebar__footer">&copy; 2026, ePerformances</div>
     </aside>
   );
 }

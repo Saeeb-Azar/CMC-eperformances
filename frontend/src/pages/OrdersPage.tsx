@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Header from '../components/layout/Header';
+import Topbar from '../components/layout/Topbar';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import { Search, Filter } from 'lucide-react';
@@ -68,9 +68,9 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <Header title="Orders" subtitle="Track all packages through the machine" />
+      <Topbar title="Orders" subtitle="Track all packages through the machine" />
 
-      <div className="p-8 space-y-4">
+      <div className="page-content stack-5">
         {/* Search + Filter bar */}
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">

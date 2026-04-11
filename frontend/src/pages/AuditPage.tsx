@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Header from '../components/layout/Header';
+import Topbar from '../components/layout/Topbar';
 import DataTable from '../components/ui/DataTable';
 import { Search, Filter } from 'lucide-react';
 
@@ -84,9 +84,9 @@ export default function AuditPage() {
 
   return (
     <div>
-      <Header title="Audit Log" subtitle="Complete event traceability" />
+      <Topbar title="Audit Log" subtitle="Complete event traceability" />
 
-      <div className="p-8 space-y-4">
+      <div className="page-content stack-5">
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
