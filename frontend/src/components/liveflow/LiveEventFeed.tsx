@@ -61,7 +61,7 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
             return (
               <div
                 key={event.id}
-                className="px-8 py-4 flex items-center gap-4 border-b border-gray-100 last:border-b-0"
+                className="mx-6 py-4 flex items-center gap-3 border-b border-gray-100 last:border-b-0"
               >
                 {/* Icon */}
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${sev.bg} ${sev.color}`}>
@@ -69,26 +69,24 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
                 </div>
 
                 {/* Event text - takes remaining space */}
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 mr-2">
                   <p className={`text-sm leading-snug truncate ${isFirst ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
                     {event.message}
                   </p>
                 </div>
 
-                {/* Code */}
-                <span className="text-xs text-gray-400 font-mono w-10 flex-shrink-0 text-center">
-                  {event.technicalCode}
-                </span>
-
-                {/* Reference */}
-                <span className="text-xs text-gray-400 font-mono w-20 flex-shrink-0 text-center">
-                  {event.referenceId || '—'}
-                </span>
-
-                {/* Time */}
-                <span className="text-xs text-gray-400 tabular-nums w-16 flex-shrink-0 text-right">
-                  {event.timestamp}
-                </span>
+                {/* Meta: code + ref + time in a tight group */}
+                <div className="flex items-center gap-5 flex-shrink-0">
+                  <span className="text-xs text-gray-400 font-mono w-8">
+                    {event.technicalCode}
+                  </span>
+                  <span className="text-xs text-gray-400 font-mono w-16">
+                    {event.referenceId || '—'}
+                  </span>
+                  <span className="text-xs text-gray-400 tabular-nums w-14 text-right">
+                    {event.timestamp}
+                  </span>
+                </div>
               </div>
             );
           })
