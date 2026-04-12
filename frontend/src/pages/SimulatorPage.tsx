@@ -19,9 +19,11 @@ interface LiveEvent {
   timestamp: string;
 }
 
-// Runtime config (from env.js) or build-time config (from Vite)
+// Runtime config (from env.js) takes priority over build-time (Vite)
 const _env = (window as unknown as Record<string, unknown>).__ENV__ as Record<string, string> | undefined;
-let API_BASE = _env?.VITE_API_URL || import.meta.env.VITE_API_URL || '';
+let API_BASE = (_env?.VITE_API_URL || import.meta.env.VITE_API_URL || '')
+  .split(',')[0]  // handle accidental doubled values
+  .trim();
 if (API_BASE && !API_BASE.startsWith('http')) {
   API_BASE = `https://${API_BASE}`;
 }
