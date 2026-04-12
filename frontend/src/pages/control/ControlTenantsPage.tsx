@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { Building2, Plus, Search, MoreVertical } from 'lucide-react';
@@ -16,25 +17,27 @@ const planBadge: Record<string, string> = {
 };
 
 export default function ControlTenantsPage() {
+  const { t } = useTranslation();
+
   return (
     <div>
-      <Topbar title="Tenants" subtitle="Control Panel" />
+      <Topbar title={t('control.tenants.title')} subtitle={t('control.tenants.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Tenants</h1>
-            <p className="page-header__desc">Manage all companies on the platform</p>
+            <h1 className="page-header__title">{t('control.tenants.pageTitle')}</h1>
+            <p className="page-header__desc">{t('control.tenants.pageDesc')}</p>
           </div>
-          <button className="btn btn--primary btn--lg"><Plus size={16} /> Add Tenant</button>
+          <button className="btn btn--primary btn--lg"><Plus size={16} /> {t('control.tenants.addTenant')}</button>
         </div>
 
         {/* Stats */}
         <div className="grid-4 gap-4">
           {[
-            { label: 'Total Tenants', value: demoTenants.length },
-            { label: 'Active', value: demoTenants.filter(t => t.is_active).length },
-            { label: 'Total Machines', value: demoTenants.reduce((s, t) => s + t.machines, 0) },
-            { label: 'Total Users', value: demoTenants.reduce((s, t) => s + t.users, 0) },
+            { label: t('control.tenants.totalTenants'), value: demoTenants.length },
+            { label: t('control.tenants.activeTenants'), value: demoTenants.filter(t => t.is_active).length },
+            { label: t('control.tenants.totalMachines'), value: demoTenants.reduce((s, t) => s + t.machines, 0) },
+            { label: t('control.tenants.totalUsers'), value: demoTenants.reduce((s, t) => s + t.users, 0) },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <span className="stat-card__label">{s.label}</span>
@@ -46,7 +49,7 @@ export default function ControlTenantsPage() {
         {/* Search */}
         <div style={{ position: 'relative', width: 280 }}>
           <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-          <input type="text" placeholder="Search tenants..." className="input input--with-icon" />
+          <input type="text" placeholder={t('control.tenants.searchPlaceholder')} className="input input--with-icon" />
         </div>
 
         {/* Table */}
@@ -55,13 +58,13 @@ export default function ControlTenantsPage() {
             <thead>
               <tr>
                 <th style={{ width: 44 }}></th>
-                <th>Company</th>
-                <th style={{ width: 100 }}>Plan</th>
-                <th style={{ width: 80 }}>Machines</th>
-                <th style={{ width: 70 }}>Users</th>
-                <th style={{ width: 110 }}>Orders Today</th>
-                <th style={{ width: 80 }}>Status</th>
-                <th style={{ width: 100 }}>Created</th>
+                <th>{t('control.tenants.company')}</th>
+                <th style={{ width: 100 }}>{t('common.plan')}</th>
+                <th style={{ width: 80 }}>{t('control.tenants.totalMachines')}</th>
+                <th style={{ width: 70 }}>{t('control.tenants.totalUsers')}</th>
+                <th style={{ width: 110 }}>{t('control.tenants.ordersToday')}</th>
+                <th style={{ width: 80 }}>{t('common.status')}</th>
+                <th style={{ width: 100 }}>{t('common.created')}</th>
                 <th style={{ width: 40 }}></th>
               </tr>
             </thead>

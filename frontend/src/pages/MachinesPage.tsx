@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { Server, Wifi, WifiOff, Tag, FileText, Ruler } from 'lucide-react';
@@ -9,16 +10,18 @@ const demoMachines = [
 ];
 
 export default function MachinesPage() {
+  const { t } = useTranslation();
+
   return (
     <div>
-      <Topbar title="Machines" subtitle="Configuration" />
+      <Topbar title={t('machines.title')} subtitle={t('machines.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Machines</h1>
-            <p className="page-header__desc">Manage and monitor your CMC CartonWrap machines</p>
+            <h1 className="page-header__title">{t('machines.pageTitle')}</h1>
+            <p className="page-header__desc">{t('machines.pageDesc')}</p>
           </div>
-          <button className="btn btn--primary btn--lg">Add Machine</button>
+          <button className="btn btn--primary btn--lg">{t('machines.addMachine')}</button>
         </div>
 
         <div className="panel">
@@ -26,13 +29,13 @@ export default function MachinesPage() {
             <thead>
               <tr>
                 <th style={{ width: 44 }}></th>
-                <th>Machine</th>
-                <th style={{ width: 100 }}>Status</th>
-                <th style={{ width: 90 }}>Uptime</th>
-                <th style={{ width: 90 }}>Sequence</th>
-                <th style={{ width: 100 }}>Heartbeat</th>
-                <th style={{ width: 160 }}>Max Dimensions</th>
-                <th style={{ width: 130 }}>Stations</th>
+                <th>{t('machines.machine')}</th>
+                <th style={{ width: 100 }}>{t('common.status')}</th>
+                <th style={{ width: 90 }}>{t('common.uptime')}</th>
+                <th style={{ width: 90 }}>{t('machines.sequence')}</th>
+                <th style={{ width: 100 }}>{t('common.heartbeat')}</th>
+                <th style={{ width: 160 }}>{t('machines.maxDimensions')}</th>
+                <th style={{ width: 130 }}>{t('machines.stations')}</th>
               </tr>
             </thead>
             <tbody>

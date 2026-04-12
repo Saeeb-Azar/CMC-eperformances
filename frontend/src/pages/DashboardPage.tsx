@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -36,33 +37,35 @@ const recentOrders = [
 const tooltipStyle = { background: '#18181b', border: 'none', borderRadius: '8px', color: '#f3f4f6', fontSize: '12px' };
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
+
   return (
     <div>
-      <Topbar title="Overview" subtitle="All machines" />
+      <Topbar title={t('dashboard.title')} subtitle={t('dashboard.subtitle')} />
 
       <div className="page-content">
         {/* Page header */}
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Dashboard</h1>
-            <p className="page-header__desc">Today's performance across all machines</p>
+            <h1 className="page-header__title">{t('dashboard.pageTitle')}</h1>
+            <p className="page-header__desc">{t('dashboard.pageDesc')}</p>
           </div>
         </div>
 
         {/* KPI Cards - big, readable */}
         <div className="grid-4 gap-4">
-          <StatCard label="Orders Today" value={487} sub="+12% vs yesterday" icon={<Package size={20} />} color="info" />
-          <StatCard label="Completed" value={461} sub="94.7% success rate" icon={<CheckCircle size={20} />} color="success" />
-          <StatCard label="Ejected" value={22} sub="4.5% reject rate" icon={<AlertTriangle size={20} />} color="warning" />
-          <StatCard label="Failed" value={4} sub="Require resolution" icon={<XCircle size={20} />} color="danger" />
+          <StatCard label={t('dashboard.ordersToday')} value={487} sub={t('dashboard.vsYesterday')} icon={<Package size={20} />} color="info" />
+          <StatCard label={t('dashboard.completed')} value={461} sub={t('dashboard.successRate')} icon={<CheckCircle size={20} />} color="success" />
+          <StatCard label={t('dashboard.ejected')} value={22} sub={t('dashboard.rejectRate')} icon={<AlertTriangle size={20} />} color="warning" />
+          <StatCard label={t('dashboard.failed')} value={4} sub={t('dashboard.requireResolution')} icon={<XCircle size={20} />} color="danger" />
         </div>
 
         {/* Second row KPIs */}
         <div className="grid-4 gap-4">
-          <StatCard label="Active on Conveyor" value={3} sub="Across all machines" icon={<Activity size={20} />} color="info" />
-          <StatCard label="Machines Online" value="2 / 3" sub="CW-001, CW-002" icon={<Server size={20} />} color="success" />
-          <StatCard label="Avg. Processing" value="38.4s" sub="ENQ to END" icon={<Clock size={20} />} />
-          <StatCard label="Throughput / Hour" value={32} sub="Last hour" icon={<TrendingUp size={20} />} />
+          <StatCard label={t('dashboard.activeOnConveyor')} value={3} sub={t('dashboard.acrossAllMachines')} icon={<Activity size={20} />} color="info" />
+          <StatCard label={t('dashboard.machinesOnline')} value="2 / 3" sub="CW-001, CW-002" icon={<Server size={20} />} color="success" />
+          <StatCard label={t('dashboard.avgProcessing')} value="38.4s" sub={t('dashboard.enqToEnd')} icon={<Clock size={20} />} />
+          <StatCard label={t('dashboard.throughputHour')} value={32} sub={t('dashboard.lastHour')} icon={<TrendingUp size={20} />} />
         </div>
 
         {/* Charts */}
@@ -70,7 +73,7 @@ export default function DashboardPage() {
           {/* Throughput chart */}
           <div className="panel">
             <div className="panel__header">
-              <h3 className="panel__title">Throughput (24h)</h3>
+              <h3 className="panel__title">{t('dashboard.throughput24h')}</h3>
             </div>
             <div className="panel__body">
               <ResponsiveContainer width="100%" height={280}>
@@ -90,8 +93,8 @@ export default function DashboardPage() {
           {/* Station Timings */}
           <div className="panel">
             <div className="panel__header">
-              <h3 className="panel__title">Station Timings</h3>
-              <span className="panel__subtitle">Average</span>
+              <h3 className="panel__title">{t('dashboard.stationTimings')}</h3>
+              <span className="panel__subtitle">{t('dashboard.average')}</span>
             </div>
             <div className="panel__body">
               <ResponsiveContainer width="100%" height={280}>
@@ -110,8 +113,8 @@ export default function DashboardPage() {
         {/* Recent orders */}
         <div className="panel">
           <div className="panel__header">
-            <h3 className="panel__title">Recent Orders</h3>
-            <span className="panel__subtitle">Last 30 minutes</span>
+            <h3 className="panel__title">{t('dashboard.recentOrders')}</h3>
+            <span className="panel__subtitle">{t('dashboard.last30min')}</span>
           </div>
           <div>
             {recentOrders.map((order) => (

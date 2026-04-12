@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 const stateMap: Record<string, string> = {
   ASSIGNED: 'badge badge--info',
   INDUCTED: 'badge badge--accent',
@@ -14,9 +16,11 @@ const stateMap: Record<string, string> = {
 };
 
 export default function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
+
   return (
     <span className={stateMap[status] || 'badge badge--neutral'}>
-      {status}
+      {t(`status.${status}`, status)}
     </span>
   );
 }

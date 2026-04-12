@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -36,20 +37,22 @@ const carrierPerf = [
 const tooltipStyle = { background: '#18181b', border: 'none', borderRadius: '8px', color: '#f3f4f6', fontSize: '12px' };
 
 export default function AnalyticsPage() {
+  const { t } = useTranslation();
+
   return (
     <div>
-      <Topbar title="Analytics" subtitle="Insights" />
+      <Topbar title={t('analytics.title')} subtitle={t('analytics.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Analytics</h1>
-            <p className="page-header__desc">Deep insights into machine performance and package data</p>
+            <h1 className="page-header__title">{t('analytics.pageTitle')}</h1>
+            <p className="page-header__desc">{t('analytics.pageDesc')}</p>
           </div>
         </div>
 
         <div className="grid-2 gap-5">
           <div className="panel">
-            <div className="panel__header"><h3 className="panel__title">Weight Distribution (7d)</h3></div>
+            <div className="panel__header"><h3 className="panel__title">{t('analytics.weightDist')}</h3></div>
             <div className="panel__body">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={weightDist}>
@@ -64,7 +67,7 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="panel">
-            <div className="panel__header"><h3 className="panel__title">Reject Reasons (7d)</h3></div>
+            <div className="panel__header"><h3 className="panel__title">{t('analytics.rejectReasons')}</h3></div>
             <div className="panel__body">
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -80,13 +83,13 @@ export default function AnalyticsPage() {
 
         <div className="grid-2 gap-5">
           <div className="panel">
-            <div className="panel__header"><h3 className="panel__title">3D Dimensions (L vs W)</h3></div>
+            <div className="panel__header"><h3 className="panel__title">{t('analytics.dimensions3d')}</h3></div>
             <div className="panel__body">
               <ResponsiveContainer width="100%" height={300}>
                 <ScatterChart>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis dataKey="length" name="Length" unit="mm" tick={{ fontSize: 11 }} stroke="#d1d5db" />
-                  <YAxis dataKey="width" name="Width" unit="mm" tick={{ fontSize: 11 }} stroke="#d1d5db" />
+                  <XAxis dataKey="length" name={t('analytics.length')} unit="mm" tick={{ fontSize: 11 }} stroke="#d1d5db" />
+                  <YAxis dataKey="width" name={t('analytics.width')} unit="mm" tick={{ fontSize: 11 }} stroke="#d1d5db" />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Scatter data={dimData} fill="#2563eb" fillOpacity={0.5} />
                 </ScatterChart>
@@ -95,7 +98,7 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="panel">
-            <div className="panel__header"><h3 className="panel__title">Carrier Label Speed</h3><span className="panel__subtitle">avg ms</span></div>
+            <div className="panel__header"><h3 className="panel__title">{t('analytics.carrierSpeed')}</h3><span className="panel__subtitle">avg ms</span></div>
             <div className="panel__body">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={carrierPerf}>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import { Building2, Globe, Mail, Phone, MapPin, CreditCard } from 'lucide-react';
 
@@ -8,6 +9,8 @@ const planFeatures: Record<string, string[]> = {
 };
 
 export default function SettingsCompanyPage() {
+  const { t } = useTranslation();
+
   const company = {
     name: 'Müller Versand GmbH',
     slug: 'mueller-versand',
@@ -21,12 +24,12 @@ export default function SettingsCompanyPage() {
 
   return (
     <div>
-      <Topbar title="Company" subtitle="Settings" />
+      <Topbar title={t('settings.company.title')} subtitle={t('settings.company.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Company</h1>
-            <p className="page-header__desc">Company profile and subscription</p>
+            <h1 className="page-header__title">{t('settings.company.pageTitle')}</h1>
+            <p className="page-header__desc">{t('settings.company.pageDesc')}</p>
           </div>
         </div>
 
@@ -36,40 +39,40 @@ export default function SettingsCompanyPage() {
             <div className="panel__header">
               <div className="flex items-center gap-2">
                 <Building2 size={16} className="text-gray-500" />
-                <h3 className="panel__title">Company Information</h3>
+                <h3 className="panel__title">{t('settings.company.companyInfo')}</h3>
               </div>
             </div>
             <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div className="grid-2 gap-5">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5">Company Name</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5">{t('settings.company.companyName')}</label>
                   <input type="text" defaultValue={company.name} className="input" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5">Slug (URL)</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5">{t('settings.company.slug')}</label>
                   <input type="text" defaultValue={company.slug} className="input" style={{ fontFamily: 'var(--font-mono)' }} />
                 </div>
               </div>
               <div className="grid-2 gap-5">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><Mail size={12} /> Email</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><Mail size={12} /> {t('settings.company.email')}</label>
                   <input type="email" defaultValue={company.email} className="input" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><Phone size={12} /> Phone</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><Phone size={12} /> {t('settings.company.phone')}</label>
                   <input type="tel" defaultValue={company.phone} className="input" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><MapPin size={12} /> Address</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><MapPin size={12} /> {t('settings.company.address')}</label>
                 <input type="text" defaultValue={company.address} className="input" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><Globe size={12} /> Website</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1"><Globe size={12} /> {t('settings.company.website')}</label>
                 <input type="url" defaultValue={company.website} className="input" />
               </div>
               <div className="flex justify-end pt-2">
-                <button className="btn btn--primary">Save Changes</button>
+                <button className="btn btn--primary">{t('common.saveChanges')}</button>
               </div>
             </div>
           </div>
@@ -80,12 +83,12 @@ export default function SettingsCompanyPage() {
               <div className="panel__header">
                 <div className="flex items-center gap-2">
                   <CreditCard size={16} className="text-gray-500" />
-                  <h3 className="panel__title">Subscription</h3>
+                  <h3 className="panel__title">{t('settings.company.subscription')}</h3>
                 </div>
               </div>
               <div className="panel__body">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center mb-5">
-                  <p className="text-xs text-blue-600 font-medium uppercase tracking-wider">Current Plan</p>
+                  <p className="text-xs text-blue-600 font-medium uppercase tracking-wider">{t('settings.company.currentPlan')}</p>
                   <p className="text-2xl font-bold text-blue-700 mt-1 capitalize">{company.plan}</p>
                 </div>
                 <ul className="space-y-2 mb-5">
@@ -96,13 +99,13 @@ export default function SettingsCompanyPage() {
                     </li>
                   ))}
                 </ul>
-                <button className="btn btn--secondary w-full">Upgrade Plan</button>
+                <button className="btn btn--secondary w-full">{t('settings.company.upgradePlan')}</button>
               </div>
             </div>
 
             <div className="panel" style={{ textAlign: 'center' }}>
               <div className="panel__body">
-                <p className="text-xs text-gray-400">Member since</p>
+                <p className="text-xs text-gray-400">{t('settings.company.memberSince')}</p>
                 <p className="text-sm font-semibold text-gray-900 mt-1">{company.createdAt}</p>
               </div>
             </div>

@@ -1,12 +1,6 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import { UserCircle, Plus, Search, MoreVertical } from 'lucide-react';
-
-const roleBadge: Record<string, { label: string; cls: string }> = {
-  owner: { label: 'Owner', cls: 'badge badge--accent' },
-  admin: { label: 'Admin', cls: 'badge badge--info' },
-  operator: { label: 'Operator', cls: 'badge badge--warning' },
-  viewer: { label: 'Viewer', cls: 'badge badge--neutral' },
-};
 
 const demoUsers = [
   { id: '1', name: 'Saeeb Azar', email: 'saeeb@eperformances.de', role: 'owner', tenant: 'ePerformances', lastLogin: '12.04.2026 14:30', isActive: true },
@@ -20,27 +14,42 @@ const demoUsers = [
 ];
 
 export default function ControlUsersPage() {
+  const { t } = useTranslation();
+
+  const roleBadge: Record<string, { label: string; cls: string }> = {
+    owner: { label: t('roles.owner'), cls: 'badge badge--accent' },
+    admin: { label: t('roles.admin'), cls: 'badge badge--info' },
+    operator: { label: t('roles.operator'), cls: 'badge badge--warning' },
+    viewer: { label: t('roles.viewer'), cls: 'badge badge--neutral' },
+  };
+
   return (
     <div>
-      <Topbar title="Users" subtitle="Control Panel" />
+      <Topbar title={t('control.users.title')} subtitle={t('control.users.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Users</h1>
-            <p className="page-header__desc">All users across all tenants</p>
+            <h1 className="page-header__title">{t('control.users.pageTitle')}</h1>
+            <p className="page-header__desc">{t('control.users.pageDesc')}</p>
           </div>
-          <button className="btn btn--primary btn--lg"><Plus size={16} /> Add User</button>
+          <button className="btn btn--primary btn--lg"><Plus size={16} /> {t('control.users.addUser')}</button>
         </div>
 
         {/* Filter + Search */}
         <div className="flex items-center justify-between">
           <div style={{ position: 'relative', width: 280 }}>
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-            <input type="text" placeholder="Search users..." className="input input--with-icon" />
+            <input type="text" placeholder={t('control.users.searchPlaceholder')} className="input input--with-icon" />
           </div>
           <div className="filter-tabs">
-            {['All', 'Owner', 'Admin', 'Operator', 'Viewer'].map((f, i) => (
-              <button key={f} className={`filter-tab ${i === 0 ? 'filter-tab--active' : ''}`}>{f}</button>
+            {[
+              { key: 'all', label: t('common.all') },
+              { key: 'owner', label: t('roles.owner') },
+              { key: 'admin', label: t('roles.admin') },
+              { key: 'operator', label: t('roles.operator') },
+              { key: 'viewer', label: t('roles.viewer') },
+            ].map((f, i) => (
+              <button key={f.key} className={`filter-tab ${i === 0 ? 'filter-tab--active' : ''}`}>{f.label}</button>
             ))}
           </div>
         </div>
@@ -51,11 +60,11 @@ export default function ControlUsersPage() {
             <thead>
               <tr>
                 <th style={{ width: 44 }}></th>
-                <th>User</th>
-                <th style={{ width: 110 }}>Role</th>
-                <th style={{ width: 180 }}>Tenant</th>
-                <th style={{ width: 150 }}>Last Login</th>
-                <th style={{ width: 80 }}>Status</th>
+                <th>{t('control.users.user')}</th>
+                <th style={{ width: 110 }}>{t('common.role')}</th>
+                <th style={{ width: 180 }}>{t('control.users.tenant')}</th>
+                <th style={{ width: 150 }}>{t('common.lastLogin')}</th>
+                <th style={{ width: 80 }}>{t('common.status')}</th>
                 <th style={{ width: 40 }}></th>
               </tr>
             </thead>
@@ -79,7 +88,7 @@ export default function ControlUsersPage() {
                     <td>
                       <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${u.isActive ? 'text-emerald-600' : 'text-gray-400'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${u.isActive ? 'bg-emerald-400' : 'bg-gray-300'}`} />
-                        {u.isActive ? 'Active' : 'Inactive'}
+                        {u.isActive ? t('common.active') : t('common.inactive')}
                       </span>
                     </td>
                     <td><button className="btn-icon"><MoreVertical size={14} /></button></td>

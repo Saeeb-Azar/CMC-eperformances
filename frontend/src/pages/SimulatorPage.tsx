@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -42,6 +43,7 @@ const severityColors: Record<string, { bg: string; text: string }> = {
 };
 
 export default function SimulatorPage() {
+  const { t } = useTranslation();
   const [host, setHost] = useState('127.0.0.1');
   const [port, setPort] = useState('15001');
   const [machineId, setMachineId] = useState('SIM-001');
@@ -163,12 +165,12 @@ export default function SimulatorPage() {
 
   return (
     <div>
-      <Topbar title="Simulator" subtitle="Test Connection" />
+      <Topbar title={t('simulator.title')} subtitle={t('simulator.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Simulator Test</h1>
-            <p className="page-header__desc">Connect to the CMC CartonWrap CW1000 CIS Simulator</p>
+            <h1 className="page-header__title">{t('simulator.pageTitle')}</h1>
+            <p className="page-header__desc">{t('simulator.pageDesc')}</p>
           </div>
         </div>
 
@@ -178,10 +180,10 @@ export default function SimulatorPage() {
             {/* Stats */}
             <div className="grid-4 gap-4">
               {[
-                { label: 'Events', value: stats.total },
-                { label: 'ENQ (Scans)', value: stats.enq },
-                { label: 'END (Complete)', value: stats.end },
-                { label: 'HBT (Heartbeat)', value: stats.hbt },
+                { label: t('simulator.events'), value: stats.total },
+                { label: t('simulator.scans'), value: stats.enq },
+                { label: t('simulator.complete'), value: stats.end },
+                { label: t('simulator.heartbeats'), value: stats.hbt },
               ].map(s => (
                 <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
                   <span className="stat-card__label">{s.label}</span>
@@ -193,11 +195,11 @@ export default function SimulatorPage() {
             {/* Event Feed */}
             <div className="panel">
               <div className="panel__header">
-                <h3 className="panel__title">Live Event Feed</h3>
+                <h3 className="panel__title">{t('simulator.liveFeed')}</h3>
                 <div className="flex items-center gap-2">
                   {wsConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
                   <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {wsConnected ? 'Connected' : 'Disconnected'}
+                    {wsConnected ? t('common.connected') : t('common.disconnected')}
                   </span>
                   {events.length > 0 && (
                     <button
@@ -205,7 +207,7 @@ export default function SimulatorPage() {
                       className="btn btn--ghost"
                       style={{ height: 28, fontSize: 11, padding: '0 8px' }}
                     >
-                      Clear
+                      {t('common.clear')}
                     </button>
                   )}
                 </div>
@@ -223,7 +225,7 @@ export default function SimulatorPage() {
                   <tbody>
                     {events.length === 0 ? (
                       <tr><td colSpan={4} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--clr-text-muted)' }}>
-                        Waiting for events... Connect to the simulator to start.
+                        {t('simulator.waitingForEvents')}
                       </td></tr>
                     ) : (
                       events.slice().reverse().map((ev) => {
@@ -263,10 +265,10 @@ export default function SimulatorPage() {
                 </div>
                 <div>
                   <p className="text-lg font-semibold" style={{ color: 'var(--clr-text)' }}>
-                    {connected ? 'Simulator Connected' : wsConnected ? 'Backend Connected' : 'Disconnected'}
+                    {connected ? t('simulator.simulatorConnected') : wsConnected ? t('simulator.backendConnected') : t('common.disconnected')}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {connected ? `${host}:${port} · ${machineId}` : wsConnected ? 'WebSocket active, no simulator' : 'No connection'}
+                    {connected ? `${host}:${port} · ${machineId}` : wsConnected ? t('simulator.noSimulator') : t('simulator.noConnection')}
                   </p>
                 </div>
               </div>
@@ -275,11 +277,11 @@ export default function SimulatorPage() {
             {/* Connection Form */}
             <div className="panel">
               <div className="panel__header">
-                <h3 className="panel__title">Connection</h3>
+                <h3 className="panel__title">{t('simulator.connection')}</h3>
               </div>
               <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>Host (IP)</label>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>{t('simulator.hostIp')}</label>
                   <input
                     type="text"
                     value={host}
@@ -291,7 +293,7 @@ export default function SimulatorPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>Port</label>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>{t('simulator.port')}</label>
                   <input
                     type="text"
                     value={port}
@@ -303,7 +305,7 @@ export default function SimulatorPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>Machine ID</label>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>{t('simulator.machineId')}</label>
                   <input
                     type="text"
                     value={machineId}
@@ -329,12 +331,12 @@ export default function SimulatorPage() {
                     className="btn btn--primary btn--lg w-full"
                   >
                     <Plug size={16} />
-                    {connecting ? 'Connecting...' : 'Connect to Simulator'}
+                    {connecting ? t('simulator.connecting') : t('simulator.connectButton')}
                   </button>
                 ) : (
                   <button onClick={handleDisconnect} className="btn btn--secondary btn--lg w-full">
                     <Unplug size={16} />
-                    Disconnect
+                    {t('simulator.disconnect')}
                   </button>
                 )}
               </div>
@@ -343,7 +345,7 @@ export default function SimulatorPage() {
             {/* How to use */}
             <div className="panel">
               <div className="panel__header">
-                <h3 className="panel__title">Setup Guide</h3>
+                <h3 className="panel__title">{t('simulator.setupGuide')}</h3>
               </div>
               <div className="panel__body" style={{ fontSize: 'var(--text-sm)', color: 'var(--clr-text-secondary)', lineHeight: 1.7 }}>
                 <ol style={{ paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>

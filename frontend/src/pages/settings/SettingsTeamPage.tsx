@@ -1,11 +1,6 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import { UserCircle, Plus, Search, MoreVertical, Mail } from 'lucide-react';
-
-const roleBadge: Record<string, { label: string; cls: string }> = {
-  admin: { label: 'Admin', cls: 'badge badge--info' },
-  operator: { label: 'Operator', cls: 'badge badge--warning' },
-  viewer: { label: 'Viewer', cls: 'badge badge--neutral' },
-};
 
 const demoTeam = [
   { id: '1', name: 'Max Müller', email: 'max@mueller-versand.de', role: 'admin', lastLogin: '12.04.2026 13:15', isActive: true },
@@ -21,25 +16,33 @@ const pendingInvites = [
 ];
 
 export default function SettingsTeamPage() {
+  const { t } = useTranslation();
+
+  const roleBadge: Record<string, { label: string; cls: string }> = {
+    admin: { label: t('roles.admin'), cls: 'badge badge--info' },
+    operator: { label: t('roles.operator'), cls: 'badge badge--warning' },
+    viewer: { label: t('roles.viewer'), cls: 'badge badge--neutral' },
+  };
+
   return (
     <div>
-      <Topbar title="Team" subtitle="Settings" />
+      <Topbar title={t('settings.team.title')} subtitle={t('settings.team.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Team</h1>
-            <p className="page-header__desc">Manage your team members and access</p>
+            <h1 className="page-header__title">{t('settings.team.pageTitle')}</h1>
+            <p className="page-header__desc">{t('settings.team.pageDesc')}</p>
           </div>
-          <button className="btn btn--primary btn--lg"><Plus size={16} /> Invite Member</button>
+          <button className="btn btn--primary btn--lg"><Plus size={16} /> {t('settings.team.inviteMember')}</button>
         </div>
 
         {/* Stats */}
         <div className="grid-4 gap-4">
           {[
-            { label: 'Team Members', value: demoTeam.length },
-            { label: 'Admins', value: demoTeam.filter(u => u.role === 'admin').length },
-            { label: 'Operators', value: demoTeam.filter(u => u.role === 'operator').length },
-            { label: 'Pending Invites', value: pendingInvites.length },
+            { label: t('settings.team.teamMembers'), value: demoTeam.length },
+            { label: t('settings.team.admins'), value: demoTeam.filter(u => u.role === 'admin').length },
+            { label: t('settings.team.operators'), value: demoTeam.filter(u => u.role === 'operator').length },
+            { label: t('settings.team.pendingInvites'), value: pendingInvites.length },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <span className="stat-card__label">{s.label}</span>
@@ -53,18 +56,18 @@ export default function SettingsTeamPage() {
           <div className="hero-panel">
             <div className="hero-panel__accent hero-panel__accent--active" />
             <div className="px-8 py-5">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Pending Invitations</h4>
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">{t('settings.team.pendingInvitations')}</h4>
               {pendingInvites.map(inv => (
                 <div key={inv.email} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Mail size={16} className="text-blue-500" />
                     <span className="text-sm text-gray-700">{inv.email}</span>
-                    <span className={roleBadge[inv.role].cls}>{inv.role}</span>
+                    <span className={roleBadge[inv.role].cls}>{roleBadge[inv.role].label}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400">Sent {inv.sentAt}</span>
-                    <button className="btn btn--ghost text-xs">Resend</button>
-                    <button className="btn btn--ghost text-xs text-red-500">Cancel</button>
+                    <span className="text-xs text-gray-400">{t('settings.team.sent')} {inv.sentAt}</span>
+                    <button className="btn btn--ghost text-xs">{t('settings.team.resend')}</button>
+                    <button className="btn btn--ghost text-xs text-red-500">{t('common.cancel')}</button>
                   </div>
                 </div>
               ))}
@@ -75,7 +78,7 @@ export default function SettingsTeamPage() {
         {/* Search */}
         <div style={{ position: 'relative', width: 280 }}>
           <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-          <input type="text" placeholder="Search team members..." className="input input--with-icon" />
+          <input type="text" placeholder={t('settings.team.searchPlaceholder')} className="input input--with-icon" />
         </div>
 
         {/* Team table */}
@@ -84,10 +87,10 @@ export default function SettingsTeamPage() {
             <thead>
               <tr>
                 <th style={{ width: 44 }}></th>
-                <th>Member</th>
-                <th style={{ width: 110 }}>Role</th>
-                <th style={{ width: 150 }}>Last Login</th>
-                <th style={{ width: 80 }}>Status</th>
+                <th>{t('common.member')}</th>
+                <th style={{ width: 110 }}>{t('common.role')}</th>
+                <th style={{ width: 150 }}>{t('common.lastLogin')}</th>
+                <th style={{ width: 80 }}>{t('common.status')}</th>
                 <th style={{ width: 40 }}></th>
               </tr>
             </thead>
@@ -110,7 +113,7 @@ export default function SettingsTeamPage() {
                     <td>
                       <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${u.isActive ? 'text-emerald-600' : 'text-gray-400'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${u.isActive ? 'bg-emerald-400' : 'bg-gray-300'}`} />
-                        {u.isActive ? 'Active' : 'Inactive'}
+                        {u.isActive ? t('common.active') : t('common.inactive')}
                       </span>
                     </td>
                     <td><button className="btn-icon"><MoreVertical size={14} /></button></td>

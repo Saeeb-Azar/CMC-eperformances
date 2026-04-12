@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import { useState } from 'react';
 import {
@@ -13,27 +14,28 @@ import {
 } from 'lucide-react';
 
 export default function ControlSystemPage() {
+  const { t } = useTranslation();
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [forceUpdateConfirm, setForceUpdateConfirm] = useState(false);
 
   return (
     <div>
-      <Topbar title="System" subtitle="Control Panel" />
+      <Topbar title={t('control.system.title')} subtitle={t('control.system.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">System</h1>
-            <p className="page-header__desc">Maintenance, updates, and system health</p>
+            <h1 className="page-header__title">{t('control.system.pageTitle')}</h1>
+            <p className="page-header__desc">{t('control.system.pageDesc')}</p>
           </div>
         </div>
 
         {/* Stats */}
         <div className="grid-4 gap-4">
           {[
-            { label: 'Active Sessions', value: '23', icon: <Users size={18} /> },
-            { label: 'Machines Connected', value: '5 / 6', icon: <Server size={18} /> },
-            { label: 'DB Connections', value: '12', icon: <Database size={18} /> },
-            { label: 'Events / min', value: '142', icon: <Activity size={18} /> },
+            { label: t('control.system.activeSessions'), value: '23', icon: <Users size={18} /> },
+            { label: t('control.system.machinesConnected'), value: '5 / 6', icon: <Server size={18} /> },
+            { label: t('control.system.dbConnections'), value: '12', icon: <Database size={18} /> },
+            { label: t('control.system.eventsPerMin'), value: '142', icon: <Activity size={18} /> },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <div className="flex items-center justify-between w-full">
@@ -51,12 +53,12 @@ export default function ControlSystemPage() {
             <div className="panel__header">
               <div className="flex items-center gap-2">
                 <Construction size={16} className="text-amber-500" />
-                <h3 className="panel__title">Maintenance Mode</h3>
+                <h3 className="panel__title">{t('control.system.maintenanceMode')}</h3>
               </div>
             </div>
             <div className="panel__body">
               <p className="text-sm text-gray-500 mb-5 leading-relaxed">
-                When enabled, all tenant users see a maintenance page. Only owners can still access the system.
+                {t('control.system.maintenanceDesc')}
               </p>
               <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-100">
                 <div className="flex items-center gap-3">
@@ -65,10 +67,10 @@ export default function ControlSystemPage() {
                     : <CheckCircle size={18} className="text-emerald-500" />}
                   <div>
                     <p className="text-sm font-semibold text-gray-900">
-                      {maintenanceMode ? 'Maintenance Active' : 'System Online'}
+                      {maintenanceMode ? t('control.system.maintenanceActive') : t('control.system.systemOnline')}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {maintenanceMode ? 'Users see maintenance page' : 'All users have normal access'}
+                      {maintenanceMode ? t('control.system.usersSeeMaintenance') : t('control.system.normalAccess')}
                     </p>
                   </div>
                 </div>
@@ -81,7 +83,7 @@ export default function ControlSystemPage() {
               </div>
               {maintenanceMode && (
                 <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-xs text-amber-800"><strong>Warning:</strong> 23 active sessions will see the maintenance page.</p>
+                  <p className="text-xs text-amber-800"><strong>{t('control.system.maintenanceWarning', { count: 23 })}</strong></p>
                 </div>
               )}
             </div>
@@ -92,28 +94,28 @@ export default function ControlSystemPage() {
             <div className="panel__header">
               <div className="flex items-center gap-2">
                 <RefreshCw size={16} className="text-blue-500" />
-                <h3 className="panel__title">Force Update</h3>
+                <h3 className="panel__title">{t('control.system.forceUpdate')}</h3>
               </div>
             </div>
             <div className="panel__body">
               <p className="text-sm text-gray-500 mb-5 leading-relaxed">
-                Force all connected clients to reload the application. Useful after deploying a critical frontend update.
+                {t('control.system.forceUpdateDesc')}
               </p>
               {!forceUpdateConfirm ? (
                 <button
                   onClick={() => setForceUpdateConfirm(true)}
                   className="btn btn--primary btn--lg w-full"
                 >
-                  <RefreshCw size={16} /> Force Reload for All Users
+                  <RefreshCw size={16} /> {t('control.system.forceReload')}
                 </button>
               ) : (
                 <div className="space-y-3">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-xs text-blue-800"><strong>Confirm:</strong> This will force 23 active sessions to reload.</p>
+                    <p className="text-xs text-blue-800"><strong>{t('control.system.confirmReload', { count: 23 })}</strong></p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setForceUpdateConfirm(false)} className="btn btn--secondary flex-1">Cancel</button>
-                    <button onClick={() => setForceUpdateConfirm(false)} className="btn btn--primary flex-1">Confirm Reload</button>
+                    <button onClick={() => setForceUpdateConfirm(false)} className="btn btn--secondary flex-1">{t('common.cancel')}</button>
+                    <button onClick={() => setForceUpdateConfirm(false)} className="btn btn--primary flex-1">{t('control.system.confirmButton')}</button>
                   </div>
                 </div>
               )}
@@ -126,16 +128,16 @@ export default function ControlSystemPage() {
           <div className="panel__header">
             <div className="flex items-center gap-2">
               <Shield size={16} className="text-emerald-500" />
-              <h3 className="panel__title">System Health</h3>
+              <h3 className="panel__title">{t('control.system.systemHealth')}</h3>
             </div>
           </div>
           <table className="table">
             <thead>
               <tr>
-                <th>Service</th>
-                <th style={{ width: 90 }}>Status</th>
-                <th style={{ width: 100 }}>Latency</th>
-                <th style={{ width: 100 }}>Last Check</th>
+                <th>{t('control.system.service')}</th>
+                <th style={{ width: 90 }}>{t('common.status')}</th>
+                <th style={{ width: 100 }}>{t('control.system.latency')}</th>
+                <th style={{ width: 100 }}>{t('control.system.lastCheck')}</th>
               </tr>
             </thead>
             <tbody>

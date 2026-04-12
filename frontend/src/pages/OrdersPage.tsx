@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { Search } from 'lucide-react';
@@ -19,6 +20,7 @@ const demoOrders = [
 const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export default function OrdersPage() {
+  const { t } = useTranslation();
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [search, setSearch] = useState('');
 
@@ -30,13 +32,13 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <Topbar title="Packages" subtitle="Track all packages" />
+      <Topbar title={t('orders.title')} subtitle={t('orders.subtitle')} />
 
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Packages</h1>
-            <p className="page-header__desc">Track all packages through the machine</p>
+            <h1 className="page-header__title">{t('orders.pageTitle')}</h1>
+            <p className="page-header__desc">{t('orders.pageDesc')}</p>
           </div>
         </div>
 
@@ -46,7 +48,7 @@ export default function OrdersPage() {
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by reference, barcode, or tracking..."
+              placeholder={t('orders.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="input input--with-icon"
@@ -70,18 +72,18 @@ export default function OrdersPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Barcode</th>
-                <th>State</th>
-                <th>Carrier</th>
-                <th>Tracking</th>
-                <th>Weight</th>
-                <th>Time</th>
+                <th>{t('orders.reference')}</th>
+                <th>{t('orders.barcode')}</th>
+                <th>{t('orders.state')}</th>
+                <th>{t('orders.carrier')}</th>
+                <th>{t('orders.tracking')}</th>
+                <th>{t('orders.weight')}</th>
+                <th>{t('orders.time')}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">No packages match your filters</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('orders.noMatch')}</td></tr>
               ) : (
                 filtered.map((o) => (
                   <tr key={o.id}>

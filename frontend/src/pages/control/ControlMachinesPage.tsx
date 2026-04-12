@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { Server, Search, Wifi, WifiOff, MoreVertical } from 'lucide-react';
@@ -12,24 +13,26 @@ const demoMachines = [
 ];
 
 export default function ControlMachinesPage() {
+  const { t } = useTranslation();
+
   return (
     <div>
-      <Topbar title="Machines" subtitle="Control Panel" />
+      <Topbar title={t('control.machines.title')} subtitle={t('control.machines.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">All Machines</h1>
-            <p className="page-header__desc">All machines across all tenants</p>
+            <h1 className="page-header__title">{t('control.machines.pageTitle')}</h1>
+            <p className="page-header__desc">{t('control.machines.pageDesc')}</p>
           </div>
         </div>
 
         {/* Stats */}
         <div className="grid-4 gap-4">
           {[
-            { label: 'Total Machines', value: demoMachines.length },
-            { label: 'Online', value: demoMachines.filter(m => m.is_online).length },
-            { label: 'Offline', value: demoMachines.filter(m => !m.is_online).length },
-            { label: 'Orders Today', value: demoMachines.reduce((s, m) => s + m.ordersToday, 0) },
+            { label: t('control.machines.totalMachines'), value: demoMachines.length },
+            { label: t('common.online'), value: demoMachines.filter(m => m.is_online).length },
+            { label: t('common.offline'), value: demoMachines.filter(m => !m.is_online).length },
+            { label: t('control.machines.ordersToday'), value: demoMachines.reduce((s, m) => s + m.ordersToday, 0) },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <span className="stat-card__label">{s.label}</span>
@@ -41,7 +44,7 @@ export default function ControlMachinesPage() {
         {/* Search */}
         <div style={{ position: 'relative', width: 280 }}>
           <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-          <input type="text" placeholder="Search machines..." className="input input--with-icon" />
+          <input type="text" placeholder={t('control.machines.searchPlaceholder')} className="input input--with-icon" />
         </div>
 
         {/* Table */}
@@ -50,12 +53,12 @@ export default function ControlMachinesPage() {
             <thead>
               <tr>
                 <th style={{ width: 44 }}></th>
-                <th>Machine</th>
-                <th style={{ width: 170 }}>Tenant</th>
-                <th style={{ width: 100 }}>Status</th>
-                <th style={{ width: 80 }}>Uptime</th>
-                <th style={{ width: 100 }}>Orders Today</th>
-                <th style={{ width: 90 }}>Heartbeat</th>
+                <th>{t('machines.machine')}</th>
+                <th style={{ width: 170 }}>{t('control.machines.tenant')}</th>
+                <th style={{ width: 100 }}>{t('common.status')}</th>
+                <th style={{ width: 80 }}>{t('common.uptime')}</th>
+                <th style={{ width: 100 }}>{t('control.machines.ordersToday')}</th>
+                <th style={{ width: 90 }}>{t('common.heartbeat')}</th>
                 <th style={{ width: 40 }}></th>
               </tr>
             </thead>

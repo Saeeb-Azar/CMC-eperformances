@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import { Shield, ShieldCheck, Eye, Crown, Check, X } from 'lucide-react';
 
@@ -7,47 +8,49 @@ interface Permission {
   description: string;
 }
 
-const permissions: Permission[] = [
-  { key: 'dashboard.view', label: 'View Dashboard', description: 'KPIs, charts, overview' },
-  { key: 'live.view', label: 'View Live Monitor', description: 'Real-time conveyor status' },
-  { key: 'orders.view', label: 'View Orders', description: 'Order list and details' },
-  { key: 'orders.resolve', label: 'Resolve Orders', description: 'Mark ejected/failed as resolved' },
-  { key: 'machines.view', label: 'View Machines', description: 'Machine list and status' },
-  { key: 'machines.configure', label: 'Configure Machines', description: 'Edit machine settings' },
-  { key: 'analytics.view', label: 'View Analytics', description: 'Charts, dimensions, weights' },
-  { key: 'audit.view', label: 'View Audit Log', description: 'System events and transitions' },
-  { key: 'settings.team', label: 'Manage Team', description: 'Invite, remove, edit members' },
-  { key: 'settings.roles', label: 'Manage Roles', description: 'Edit role permissions' },
-  { key: 'settings.company', label: 'Edit Company', description: 'Company profile, subscription' },
-];
-
-const roles = [
-  {
-    key: 'admin', label: 'Admin', description: 'Full access to all tenant features',
-    icon: <ShieldCheck size={16} />,
-    permissions: permissions.map(p => p.key),
-  },
-  {
-    key: 'operator', label: 'Operator', description: 'Day-to-day operations',
-    icon: <Shield size={16} />,
-    permissions: ['dashboard.view', 'live.view', 'orders.view', 'orders.resolve', 'machines.view', 'analytics.view', 'audit.view'],
-  },
-  {
-    key: 'viewer', label: 'Viewer', description: 'Read-only access',
-    icon: <Eye size={16} />,
-    permissions: ['dashboard.view', 'live.view', 'orders.view', 'machines.view'],
-  },
-];
-
 export default function SettingsRolesPage() {
+  const { t } = useTranslation();
+
+  const permissions: Permission[] = [
+    { key: 'dashboard.view', label: t('settings.roles.viewDashboard'), description: t('settings.roles.viewDashboardDesc') },
+    { key: 'live.view', label: t('settings.roles.viewLive'), description: t('settings.roles.viewLiveDesc') },
+    { key: 'orders.view', label: t('settings.roles.viewOrders'), description: t('settings.roles.viewOrdersDesc') },
+    { key: 'orders.resolve', label: t('settings.roles.resolveOrders'), description: t('settings.roles.resolveOrdersDesc') },
+    { key: 'machines.view', label: t('settings.roles.viewMachines'), description: t('settings.roles.viewMachinesDesc') },
+    { key: 'machines.configure', label: t('settings.roles.configureMachines'), description: t('settings.roles.configureMachinesDesc') },
+    { key: 'analytics.view', label: t('settings.roles.viewAnalytics'), description: t('settings.roles.viewAnalyticsDesc') },
+    { key: 'audit.view', label: t('settings.roles.viewAudit'), description: t('settings.roles.viewAuditDesc') },
+    { key: 'settings.team', label: t('settings.roles.manageTeam'), description: t('settings.roles.manageTeamDesc') },
+    { key: 'settings.roles', label: t('settings.roles.manageRoles'), description: t('settings.roles.manageRolesDesc') },
+    { key: 'settings.company', label: t('settings.roles.editCompany'), description: t('settings.roles.editCompanyDesc') },
+  ];
+
+  const roles = [
+    {
+      key: 'admin', label: t('roles.admin'), description: t('settings.roles.fullAccess'),
+      icon: <ShieldCheck size={16} />,
+      permissions: permissions.map(p => p.key),
+    },
+    {
+      key: 'operator', label: t('roles.operator'), description: t('settings.roles.dayToDay'),
+      icon: <Shield size={16} />,
+      permissions: ['dashboard.view', 'live.view', 'orders.view', 'orders.resolve', 'machines.view', 'analytics.view', 'audit.view'],
+    },
+    {
+      key: 'viewer', label: t('roles.viewer'), description: t('settings.roles.readOnly'),
+      icon: <Eye size={16} />,
+      permissions: ['dashboard.view', 'live.view', 'orders.view', 'machines.view'],
+    },
+  ];
+
   return (
     <div>
-      <Topbar title="Roles & Permissions" subtitle="Settings" />
+      <Topbar title={t('settings.roles.title')} subtitle={t('settings.roles.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Roles & Permissions</h1>
-            <p className="page-header__desc">Define what each role can access</p>
+            <h1 className="page-header__title">{t('settings.roles.pageTitle')}</h1>
+            <p className="page-header__desc">{t('settings.roles.pageDesc')}</p>
           </div>
         </div>
 
@@ -62,7 +65,7 @@ export default function SettingsRolesPage() {
                 </div>
                 <p className="text-xs text-gray-500 mb-3">{r.description}</p>
                 <p className="text-xs text-gray-600">
-                  <span className="font-semibold">{r.permissions.length}</span> of {permissions.length} permissions
+                  <span className="font-semibold">{r.permissions.length}</span> {t('settings.roles.ofPermissions', { total: permissions.length })}
                 </p>
                 <div className="w-full bg-gray-100 rounded h-1.5 mt-2">
                   <div className="bg-blue-500 h-1.5 rounded" style={{ width: `${(r.permissions.length / permissions.length) * 100}%` }} />
@@ -77,21 +80,19 @@ export default function SettingsRolesPage() {
           <div className="hero-panel__accent hero-panel__accent--active" style={{ background: '#7c3aed' }} />
           <div className="flex items-center gap-3 px-8 py-4">
             <Crown size={16} className="text-purple-600" />
-            <p className="text-sm text-gray-700">
-              <strong>Owner</strong> role is platform-level and has access to the Control Panel. It cannot be assigned within tenant settings.
-            </p>
+            <p className="text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: t('settings.roles.ownerNote') }} />
           </div>
         </div>
 
         {/* Permissions matrix */}
         <div className="panel">
           <div className="panel__header">
-            <h3 className="panel__title">Permission Matrix</h3>
+            <h3 className="panel__title">{t('settings.roles.permissionMatrix')}</h3>
           </div>
           <table className="table">
             <thead>
               <tr>
-                <th>Permission</th>
+                <th>{t('settings.roles.permissionMatrix')}</th>
                 {roles.map(r => (
                   <th key={r.key} style={{ width: 100, textAlign: 'center' }}>{r.label}</th>
                 ))}

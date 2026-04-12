@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import { Search } from 'lucide-react';
 
@@ -26,6 +27,7 @@ const categoryBadge: Record<string, string> = {
 };
 
 export default function AuditPage() {
+  const { t } = useTranslation();
   const [activeCat, setActiveCat] = useState('ALL');
   const [search, setSearch] = useState('');
 
@@ -37,13 +39,13 @@ export default function AuditPage() {
 
   return (
     <div>
-      <Topbar title="Logs" subtitle="Event traceability" />
+      <Topbar title={t('audit.title')} subtitle={t('audit.subtitle')} />
 
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Audit Log</h1>
-            <p className="page-header__desc">Complete event traceability for all machines</p>
+            <h1 className="page-header__title">{t('audit.pageTitle')}</h1>
+            <p className="page-header__desc">{t('audit.pageDesc')}</p>
           </div>
         </div>
 
@@ -51,12 +53,12 @@ export default function AuditPage() {
         <div className="flex flex-col gap-4">
           <div className="relative" style={{ maxWidth: 420 }}>
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Search events, references..." value={search} onChange={(e) => setSearch(e.target.value)} className="input input--with-icon" />
+            <input type="text" placeholder={t('audit.searchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="input input--with-icon" />
           </div>
           <div className="filter-tabs">
             {categories.map((c) => (
               <button key={c} onClick={() => setActiveCat(c)} className={`filter-tab ${activeCat === c ? 'filter-tab--active' : ''}`}>
-                {c === 'ALL' ? 'All' : c.replace(/_/g, ' ')}
+                {c === 'ALL' ? t('common.all') : c.replace(/_/g, ' ')}
               </button>
             ))}
           </div>
@@ -67,18 +69,18 @@ export default function AuditPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 90 }}>Time</th>
-                <th>Category</th>
-                <th>Event</th>
-                <th>Machine</th>
-                <th>Reference</th>
-                <th>Transition</th>
-                <th>Detail</th>
+                <th style={{ width: 90 }}>{t('audit.time')}</th>
+                <th>{t('audit.category')}</th>
+                <th>{t('audit.event')}</th>
+                <th>{t('audit.machineCol')}</th>
+                <th>{t('audit.reference')}</th>
+                <th>{t('audit.transition')}</th>
+                <th>{t('audit.detail')}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">No logs match your filters</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('audit.noMatch')}</td></tr>
               ) : (
                 filtered.map((log) => (
                   <tr key={log.id}>
