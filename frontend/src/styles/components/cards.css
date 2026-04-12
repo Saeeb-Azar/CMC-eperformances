@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════
    PANEL - unified card for ALL pages
+   Clearly separated from background
    ═══════════════════════════════════ */
 
 .panel {
@@ -7,10 +8,14 @@
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
-  transition: box-shadow var(--dur-base) var(--ease);
+  transition: box-shadow var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--ease);
 }
 
-.panel:hover { box-shadow: var(--shadow-card-hover); }
+.panel:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
 
 .panel__header {
   padding: var(--sp-5) var(--sp-6);
@@ -32,7 +37,7 @@
 }
 
 .panel__body {
-  padding: var(--sp-6);
+  padding: var(--sp-6) var(--sp-6) var(--sp-8);
 }
 
 /* Hero panel: accent top bar */
@@ -63,13 +68,17 @@
   display: flex;
   align-items: flex-start;
   gap: var(--sp-5);
-  transition: box-shadow var(--dur-base) var(--ease);
+  transition: box-shadow var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--ease);
 }
 
-.stat-card:hover { box-shadow: var(--shadow-card-hover); }
+.stat-card:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
 
 .stat-card__icon {
-  width: 44px; height: 44px;
+  width: 48px; height: 48px;
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
