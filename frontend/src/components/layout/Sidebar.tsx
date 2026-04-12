@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   Radio, LayoutDashboard, Package, Server,
   BarChart3, FileText, Settings, LogOut, Zap,
-  ChevronDown, Building2, Users, Wrench, Crown,
+  ChevronDown, Building2, Users, Wrench, Crown, Plug,
 } from 'lucide-react';
 
 const navGroups = [
@@ -26,6 +26,12 @@ const navGroups = [
     items: [
       { to: '/analytics', icon: BarChart3, label: 'Analytics' },
       { to: '/audit', icon: FileText, label: 'Logs' },
+    ],
+  },
+  {
+    label: 'Development',
+    items: [
+      { to: '/simulator', icon: Plug, label: 'Simulator' },
     ],
   },
 ];

@@ -6,6 +6,7 @@ import OrdersPage from './pages/OrdersPage';
 import MachinesPage from './pages/MachinesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AuditPage from './pages/AuditPage';
+import SimulatorPage from './pages/SimulatorPage';
 
 // Settings (Tenant Admin)
 import SettingsCompanyPage from './pages/settings/SettingsCompanyPage';
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/machines" element={<MachinesPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/simulator" element={<SimulatorPage />} />
 
           {/* Settings (Tenant Admin) */}
           <Route path="/settings/company" element={<SettingsCompanyPage />} />

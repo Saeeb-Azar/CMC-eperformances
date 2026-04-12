@@ -10,7 +10,8 @@ import asyncio
 from datetime import datetime, timezone
 
 from app.core.logging import logger
-from app.gateway.protocol import MessageType
+from app.gateway.parser import parse_message, build_response, serialize_response
+from app.gateway.websocket import ws_manager
 
 
 class MachineConnection:
@@ -30,8 +31,11 @@ class MachineConnection:
 
     async def close(self) -> None:
         self.is_alive = False
-        self.writer.close()
-        await self.writer.wait_closed()
+        try:
+            self.writer.close()
+            await self.writer.wait_closed()
+        except Exception:
+            pass
 
 
 class ConnectionManager:
@@ -40,11 +44,6 @@ class ConnectionManager:
     def __init__(self):
         self._connections: dict[str, MachineConnection] = {}
         self._server: asyncio.Server | None = None
-        self._event_handler = None
-
-    def set_event_handler(self, handler):
-        """Set the callback that processes incoming CMC messages."""
-        self._event_handler = handler
 
     @property
     def connected_machines(self) -> list[str]:
@@ -56,61 +55,104 @@ class ConnectionManager:
             return conn
         return None
 
+    # ── Server mode: machines connect to us ───────────────────────────────
+
     async def start_server(self, host: str, port: int) -> None:
-        self._server = await asyncio.start_server(
-            self._handle_client, host, port
-        )
+        self._server = await asyncio.start_server(self._handle_client, host, port)
         logger.info(f"CMC Gateway listening on {host}:{port}")
 
-    async def _handle_client(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         addr = writer.get_extra_info("peername")
+        machine_id = f"machine_{addr[0]}_{addr[1]}"
         logger.info(f"New machine connection from {addr}")
 
-        # Machine ID is determined from the first message or config
-        machine_id = f"machine_{addr[0]}_{addr[1]}"
         conn = MachineConnection(machine_id, reader, writer)
         self._connections[machine_id] = conn
 
+        await ws_manager.broadcast({
+            "type": "SYSTEM",
+            "severity": "success",
+            "message": f"Machine connected from {addr[0]}:{addr[1]}",
+            "machine_id": machine_id,
+        })
+
         try:
-            while conn.is_alive:
-                data = await reader.read(4096)
-                if not data:
-                    break
-                await self._process_raw_message(machine_id, data)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"Connection error for {machine_id}: {e}")
+            await self._read_loop(machine_id, conn)
         finally:
             conn.is_alive = False
-            logger.info(f"Machine {machine_id} disconnected")
+            await ws_manager.broadcast({
+                "type": "SYSTEM",
+                "severity": "warning",
+                "message": f"Machine {machine_id} disconnected",
+                "machine_id": machine_id,
+            })
 
-    async def _process_raw_message(self, machine_id: str, data: bytes) -> None:
-        """Parse raw TCP data and dispatch to the event handler."""
-        if self._event_handler:
-            await self._event_handler(machine_id, data)
+    # ── Client mode: we connect to a machine ──────────────────────────────
 
     async def connect_to_machine(self, host: str, port: int, machine_id: str) -> None:
-        """Client mode: connect to a CMC machine."""
         reader, writer = await asyncio.open_connection(host, port)
         conn = MachineConnection(machine_id, reader, writer)
         self._connections[machine_id] = conn
         logger.info(f"Connected to machine {machine_id} at {host}:{port}")
-        asyncio.create_task(self._listen(machine_id, conn))
+        asyncio.create_task(self._read_loop(machine_id, conn))
 
-    async def _listen(self, machine_id: str, conn: MachineConnection) -> None:
+    # ── Shared read loop ──────────────────────────────────────────────────
+
+    async def _read_loop(self, machine_id: str, conn: MachineConnection) -> None:
+        """Read data from TCP, parse, respond, and broadcast to WebSocket."""
         try:
             while conn.is_alive:
                 data = await conn.reader.read(4096)
                 if not data:
                     break
-                await self._process_raw_message(machine_id, data)
+
+                conn.last_heartbeat = datetime.now(timezone.utc)
+
+                # Parse raw TCP data
+                events = parse_message(data)
+
+                for event in events:
+                    msg_type = event["type"]
+                    msg_data = event["data"]
+
+                    # Broadcast to all WebSocket clients
+                    await ws_manager.broadcast({
+                        "type": msg_type,
+                        "severity": "info" if msg_type != "UNKNOWN" else "warning",
+                        "message": _describe_event(msg_type, msg_data),
+                        "machine_id": machine_id,
+                        "data": msg_data,
+                        "raw": event.get("raw", ""),
+                    })
+
+                    # Build and send response back to the machine
+                    if msg_type != "UNKNOWN":
+                        response = build_response(msg_type, msg_data)
+                        response_bytes = serialize_response(msg_type, response)
+                        try:
+                            await conn.send(response_bytes)
+
+                            await ws_manager.broadcast({
+                                "type": f"{msg_type}_RESPONSE",
+                                "severity": "success",
+                                "message": f"Sent {msg_type.lower()} response",
+                                "machine_id": machine_id,
+                                "data": response,
+                            })
+                        except Exception as e:
+                            logger.error(f"Failed to send response: {e}")
+
+        except asyncio.CancelledError:
+            pass
+        except ConnectionResetError:
+            logger.info(f"Connection reset by {machine_id}")
         except Exception as e:
-            logger.error(f"Listen error for {machine_id}: {e}")
+            logger.error(f"Read error for {machine_id}: {e}")
         finally:
             conn.is_alive = False
+            logger.info(f"Machine {machine_id} disconnected")
+
+    # ── Shutdown ──────────────────────────────────────────────────────────
 
     async def shutdown(self) -> None:
         for conn in self._connections.values():
@@ -119,6 +161,26 @@ class ConnectionManager:
             self._server.close()
             await self._server.wait_closed()
         logger.info("CMC Gateway shut down")
+
+
+def _describe_event(msg_type: str, data: dict) -> str:
+    """Human-readable description of a CMC event."""
+    ref = data.get("reference_id", data.get("referenceId", ""))
+    barcode = data.get("barcode", "")
+
+    descriptions = {
+        "ENQ": f"Barcode scanned: {barcode}" if barcode else "Barcode scanned",
+        "IND": f"Package {ref} entered conveyor",
+        "ACK": f"Package {ref} measured — {data.get('height_mm', '?')}×{data.get('length_mm', '?')}×{data.get('width_mm', '?')} mm",
+        "INV": f"Invoice requested for {ref}",
+        "LAB1": f"Label 1 requested for {ref} — weight: {data.get('weight_scale', '?')}g",
+        "LAB2": f"Label 2 requested for {ref}",
+        "END": f"Package {ref} exited — status: {'OK' if data.get('status') == '1' or data.get('good') else 'REJECTED'}",
+        "REM": f"Package {ref} removed from conveyor",
+        "HBT": "Heartbeat",
+        "STS": f"Status: {data.get('status', 'unknown')}",
+    }
+    return descriptions.get(msg_type, f"Unknown message: {msg_type}")
 
 
 # Singleton
