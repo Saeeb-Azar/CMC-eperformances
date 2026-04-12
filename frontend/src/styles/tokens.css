@@ -1,25 +1,24 @@
 :root {
-  /* ── Colors ── */
-  --clr-brand: #1a1a1a;
-  --clr-brand-light: #2a2a2a;
-  --clr-brand-lighter: #333333;
-  --clr-brand-border: #2e2e2e;
+  /* ── Colors: warm neutrals ── */
+  --clr-brand: #18181b;
+  --clr-brand-light: #27272a;
+  --clr-brand-lighter: #323236;
+  --clr-brand-border: #2e2e32;
 
-  --clr-bg: #fafafa;
+  --clr-bg: #f9fafb;
   --clr-surface: #ffffff;
-  --clr-surface-raised: #ffffff;
-  --clr-surface-sunken: #f4f4f5;
-  --clr-surface-hover: #fafafa;
+  --clr-surface-hover: #f9fafb;
+  --clr-surface-sunken: #f3f4f6;
 
-  --clr-text: #0a0a0a;
-  --clr-text-secondary: #525252;
-  --clr-text-muted: #a1a1aa;
-  --clr-text-inverse: #fafafa;
+  --clr-text: #111827;
+  --clr-text-secondary: #6b7280;
+  --clr-text-muted: #9ca3af;
+  --clr-text-inverse: #f9fafb;
   --clr-text-inverse-muted: #71717a;
 
-  --clr-success: #16a34a;
-  --clr-success-soft: #f0fdf4;
-  --clr-success-text: #15803d;
+  --clr-success: #059669;
+  --clr-success-soft: #ecfdf5;
+  --clr-success-text: #065f46;
   --clr-warning: #d97706;
   --clr-warning-soft: #fffbeb;
   --clr-warning-text: #92400e;
@@ -28,15 +27,13 @@
   --clr-danger-text: #991b1b;
   --clr-info: #2563eb;
   --clr-info-soft: #eff6ff;
-  --clr-info-text: #1d4ed8;
+  --clr-info-text: #1e40af;
 
-  --clr-border: #e4e4e7;
-  --clr-border-light: #f4f4f5;
-  --clr-border-focus: #0a0a0a;
+  --clr-border: #e5e7eb;
+  --clr-border-light: #f3f4f6;
+  --clr-border-focus: #6366f1;
 
   /* ── Spacing ── */
-  --sp-0: 0;
-  --sp-px: 1px;
   --sp-1: 0.25rem;
   --sp-1h: 0.375rem;
   --sp-2: 0.5rem;
@@ -57,35 +54,36 @@
   --text-sm: 0.8125rem;
   --text-base: 0.875rem;
   --text-md: 0.9375rem;
-  --text-lg: 1rem;
-  --text-xl: 1.125rem;
-  --text-2xl: 1.375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
 
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
 
-  /* ── Radius: sharp, not rounded ── */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  /* ── Radius: balanced, not extreme ── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
   --radius-full: 9999px;
 
-  /* ── Shadows: subtle, precise ── */
-  --shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.03);
-  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
-  --shadow-focus: 0 0 0 2px var(--clr-bg), 0 0 0 4px var(--clr-border-focus);
+  /* ── Shadows: soft, elegant ── */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.03);
+  --shadow-focus: 0 0 0 3px rgba(99,102,241,0.12);
 
   /* ── Transitions ── */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --dur-fast: 100ms;
-  --dur-base: 150ms;
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
 
   /* ── Layout ── */
-  --sidebar-w: 240px;
-  --topbar-h: 48px;
-
-  /* ── Z-Index ── */
+  --sidebar-w: 248px;
+  --topbar-h: 52px;
   --z-sidebar: 300;
   --z-topbar: 400;
 }

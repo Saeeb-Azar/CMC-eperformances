@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--sp-5);
+  padding: 0 var(--sp-6);
   position: sticky;
   top: 0;
   z-index: var(--z-topbar);
@@ -14,33 +14,27 @@
 .topbar__left { display: flex; align-items: center; gap: var(--sp-2); }
 
 .topbar__title {
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   color: var(--clr-text);
 }
 
-.topbar__subtitle {
-  font-size: var(--text-sm);
-  color: var(--clr-text-muted);
-}
+.topbar__subtitle { font-size: var(--text-sm); color: var(--clr-text-muted); }
 
 .topbar__center { display: flex; align-items: center; gap: var(--sp-2); }
 
 .topbar__live-dot {
-  width: 6px; height: 6px;
+  width: 7px; height: 7px;
   border-radius: var(--radius-full);
   background: var(--clr-success);
-  animation: pulse-dot 2s ease-in-out infinite;
+  animation: pulse-soft 2.5s ease-in-out infinite;
 }
 
-@keyframes pulse-dot {
+@keyframes pulse-soft {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50% { opacity: 0.4; }
 }
 
-.topbar__live-text {
-  font-size: var(--text-sm);
-  color: var(--clr-text-secondary);
-}
+.topbar__live-text { font-size: var(--text-sm); color: var(--clr-text-secondary); }
 
 .topbar__right { display: flex; align-items: center; gap: var(--sp-2); }
