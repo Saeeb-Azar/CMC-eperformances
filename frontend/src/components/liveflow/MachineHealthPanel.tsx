@@ -36,45 +36,66 @@ export default function MachineHealthPanel({
         <span className="text-xs text-gray-400">{machineName}</span>
       </div>
 
-      {/* System status - section header */}
-      <div className="mx-6 mt-5 mb-2">
-        <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">System Status</span>
-      </div>
+      {/* System status table */}
+      <table className="table">
+        <thead>
+          <tr>
+            <th style={{ width: 36 }}></th>
+            <th>Component</th>
+            <th style={{ width: 90 }} className="!text-right">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {indicators.map((ind) => {
+            const st = statusMap[ind.status];
+            return (
+              <tr key={ind.label}>
+                <td><span className={st.color}>{ind.icon}</span></td>
+                <td>{ind.label}</td>
+                <td className="!text-right">
+                  <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${st.color}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                    {st.label}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
 
-      {/* Indicators as table rows */}
-      {indicators.map((ind) => {
-        const st = statusMap[ind.status];
-        return (
-          <div key={ind.label} className="mx-6 py-3 flex items-center border-b border-gray-100 last:border-b-0">
-            <span className={`flex-shrink-0 ${st.color}`}>{ind.icon}</span>
-            <span className="text-sm text-gray-600 ml-3 flex-1">{ind.label}</span>
-            <span className={`flex items-center gap-1.5 text-xs font-semibold ${st.color}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-              {st.label}
-            </span>
-          </div>
-        );
-      })}
+      {/* Metrics table */}
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th style={{ width: 80 }} className="!text-right">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {metrics.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              <td className="!text-right">
+                <span className={`font-semibold tabular-nums ${row.color}`}>{row.value}</span>
+              </td>
+            </tr>
+          ))}
+          <tr>
+            <td>
+              <div className="flex items-center justify-between">
+                <span>Uptime (24h)</span>
+              </div>
+            </td>
+            <td className="!text-right">
+              <span className="font-semibold tabular-nums text-gray-900">{uptimePercent}%</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      {/* Metrics - section header */}
-      <div className="mx-6 mt-5 mb-2">
-        <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Performance</span>
-      </div>
-
-      {/* Metrics rows */}
-      {metrics.map((row) => (
-        <div key={row.label} className="mx-6 py-3 flex items-center justify-between border-b border-gray-100 last:border-b-0">
-          <span className="text-sm text-gray-500">{row.label}</span>
-          <span className={`text-sm font-semibold tabular-nums ${row.color}`}>{row.value}</span>
-        </div>
-      ))}
-
-      {/* Uptime */}
-      <div className="mx-6 mt-4 mb-6">
-        <div className="flex justify-between mb-2">
-          <span className="text-sm text-gray-500">Uptime (24h)</span>
-          <span className="text-sm font-semibold text-gray-900 tabular-nums">{uptimePercent}%</span>
-        </div>
+      {/* Uptime bar */}
+      <div className="mx-8 mb-6 mt-2">
         <div className="w-full bg-gray-100 rounded h-1.5">
           <div className="bg-emerald-500 h-1.5 rounded transition-all" style={{ width: `${uptimePercent}%` }} />
         </div>
