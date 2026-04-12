@@ -8,13 +8,6 @@
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
-  transition: box-shadow var(--dur-base) var(--ease),
-              transform var(--dur-base) var(--ease);
-}
-
-.panel:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
 }
 
 .panel__header {
@@ -68,14 +61,9 @@
   display: flex;
   align-items: flex-start;
   gap: var(--sp-5);
-  transition: box-shadow var(--dur-base) var(--ease),
-              transform var(--dur-base) var(--ease);
 }
 
-.stat-card:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
-}
+
 
 .stat-card__icon {
   width: 48px; height: 48px;

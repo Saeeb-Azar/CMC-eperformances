@@ -87,8 +87,8 @@ export default function LiveFlowPage() {
         {/* Flow tracker */}
         <PackageFlowTracker steps={demoSteps} showTechnical={viewMode === 'technical'} />
 
-        {/* Bottom: feed + side panels */}
-        <div className="grid-2-1 gap-6">
+        {/* Bottom: feed (70%) + side panels (30%) */}
+        <div className="grid-main gap-6">
           <LiveEventFeed events={demoEvents} />
           <div className="stack-5">
             <MachineHealthPanel
