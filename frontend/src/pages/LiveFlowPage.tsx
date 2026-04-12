@@ -87,20 +87,20 @@ export default function LiveFlowPage() {
         {/* Flow tracker */}
         <PackageFlowTracker steps={demoSteps} showTechnical={viewMode === 'technical'} />
 
-        {/* Bottom: feed (70%) + side panels (30%) */}
-        <div className="grid-main gap-6">
-          <LiveEventFeed events={demoEvents} />
-          <div className="stack-5">
-            <MachineHealthPanel
-              machineName="CW-001 Main Hall"
-              indicators={healthIndicators}
-              packagesTotal={487}
-              packagesSuccess={461}
-              packagesRejected={22}
-              uptimePercent={98.7}
-            />
-            <ErrorPanel errors={demoErrors} />
-          </div>
+        {/* Activity feed - full width */}
+        <LiveEventFeed events={demoEvents} />
+
+        {/* Machine Health + Issues side by side */}
+        <div className="grid-2 gap-5">
+          <MachineHealthPanel
+            machineName="CW-001 Main Hall"
+            indicators={healthIndicators}
+            packagesTotal={487}
+            packagesSuccess={461}
+            packagesRejected={22}
+            uptimePercent={98.7}
+          />
+          <ErrorPanel errors={demoErrors} />
         </div>
       </div>
     </div>

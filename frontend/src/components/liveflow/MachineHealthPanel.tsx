@@ -14,10 +14,10 @@ interface MachineHealthPanelProps {
 }
 
 const statusMap = {
-  healthy: { color: 'text-emerald-600', bg: 'bg-emerald-50', label: 'OK' },
-  warning: { color: 'text-amber-600', bg: 'bg-amber-50', label: 'Warning' },
-  error:   { color: 'text-red-600', bg: 'bg-red-50', label: 'Error' },
-  offline: { color: 'text-gray-400', bg: 'bg-gray-50', label: 'Offline' },
+  healthy: { color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-400', label: 'OK' },
+  warning: { color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-400', label: 'Warning' },
+  error:   { color: 'text-red-600', bg: 'bg-red-50', dot: 'bg-red-400', label: 'Error' },
+  offline: { color: 'text-gray-400', bg: 'bg-gray-50', dot: 'bg-gray-300', label: 'Offline' },
 };
 
 export default function MachineHealthPanel({
@@ -30,44 +30,59 @@ export default function MachineHealthPanel({
         <span className="text-xs text-gray-400">{machineName}</span>
       </div>
 
-      {/* Indicators grid */}
-      <div className="px-5 py-4 grid grid-cols-2 gap-2.5">
-        {indicators.map((ind) => {
-          const st = statusMap[ind.status];
-          return (
-            <div key={ind.label} className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg ${st.bg}`}>
-              <span className={`flex-shrink-0 ${st.color}`}>{ind.icon}</span>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-500">{ind.label}</p>
-                <p className={`text-xs font-semibold ${st.color}`}>{st.label}</p>
-              </div>
-            </div>
-          );
-        })}
+      {/* System status table */}
+      <div className="px-6 py-4">
+        <table className="w-full">
+          <tbody>
+            {indicators.map((ind) => {
+              const st = statusMap[ind.status];
+              return (
+                <tr key={ind.label} className="border-b border-gray-50 last:border-b-0">
+                  <td className="py-3 pr-3" style={{ width: 32 }}>
+                    <span className={`${st.color}`}>{ind.icon}</span>
+                  </td>
+                  <td className="py-3 text-sm text-gray-600">{ind.label}</td>
+                  <td className="py-3 text-right">
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${st.color}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                      {st.label}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
-      {/* Stats */}
-      <div className="px-5 py-4 border-t border-gray-100 space-y-2.5">
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Packages today</span>
-          <span className="text-sm font-semibold text-gray-900 tabular-nums">{packagesTotal}</span>
+      {/* Metrics */}
+      <div className="px-6 py-4 border-t border-gray-100">
+        <table className="w-full">
+          <tbody>
+            <tr className="border-b border-gray-50">
+              <td className="py-2.5 text-sm text-gray-500">Packages today</td>
+              <td className="py-2.5 text-sm font-semibold text-gray-900 text-right tabular-nums">{packagesTotal}</td>
+            </tr>
+            <tr className="border-b border-gray-50">
+              <td className="py-2.5 text-sm text-gray-500">Successful</td>
+              <td className="py-2.5 text-sm font-semibold text-emerald-600 text-right tabular-nums">{packagesSuccess}</td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-sm text-gray-500">Rejected</td>
+              <td className="py-2.5 text-sm font-semibold text-amber-600 text-right tabular-nums">{packagesRejected}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Uptime */}
+      <div className="px-6 py-4 border-t border-gray-100">
+        <div className="flex justify-between mb-2">
+          <span className="text-sm text-gray-500">Uptime (24h)</span>
+          <span className="text-sm font-semibold text-gray-900 tabular-nums">{uptimePercent}%</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Successful</span>
-          <span className="text-sm font-semibold text-emerald-600 tabular-nums">{packagesSuccess}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-sm text-gray-500">Rejected</span>
-          <span className="text-sm font-semibold text-amber-600 tabular-nums">{packagesRejected}</span>
-        </div>
-        <div className="pt-2.5 border-t border-gray-100">
-          <div className="flex justify-between mb-1.5">
-            <span className="text-sm text-gray-500">Uptime (24h)</span>
-            <span className="text-sm font-semibold text-gray-900 tabular-nums">{uptimePercent}%</span>
-          </div>
-          <div className="w-full bg-gray-100 rounded h-1.5">
-            <div className="bg-emerald-500 h-1.5 rounded transition-all" style={{ width: `${uptimePercent}%` }} />
-          </div>
+        <div className="w-full bg-gray-100 rounded h-1.5">
+          <div className="bg-emerald-500 h-1.5 rounded transition-all" style={{ width: `${uptimePercent}%` }} />
         </div>
       </div>
     </div>
