@@ -5,26 +5,25 @@ interface StatCardProps {
   value: string | number;
   sub?: string;
   icon: ReactNode;
-  trend?: 'up' | 'down' | 'neutral';
   color?: 'default' | 'success' | 'danger' | 'warning' | 'info';
 }
 
-const colorMap = {
-  default: 'bg-surface-tertiary text-text-secondary',
-  success: 'bg-green-50 text-accent',
-  danger: 'bg-red-50 text-danger',
-  warning: 'bg-amber-50 text-warning',
-  info: 'bg-blue-50 text-info',
+const iconBg = {
+  default: 'bg-gray-100 text-gray-500',
+  success: 'bg-emerald-50 text-emerald-600',
+  danger: 'bg-red-50 text-red-500',
+  warning: 'bg-amber-50 text-amber-600',
+  info: 'bg-blue-50 text-blue-600',
 };
 
 export default function StatCard({ label, value, sub, icon, color = 'default' }: StatCardProps) {
   return (
-    <div className="bg-surface rounded-xl border border-border p-5 flex items-start gap-4">
-      <div className={`p-3 rounded-lg ${colorMap[color]}`}>{icon}</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-text-secondary">{label}</p>
-        <p className="text-2xl font-semibold text-text-primary mt-1">{value}</p>
-        {sub && <p className="text-xs text-text-muted mt-1">{sub}</p>}
+    <div className="stat-card">
+      <div className={`stat-card__icon ${iconBg[color]}`}>{icon}</div>
+      <div className="stat-card__content">
+        <p className="stat-card__label">{label}</p>
+        <p className="stat-card__value">{value}</p>
+        {sub && <p className="stat-card__sub">{sub}</p>}
       </div>
     </div>
   );

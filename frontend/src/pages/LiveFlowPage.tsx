@@ -1,19 +1,19 @@
-import { ScanBarcode, Printer, Wifi, AlertTriangle } from 'lucide-react';
-import Topbar from '../components/layout/Topbar';
+import { ScanBarcode, Printer, Wifi, AlertTriangle, Eye, Code } from 'lucide-react';
+import { useState } from 'react';
+import TopStatusBar from '../components/liveflow/TopStatusBar';
 import LiveActivityCard from '../components/liveflow/LiveActivityCard';
 import PackageFlowTracker, { type FlowStep } from '../components/liveflow/PackageFlowTracker';
 import LiveEventFeed, { type LiveEvent } from '../components/liveflow/LiveEventFeed';
 import ErrorPanel, { type ErrorItem } from '../components/liveflow/ErrorPanel';
 import MachineHealthPanel from '../components/liveflow/MachineHealthPanel';
 
-// --- Demo data ---
 const demoSteps: FlowStep[] = [
-  { id: 'scan', label: 'Scanned', technicalCode: 'ENQ', icon: <ScanBarcode size={18} />, status: 'completed', timestamp: '14:32:01' },
-  { id: 'enter', label: 'Entered', technicalCode: 'IND', icon: <ScanBarcode size={18} />, status: 'completed', timestamp: '14:32:04' },
-  { id: 'measure', label: 'Measured', technicalCode: 'ACK', icon: <ScanBarcode size={18} />, status: 'completed', timestamp: '14:32:12' },
-  { id: 'wrap', label: 'Wrapped', technicalCode: '', icon: <ScanBarcode size={18} />, status: 'completed' },
-  { id: 'label', label: 'Labeled', technicalCode: 'LAB', icon: <ScanBarcode size={18} />, status: 'active', timestamp: '14:32:30' },
-  { id: 'complete', label: 'Completed', technicalCode: 'END', icon: <ScanBarcode size={18} />, status: 'pending' },
+  { id: 'scan', label: 'Scanned', technicalCode: 'ENQ', icon: <ScanBarcode size={15} />, status: 'completed', timestamp: '14:32:01' },
+  { id: 'enter', label: 'Entered', technicalCode: 'IND', icon: <ScanBarcode size={15} />, status: 'completed', timestamp: '14:32:04' },
+  { id: 'measure', label: 'Measured', technicalCode: 'ACK', icon: <ScanBarcode size={15} />, status: 'completed', timestamp: '14:32:12' },
+  { id: 'wrap', label: 'Wrapped', technicalCode: '', icon: <ScanBarcode size={15} />, status: 'completed' },
+  { id: 'label', label: 'Labeled', technicalCode: 'LAB', icon: <ScanBarcode size={15} />, status: 'active', timestamp: '14:32:30' },
+  { id: 'complete', label: 'Completed', technicalCode: 'END', icon: <ScanBarcode size={15} />, status: 'pending' },
 ];
 
 const demoEvents: LiveEvent[] = [
@@ -25,7 +25,7 @@ const demoEvents: LiveEvent[] = [
   { id: '6', message: 'Package completed successfully', technicalCode: 'END', severity: 'success', timestamp: '14:31:45', referenceId: 'ref-0486' },
   { id: '7', message: 'Label verified and applied', technicalCode: 'END', severity: 'success', timestamp: '14:31:44', referenceId: 'ref-0486' },
   { id: '8', message: 'Connection active', technicalCode: 'HBT', severity: 'info', timestamp: '14:31:30' },
-  { id: '9', message: 'Package rejected — dimensions exceed maximum', technicalCode: 'ACK', severity: 'warning', timestamp: '14:29:15', barcode: '8711319002345', referenceId: 'ref-0484' },
+  { id: '9', message: 'Package rejected — dimensions exceed maximum', technicalCode: 'ACK', severity: 'warning', timestamp: '14:29:15', barcode: '8711319002345' },
 ];
 
 const demoErrors: ErrorItem[] = [
@@ -41,16 +41,42 @@ const healthIndicators = [
 ];
 
 export default function LiveFlowPage() {
+  const [viewMode, setViewMode] = useState<'operator' | 'technical'>('operator');
+
   return (
     <div>
-      <Topbar
-        title="CMC Live Flow"
-        liveStatus="Packaging in progress"
-        showViewToggle
+      <TopStatusBar
+        machineState="running"
+        connectionActive={true}
+        activeBarcode="4062196101493"
+        currentStep="Labeling"
+        statusMessage="Packaging in progress"
       />
 
-      <div className="page-content stack-5">
-        {/* Hero: What is happening now? */}
+      <div className="page-content">
+        {/* Page header */}
+        <div className="page-header">
+          <div>
+            <h1 className="page-header__title">CMC Live Flow</h1>
+            <p className="page-header__desc">Real-time packaging status and event stream</p>
+          </div>
+          <div className="segmented">
+            <button
+              onClick={() => setViewMode('operator')}
+              className={`segmented__item ${viewMode === 'operator' ? 'segmented__item--active' : ''}`}
+            >
+              <Eye size={14} /> Operator
+            </button>
+            <button
+              onClick={() => setViewMode('technical')}
+              className={`segmented__item ${viewMode === 'technical' ? 'segmented__item--active' : ''}`}
+            >
+              <Code size={14} /> Technical
+            </button>
+          </div>
+        </div>
+
+        {/* Hero: current status */}
         <LiveActivityCard
           state="labeling"
           barcode="4062196101493"
@@ -58,15 +84,12 @@ export default function LiveFlowPage() {
           elapsedSeconds={29}
         />
 
-        {/* Package journey */}
-        <PackageFlowTracker steps={demoSteps} showTechnical={false} />
+        {/* Flow tracker */}
+        <PackageFlowTracker steps={demoSteps} showTechnical={viewMode === 'technical'} />
 
-        {/* Bottom grid: Feed + Side panels */}
-        <div className="grid-2-1 gap-5">
-          {/* Event Feed */}
+        {/* Bottom: feed + side panels */}
+        <div className="grid-2-1 gap-6">
           <LiveEventFeed events={demoEvents} />
-
-          {/* Side: Health + Issues */}
           <div className="stack-5">
             <MachineHealthPanel
               machineName="CW-001 Main Hall"
