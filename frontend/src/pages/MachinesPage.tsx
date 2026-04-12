@@ -1,6 +1,6 @@
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
-import { Server, Wifi, WifiOff, Settings, Ruler, Tag, FileText } from 'lucide-react';
+import { Server, Wifi, WifiOff, Tag, FileText, Ruler } from 'lucide-react';
 
 const demoMachines = [
   { id: '1', machine_id: '0001', name: 'CW-001 Main Hall', model: 'CW1000', status: 'RUNNING', is_online: true, tcp_host: '192.168.178.41', tcp_port: 15001, lab1_enabled: true, lab2_enabled: false, inv_enabled: true, enq_sequence: 4872, uptime_24h: 98.7, last_heartbeat: '2 sec ago', max_length_mm: 6000, max_width_mm: 4000, max_height_mm: 3000 },
@@ -21,56 +21,66 @@ export default function MachinesPage() {
           <button className="btn btn--primary btn--lg">Add Machine</button>
         </div>
 
-        <div className="stack-4">
-          {demoMachines.map((m) => (
-            <div key={m.id} className="panel">
-              {/* Header */}
-              <div className="px-6 py-5 flex items-center justify-between border-b border-gray-100">
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${m.is_online ? 'bg-emerald-50' : 'bg-gray-100'}`}>
-                    <Server size={18} className={m.is_online ? 'text-emerald-600' : 'text-gray-400'} />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900">{m.name}</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">{m.model} · ID: {m.machine_id} · {m.tcp_host}:{m.tcp_port}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {m.is_online ? <Wifi size={16} className="text-emerald-500" /> : <WifiOff size={16} className="text-gray-400" />}
-                  <StatusBadge status={m.status} />
-                  <button className="btn-icon"><Settings size={16} /></button>
-                </div>
-              </div>
-
-              {/* Details */}
-              <div className="px-6 py-5 grid grid-cols-6 gap-6">
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">Uptime (24h)</p>
-                  <p className="text-lg font-bold text-gray-900 tabular-nums">{m.uptime_24h}%</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">ENQ Sequence</p>
-                  <p className="text-base font-semibold text-gray-900 font-mono tabular-nums">{m.enq_sequence.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">Last Heartbeat</p>
-                  <p className="text-base font-medium text-gray-700">{m.last_heartbeat}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">Max Dimensions</p>
-                  <p className="text-sm text-gray-700 flex items-center gap-1"><Ruler size={12} className="text-gray-400" />{m.max_length_mm / 10}×{m.max_width_mm / 10}×{m.max_height_mm / 10} cm</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-1">Stations</p>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className={`flex items-center gap-1 ${m.lab1_enabled ? 'text-emerald-600' : 'text-gray-300'}`}><Tag size={11} /> LAB1</span>
-                    <span className={`flex items-center gap-1 ${m.lab2_enabled ? 'text-emerald-600' : 'text-gray-300'}`}><Tag size={11} /> LAB2</span>
-                    <span className={`flex items-center gap-1 ${m.inv_enabled ? 'text-emerald-600' : 'text-gray-300'}`}><FileText size={11} /> INV</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="panel">
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: 44 }}></th>
+                <th>Machine</th>
+                <th style={{ width: 100 }}>Status</th>
+                <th style={{ width: 90 }}>Uptime</th>
+                <th style={{ width: 90 }}>Sequence</th>
+                <th style={{ width: 100 }}>Heartbeat</th>
+                <th style={{ width: 160 }}>Max Dimensions</th>
+                <th style={{ width: 130 }}>Stations</th>
+              </tr>
+            </thead>
+            <tbody>
+              {demoMachines.map((m) => (
+                <tr key={m.id}>
+                  <td>
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${m.is_online ? 'bg-emerald-50' : 'bg-gray-100'}`}>
+                      <Server size={16} className={m.is_online ? 'text-emerald-600' : 'text-gray-400'} />
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <span className="cell-primary block">{m.name}</span>
+                      <span className="cell-muted block mt-0.5">{m.model} · ID: {m.machine_id} · {m.tcp_host}:{m.tcp_port}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      {m.is_online ? <Wifi size={14} className="text-emerald-500" /> : <WifiOff size={14} className="text-gray-400" />}
+                      <StatusBadge status={m.status} />
+                    </div>
+                  </td>
+                  <td>
+                    <span className="cell-primary tabular-nums">{m.uptime_24h}%</span>
+                  </td>
+                  <td>
+                    <span className="cell-mono tabular-nums">{m.enq_sequence.toLocaleString()}</span>
+                  </td>
+                  <td>
+                    <span className="cell-muted">{m.last_heartbeat}</span>
+                  </td>
+                  <td>
+                    <span className="cell-muted flex items-center gap-1">
+                      <Ruler size={12} className="text-gray-400" />
+                      {m.max_length_mm / 10}×{m.max_width_mm / 10}×{m.max_height_mm / 10} cm
+                    </span>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={`flex items-center gap-0.5 ${m.lab1_enabled ? 'text-emerald-600' : 'text-gray-300'}`}><Tag size={10} /> LAB1</span>
+                      <span className={`flex items-center gap-0.5 ${m.lab2_enabled ? 'text-emerald-600' : 'text-gray-300'}`}><Tag size={10} /> LAB2</span>
+                      <span className={`flex items-center gap-0.5 ${m.inv_enabled ? 'text-emerald-600' : 'text-gray-300'}`}><FileText size={10} /> INV</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
