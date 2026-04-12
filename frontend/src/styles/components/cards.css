@@ -8,6 +8,7 @@
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .panel__header {

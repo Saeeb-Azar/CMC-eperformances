@@ -50,15 +50,22 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
       </div>
 
       {/* Table-style feed */}
-      <div className="max-h-[560px] overflow-y-auto">
-        <table className="w-full">
+      <div className="max-h-[560px] overflow-y-auto overflow-x-hidden">
+        <table className="w-full" style={{ tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 64 }} />
+            <col />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 80 }} />
+          </colgroup>
           <thead>
-            <tr>
-              <th className="text-left pl-8 pr-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 52 }}></th>
-              <th className="text-left px-0 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100">Event</th>
-              <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 100 }}>Code</th>
-              <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 120 }}>Reference</th>
-              <th className="text-right pr-8 pl-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 90 }}>Time</th>
+            <tr className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60 border-b border-gray-100">
+              <th className="text-left pl-8 py-3"></th>
+              <th className="text-left py-3">Event</th>
+              <th className="text-left py-3">Code</th>
+              <th className="text-left py-3">Reference</th>
+              <th className="text-right pr-8 py-3">Time</th>
             </tr>
           </thead>
           <tbody>

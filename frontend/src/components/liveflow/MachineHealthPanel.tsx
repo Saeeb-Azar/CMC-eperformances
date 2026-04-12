@@ -32,13 +32,18 @@ export default function MachineHealthPanel({
 
       {/* System status table */}
       <div className="px-8 py-4">
-        <table className="w-full">
+        <table className="w-full" style={{ tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 36 }} />
+            <col />
+            <col style={{ width: 90 }} />
+          </colgroup>
           <tbody>
             {indicators.map((ind) => {
               const st = statusMap[ind.status];
               return (
                 <tr key={ind.label} className="border-b border-gray-50 last:border-b-0">
-                  <td className="py-3 pr-3" style={{ width: 32 }}>
+                  <td className="py-3">
                     <span className={`${st.color}`}>{ind.icon}</span>
                   </td>
                   <td className="py-3 text-sm text-gray-600">{ind.label}</td>
@@ -57,7 +62,7 @@ export default function MachineHealthPanel({
 
       {/* Metrics */}
       <div className="px-8 py-4 border-t border-gray-100">
-        <table className="w-full">
+        <table className="w-full" style={{ tableLayout: 'fixed' }}>
           <tbody>
             <tr className="border-b border-gray-50">
               <td className="py-2.5 text-sm text-gray-500">Packages today</td>
