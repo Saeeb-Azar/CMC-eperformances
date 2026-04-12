@@ -44,45 +44,64 @@
 .input--with-icon { padding-left: 42px; }
 
 /* ═══════════════════════════════════
-   TABLES - spacious, scannable
+   TABLES - calm, spacious, no hover
    ═══════════════════════════════════ */
 
 .table {
   width: 100%;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   border-collapse: separate;
   border-spacing: 0;
 }
 
 .table th {
   text-align: left;
-  padding: var(--sp-4) var(--sp-6);
+  padding: 14px var(--sp-6);
   font-size: 11px;
   font-weight: var(--weight-semibold);
   color: var(--clr-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-bottom: 2px solid var(--clr-border);
-  background: var(--clr-surface);
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--clr-border);
+  background: var(--clr-surface-sunken);
 }
+
+.table th:first-child { padding-left: var(--sp-8); }
+.table th:last-child { padding-right: var(--sp-8); }
 
 .table td {
-  padding: var(--sp-5) var(--sp-6);
+  padding: 18px var(--sp-6);
   border-bottom: 1px solid var(--clr-border-light);
   vertical-align: middle;
-  color: var(--clr-text);
+  color: var(--clr-text-secondary);
 }
 
-.table tbody tr {
-  transition: background var(--dur-fast) var(--ease);
-}
-
-.table tbody tr:hover td {
-  background: var(--clr-surface-hover);
-}
+.table td:first-child { padding-left: var(--sp-8); }
+.table td:last-child { padding-right: var(--sp-8); }
 
 .table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Typography helpers inside tables */
+.table .cell-primary {
+  color: var(--clr-text);
+  font-weight: var(--weight-semibold);
+}
+
+.table .cell-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--clr-text-secondary);
+}
+
+.table .cell-muted {
+  color: var(--clr-text-muted);
+  font-size: var(--text-sm);
+}
+
+.table .cell-empty {
+  color: var(--clr-border);
 }
 
 /* ═══════════════════════════════════

@@ -82,19 +82,19 @@ export default function AuditPage() {
               ) : (
                 filtered.map((log) => (
                   <tr key={log.id}>
-                    <td><span className="font-mono text-xs text-gray-400 tabular-nums">{formatTime(log.timestamp)}</span></td>
+                    <td className="cell-muted tabular-nums font-mono">{formatTime(log.timestamp)}</td>
                     <td><span className={categoryBadge[log.category] || 'badge badge--neutral'}>{log.category.replace(/_/g, ' ')}</span></td>
-                    <td><span className="font-mono text-xs font-semibold text-gray-900">{log.event_type}</span></td>
-                    <td>{log.machine_id ? <span className="font-mono text-xs text-gray-500">{log.machine_id}</span> : <span className="text-gray-300">—</span>}</td>
-                    <td>{log.reference_id ? <span className="font-mono text-xs text-gray-500">{log.reference_id}</span> : <span className="text-gray-300">—</span>}</td>
+                    <td className="cell-primary"><span className="font-mono">{log.event_type}</span></td>
+                    <td>{log.machine_id ? <span className="cell-mono">{log.machine_id}</span> : <span className="cell-empty">—</span>}</td>
+                    <td>{log.reference_id ? <span className="cell-mono">{log.reference_id}</span> : <span className="cell-empty">—</span>}</td>
                     <td>
                       {log.previous_state && log.new_state ? (
-                        <span className="text-xs"><span className="text-gray-400">{log.previous_state}</span> <span className="text-gray-300">→</span> <span className="font-medium text-gray-700">{log.new_state}</span></span>
+                        <span className="cell-muted">{log.previous_state} <span className="cell-empty">→</span> <span className="cell-primary">{log.new_state}</span></span>
                       ) : log.new_state ? (
-                        <span className="text-xs font-medium text-gray-700">{log.new_state}</span>
-                      ) : <span className="text-gray-300">—</span>}
+                        <span className="cell-primary">{log.new_state}</span>
+                      ) : <span className="cell-empty">—</span>}
                     </td>
-                    <td className="text-gray-500 text-xs">{log.detail}</td>
+                    <td className="cell-muted">{log.detail}</td>
                   </tr>
                 ))
               )}

@@ -85,13 +85,13 @@ export default function OrdersPage() {
               ) : (
                 filtered.map((o) => (
                   <tr key={o.id}>
-                    <td><span className="font-mono font-semibold text-gray-900">{o.reference_id}</span></td>
-                    <td><span className="font-mono text-gray-500 text-xs">{o.barcode}</span></td>
+                    <td className="cell-primary"><span className="font-mono">{o.reference_id}</span></td>
+                    <td className="cell-mono">{o.barcode}</td>
                     <td><StatusBadge status={o.state} /></td>
-                    <td className="text-gray-600">{o.carrier || <span className="text-gray-300">—</span>}</td>
-                    <td>{o.tracking_number ? <span className="font-mono text-xs text-gray-500">{o.tracking_number}</span> : <span className="text-gray-300">—</span>}</td>
-                    <td className="tabular-nums">{o.final_weight_g ? `${(o.final_weight_g / 1000).toFixed(2)} kg` : <span className="text-gray-300">—</span>}</td>
-                    <td className="text-gray-400 tabular-nums text-xs">{formatTime(o.created_at)}</td>
+                    <td>{o.carrier || <span className="cell-empty">—</span>}</td>
+                    <td>{o.tracking_number ? <span className="cell-mono">{o.tracking_number}</span> : <span className="cell-empty">—</span>}</td>
+                    <td className="tabular-nums">{o.final_weight_g ? `${(o.final_weight_g / 1000).toFixed(2)} kg` : <span className="cell-empty">—</span>}</td>
+                    <td className="cell-muted tabular-nums">{formatTime(o.created_at)}</td>
                   </tr>
                 ))
               )}

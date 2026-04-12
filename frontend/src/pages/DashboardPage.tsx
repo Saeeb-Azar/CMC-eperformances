@@ -115,7 +115,7 @@ export default function DashboardPage() {
           </div>
           <div>
             {recentOrders.map((order) => (
-              <div key={order.id} className="px-6 py-4 flex items-center justify-between border-b border-gray-50 last:border-b-0 hover:bg-gray-50/50 transition-colors">
+              <div key={order.id} className="px-8 py-[18px] flex items-center justify-between border-b border-gray-100 last:border-b-0">
                 <div className="flex items-center gap-5">
                   <span className="text-sm font-semibold font-mono text-gray-900">{order.ref}</span>
                   <span className="text-sm text-gray-400 font-mono">{order.barcode}</span>

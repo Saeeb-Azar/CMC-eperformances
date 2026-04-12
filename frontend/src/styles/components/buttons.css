@@ -59,28 +59,27 @@
 .filter-tabs {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: 2px;
   flex-wrap: wrap;
 }
 
 .filter-tab {
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  padding: 0 var(--sp-3);
+  height: 34px;
+  padding: 0 14px;
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--clr-text-secondary);
+  color: var(--clr-text-muted);
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   cursor: pointer;
-  transition: all var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease);
 }
 
 .filter-tab:hover {
-  background: var(--clr-surface-sunken);
-  color: var(--clr-text);
+  color: var(--clr-text-secondary);
 }
 
 .filter-tab--active {
