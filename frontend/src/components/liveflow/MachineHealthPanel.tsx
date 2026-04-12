@@ -14,10 +14,10 @@ interface MachineHealthPanelProps {
 }
 
 const statusMap = {
-  healthy: { color: 'text-emerald-600', bg: 'bg-emerald-50', dot: 'bg-emerald-400', label: 'OK' },
-  warning: { color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-400', label: 'Warning' },
-  error:   { color: 'text-red-600', bg: 'bg-red-50', dot: 'bg-red-400', label: 'Error' },
-  offline: { color: 'text-gray-400', bg: 'bg-gray-50', dot: 'bg-gray-300', label: 'Offline' },
+  healthy: { color: 'text-emerald-600', dot: 'bg-emerald-400', label: 'OK' },
+  warning: { color: 'text-amber-600', dot: 'bg-amber-400', label: 'Warning' },
+  error:   { color: 'text-red-600', dot: 'bg-red-400', label: 'Error' },
+  offline: { color: 'text-gray-400', dot: 'bg-gray-300', label: 'Offline' },
 };
 
 export default function MachineHealthPanel({
@@ -30,54 +30,35 @@ export default function MachineHealthPanel({
         <span className="text-xs text-gray-400">{machineName}</span>
       </div>
 
-      {/* System status table */}
+      {/* Indicators */}
       <div className="px-8 py-4">
-        <table className="w-full" style={{ tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 36 }} />
-            <col />
-            <col style={{ width: 90 }} />
-          </colgroup>
-          <tbody>
-            {indicators.map((ind) => {
-              const st = statusMap[ind.status];
-              return (
-                <tr key={ind.label} className="border-b border-gray-50 last:border-b-0">
-                  <td className="py-3">
-                    <span className={`${st.color}`}>{ind.icon}</span>
-                  </td>
-                  <td className="py-3 text-sm text-gray-600">{ind.label}</td>
-                  <td className="py-3 text-right">
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${st.color}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                      {st.label}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {indicators.map((ind) => {
+          const st = statusMap[ind.status];
+          return (
+            <div key={ind.label} className="flex items-center py-2.5 border-b border-gray-50 last:border-b-0">
+              <span className={`flex-shrink-0 ${st.color}`}>{ind.icon}</span>
+              <span className="text-sm text-gray-600 ml-3 flex-1">{ind.label}</span>
+              <span className={`flex items-center gap-1.5 text-xs font-semibold ${st.color}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                {st.label}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Metrics */}
       <div className="px-8 py-4 border-t border-gray-100">
-        <table className="w-full" style={{ tableLayout: 'fixed' }}>
-          <tbody>
-            <tr className="border-b border-gray-50">
-              <td className="py-2.5 text-sm text-gray-500">Packages today</td>
-              <td className="py-2.5 text-sm font-semibold text-gray-900 text-right tabular-nums">{packagesTotal}</td>
-            </tr>
-            <tr className="border-b border-gray-50">
-              <td className="py-2.5 text-sm text-gray-500">Successful</td>
-              <td className="py-2.5 text-sm font-semibold text-emerald-600 text-right tabular-nums">{packagesSuccess}</td>
-            </tr>
-            <tr>
-              <td className="py-2.5 text-sm text-gray-500">Rejected</td>
-              <td className="py-2.5 text-sm font-semibold text-amber-600 text-right tabular-nums">{packagesRejected}</td>
-            </tr>
-          </tbody>
-        </table>
+        {[
+          { label: 'Packages today', value: packagesTotal, color: 'text-gray-900' },
+          { label: 'Successful', value: packagesSuccess, color: 'text-emerald-600' },
+          { label: 'Rejected', value: packagesRejected, color: 'text-amber-600' },
+        ].map((row) => (
+          <div key={row.label} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-b-0">
+            <span className="text-sm text-gray-500">{row.label}</span>
+            <span className={`text-sm font-semibold tabular-nums ${row.color}`}>{row.value}</span>
+          </div>
+        ))}
       </div>
 
       {/* Uptime */}

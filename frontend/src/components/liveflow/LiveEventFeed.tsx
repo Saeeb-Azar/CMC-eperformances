@@ -49,69 +49,50 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
         </div>
       </div>
 
-      {/* Table-style feed */}
-      <div className="max-h-[560px] overflow-y-auto overflow-x-hidden">
-        <table className="w-full" style={{ tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 64 }} />
-            <col />
-            <col style={{ width: 90 }} />
-            <col style={{ width: 110 }} />
-            <col style={{ width: 80 }} />
-          </colgroup>
-          <thead>
-            <tr className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/60 border-b border-gray-100">
-              <th className="text-left pl-8 py-3"></th>
-              <th className="text-left py-3">Event</th>
-              <th className="text-left py-3">Code</th>
-              <th className="text-left py-3">Reference</th>
-              <th className="text-right pr-8 py-3">Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-16 text-center text-gray-400 text-sm">
-                  Waiting for activity...
-                </td>
-              </tr>
-            ) : (
-              visible.map((event, idx) => {
-                const sev = sevConfig[event.severity];
-                const icon = icons[event.technicalCode] || fallbackIcons[event.severity];
-                const isFirst = idx === 0;
+      <div className="max-h-[560px] overflow-y-auto">
+        {visible.length === 0 ? (
+          <div className="px-8 py-16 text-center text-gray-400 text-sm">Waiting for activity...</div>
+        ) : (
+          visible.map((event, idx) => {
+            const sev = sevConfig[event.severity];
+            const icon = icons[event.technicalCode] || fallbackIcons[event.severity];
+            const isFirst = idx === 0;
 
-                return (
-                  <tr key={event.id} className="border-b border-gray-50 last:border-b-0">
-                    <td className="pl-8 pr-4 py-4">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${sev.bg} ${sev.color}`}>
-                        {icon}
-                      </div>
-                    </td>
-                    <td className="px-0 py-4">
-                      <p className={`text-sm leading-relaxed ${isFirst ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-                        {event.message}
-                      </p>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="text-xs text-gray-400 font-mono">{event.technicalCode}</span>
-                    </td>
-                    <td className="px-4 py-4">
-                      {event.referenceId ? (
-                        <span className="text-xs text-gray-400 font-mono">{event.referenceId}</span>
-                      ) : (
-                        <span className="text-gray-200">—</span>
-                      )}
-                    </td>
-                    <td className="pr-8 pl-4 py-4 text-right">
-                      <span className="text-xs text-gray-400 tabular-nums">{event.timestamp}</span>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+            return (
+              <div
+                key={event.id}
+                className="px-8 py-4 flex items-center gap-4 border-b border-gray-100 last:border-b-0"
+              >
+                {/* Icon */}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${sev.bg} ${sev.color}`}>
+                  {icon}
+                </div>
+
+                {/* Event text - takes remaining space */}
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm leading-snug truncate ${isFirst ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                    {event.message}
+                  </p>
+                </div>
+
+                {/* Code */}
+                <span className="text-xs text-gray-400 font-mono w-10 flex-shrink-0 text-center">
+                  {event.technicalCode}
+                </span>
+
+                {/* Reference */}
+                <span className="text-xs text-gray-400 font-mono w-20 flex-shrink-0 text-center">
+                  {event.referenceId || '—'}
+                </span>
+
+                {/* Time */}
+                <span className="text-xs text-gray-400 tabular-nums w-16 flex-shrink-0 text-right">
+                  {event.timestamp}
+                </span>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
