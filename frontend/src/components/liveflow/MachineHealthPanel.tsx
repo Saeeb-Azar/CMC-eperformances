@@ -13,81 +13,64 @@ interface MachineHealthPanelProps {
   uptimePercent: number;
 }
 
-const statusConfig = {
-  healthy: { color: 'text-emerald-600', bg: 'bg-emerald-50 border border-emerald-100', label: 'OK' },
-  warning: { color: 'text-amber-600', bg: 'bg-amber-50 border border-amber-100', label: 'Warning' },
-  error: { color: 'text-red-600', bg: 'bg-red-50 border border-red-100', label: 'Error' },
-  offline: { color: 'text-gray-400', bg: 'bg-gray-50 border border-gray-100', label: 'Offline' },
+const statusMap = {
+  healthy: { color: 'text-green-600', label: 'OK' },
+  warning: { color: 'text-amber-600', label: 'Warning' },
+  error:   { color: 'text-red-600',   label: 'Error' },
+  offline: { color: 'text-zinc-400',  label: 'Offline' },
 };
 
 export default function MachineHealthPanel({
-  machineName,
-  indicators,
-  packagesTotal,
-  packagesSuccess,
-  packagesRejected,
-  uptimePercent,
+  machineName, indicators, packagesTotal, packagesSuccess, packagesRejected, uptimePercent,
 }: MachineHealthPanelProps) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl">
+    <div className="bg-white border border-zinc-200 rounded-lg">
       {/* Header */}
-      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Machine Health</h3>
-        <span className="text-xs font-medium text-gray-400">{machineName}</span>
+      <div className="px-5 py-3 border-b border-zinc-100 flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Machine Health</h3>
+        <span className="text-xs text-zinc-400 font-mono">{machineName}</span>
       </div>
 
-      {/* Health indicators */}
-      <div className="px-6 py-5">
-        <div className="grid grid-cols-2 gap-3">
-          {indicators.map((ind) => {
-            const config = statusConfig[ind.status];
-            return (
-              <div
-                key={ind.label}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl ${config.bg}`}
-              >
-                <span className={config.color}>{ind.icon}</span>
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-500 leading-tight">{ind.label}</p>
-                  <p className={`text-sm font-semibold leading-tight mt-0.5 ${config.color}`}>
-                    {config.label}
-                  </p>
-                </div>
+      {/* Indicators */}
+      <div className="px-5 py-4 grid grid-cols-2 gap-x-6 gap-y-3 border-b border-zinc-100">
+        {indicators.map((ind) => {
+          const st = statusMap[ind.status];
+          return (
+            <div key={ind.label} className="flex items-center gap-2.5">
+              <span className={`flex-shrink-0 ${st.color}`}>{ind.icon}</span>
+              <div className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-sm text-zinc-500">{ind.label}</span>
+                <span className={`text-sm font-semibold ${st.color}`}>{st.label}</span>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
-
-      {/* Divider */}
-      <div className="border-t border-gray-100" />
 
       {/* Stats */}
-      <div className="px-6 py-5 space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-500">Packages today</span>
-          <span className="text-sm font-bold text-gray-900 tabular-nums">{packagesTotal}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-500">Successful</span>
-          <span className="text-sm font-semibold text-emerald-600 tabular-nums">{packagesSuccess}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-500">Rejected</span>
-          <span className="text-sm font-semibold text-amber-600 tabular-nums">{packagesRejected}</span>
+      <div className="px-5 py-4">
+        <div className="space-y-2.5">
+          <div className="flex justify-between">
+            <span className="text-sm text-zinc-500">Packages today</span>
+            <span className="text-sm font-semibold text-zinc-900 tabular-nums">{packagesTotal}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-zinc-500">Successful</span>
+            <span className="text-sm font-semibold text-green-600 tabular-nums">{packagesSuccess}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-zinc-500">Rejected</span>
+            <span className="text-sm font-semibold text-amber-600 tabular-nums">{packagesRejected}</span>
+          </div>
         </div>
 
-        {/* Divider */}
-        <div className="border-t border-gray-100 pt-3">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-gray-500">Uptime (24h)</span>
-            <span className="text-sm font-bold text-gray-900 tabular-nums">{uptimePercent}%</span>
+        <div className="mt-4 pt-3 border-t border-zinc-100">
+          <div className="flex justify-between mb-1.5">
+            <span className="text-sm text-zinc-500">Uptime (24h)</span>
+            <span className="text-sm font-semibold text-zinc-900 tabular-nums">{uptimePercent}%</span>
           </div>
-          <div className="w-full bg-gray-100 rounded-full h-2">
-            <div
-              className="bg-emerald-400 h-2 rounded-full transition-all"
-              style={{ width: `${uptimePercent}%` }}
-            />
+          <div className="w-full bg-zinc-100 rounded-sm h-1.5">
+            <div className="bg-green-600 h-1.5 rounded-sm transition-all" style={{ width: `${uptimePercent}%` }} />
           </div>
         </div>
       </div>

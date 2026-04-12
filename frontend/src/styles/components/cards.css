@@ -1,22 +1,11 @@
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   CARDS
-   All card and panel variants
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 .card {
   background: var(--clr-surface);
   border: 1px solid var(--clr-border);
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-}
-
-.card--raised {
-  box-shadow: var(--shadow-sm);
-  border-color: transparent;
+  border-radius: var(--radius-lg);
 }
 
 .card__header {
-  padding: var(--sp-4) var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--clr-border-light);
   display: flex;
   align-items: center;
@@ -24,64 +13,45 @@
 }
 
 .card__title {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--clr-text);
+  color: var(--clr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.card__body { padding: var(--sp-5); }
-.card__body--compact { padding: var(--sp-4); }
-.card__body--flush { padding: 0; }
+.card__body { padding: var(--sp-4); }
 
-/* Hero card (for Live Activity) */
-.card--hero {
-  border-width: 2px;
-  padding: var(--sp-8);
-  transition: border-color var(--duration-slow) var(--ease-default),
-              background var(--duration-slow) var(--ease-default);
+/* Hero panel for live status */
+.hero-panel {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--clr-border);
 }
 
-.card--hero-idle       { background: var(--clr-surface); border-color: var(--clr-border); }
-.card--hero-active     { background: var(--clr-info-soft); border-color: #93c5fd; }
-.card--hero-success    { background: var(--clr-success-soft); border-color: #6ee7b7; }
-.card--hero-warning    { background: var(--clr-warning-soft); border-color: #fcd34d; }
-.card--hero-danger     { background: var(--clr-danger-soft); border-color: #fca5a5; }
+.hero-panel--active  { border-left-color: var(--clr-info); }
+.hero-panel--success { border-left-color: var(--clr-success); }
+.hero-panel--warning { border-left-color: var(--clr-warning); }
+.hero-panel--danger  { border-left-color: var(--clr-danger); }
 
 /* Stat card */
 .stat-card {
   background: var(--clr-surface);
   border: 1px solid var(--clr-border);
-  border-radius: var(--radius-xl);
-  padding: var(--sp-5);
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-4);
-}
-
-.stat-card__icon {
-  width: 40px; height: 40px;
   border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  padding: var(--sp-4);
 }
 
 .stat-card__value {
   font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-semibold);
   color: var(--clr-text);
-  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-card__label {
   font-size: var(--text-sm);
   color: var(--clr-text-secondary);
   margin-bottom: var(--sp-1);
-}
-
-.stat-card__sub {
-  font-size: var(--text-xs);
-  color: var(--clr-text-muted);
-  margin-top: var(--sp-1);
 }

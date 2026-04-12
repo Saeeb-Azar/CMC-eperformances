@@ -1,16 +1,9 @@
 import { Package, CheckCircle, XCircle, Loader, ScanBarcode, Ruler, Box, Tag, Clock } from 'lucide-react';
 
 export type ActivityState =
-  | 'idle'
-  | 'scanning'
-  | 'entering'
-  | 'measuring'
-  | 'wrapping'
-  | 'labeling'
-  | 'verifying'
-  | 'completed'
-  | 'rejected'
-  | 'error';
+  | 'idle' | 'scanning' | 'entering' | 'measuring'
+  | 'wrapping' | 'labeling' | 'verifying'
+  | 'completed' | 'rejected' | 'error';
 
 interface LiveActivityCardProps {
   state: ActivityState;
@@ -19,141 +12,43 @@ interface LiveActivityCardProps {
   elapsedSeconds?: number;
 }
 
-const activityConfig: Record<ActivityState, {
+const config: Record<ActivityState, {
   title: string;
-  description: string;
+  desc: string;
   icon: React.ReactNode;
-  borderColor: string;
-  bgColor: string;
-  iconBg: string;
-  pulse: boolean;
+  accent: string;
 }> = {
-  idle: {
-    title: 'Waiting for next package',
-    description: 'The machine is ready. Place an item on the conveyor to begin.',
-    icon: <Clock size={28} />,
-    borderColor: 'border-gray-200',
-    bgColor: 'bg-white',
-    iconBg: 'bg-gray-100 text-gray-400',
-    pulse: false,
-  },
-  scanning: {
-    title: 'Barcode is being scanned',
-    description: 'Reading the barcode and looking up the order in the system.',
-    icon: <ScanBarcode size={28} />,
-    borderColor: 'border-blue-300',
-    bgColor: 'bg-blue-50/50',
-    iconBg: 'bg-blue-100 text-blue-600',
-    pulse: true,
-  },
-  entering: {
-    title: 'Package entered the machine',
-    description: 'The item has been accepted and is now on the conveyor belt.',
-    icon: <Package size={28} />,
-    borderColor: 'border-indigo-300',
-    bgColor: 'bg-indigo-50/50',
-    iconBg: 'bg-indigo-100 text-indigo-600',
-    pulse: true,
-  },
-  measuring: {
-    title: 'Package is being measured',
-    description: 'The 3D sensor is recording the dimensions (length, width, height).',
-    icon: <Ruler size={28} />,
-    borderColor: 'border-violet-300',
-    bgColor: 'bg-violet-50/50',
-    iconBg: 'bg-violet-100 text-violet-600',
-    pulse: true,
-  },
-  wrapping: {
-    title: 'Box is being created',
-    description: 'The cardboard is being cut, folded, and the item is being packed.',
-    icon: <Box size={28} />,
-    borderColor: 'border-cyan-300',
-    bgColor: 'bg-cyan-50/50',
-    iconBg: 'bg-cyan-100 text-cyan-600',
-    pulse: true,
-  },
-  labeling: {
-    title: 'Shipping label is being printed',
-    description: 'Generating and applying the shipping label to the package.',
-    icon: <Tag size={28} />,
-    borderColor: 'border-teal-300',
-    bgColor: 'bg-teal-50/50',
-    iconBg: 'bg-teal-100 text-teal-600',
-    pulse: true,
-  },
-  verifying: {
-    title: 'Label is being verified',
-    description: 'The exit scanner is checking if the printed label matches.',
-    icon: <Loader size={28} className="animate-spin" />,
-    borderColor: 'border-amber-300',
-    bgColor: 'bg-amber-50/50',
-    iconBg: 'bg-amber-100 text-amber-600',
-    pulse: true,
-  },
-  completed: {
-    title: 'Package completed successfully',
-    description: 'Everything verified. The package is ready for shipping.',
-    icon: <CheckCircle size={28} />,
-    borderColor: 'border-emerald-300',
-    bgColor: 'bg-emerald-50/50',
-    iconBg: 'bg-emerald-100 text-emerald-600',
-    pulse: false,
-  },
-  rejected: {
-    title: 'Package was rejected',
-    description: 'The package could not be processed and was diverted.',
-    icon: <XCircle size={28} />,
-    borderColor: 'border-red-300',
-    bgColor: 'bg-red-50/50',
-    iconBg: 'bg-red-100 text-red-600',
-    pulse: false,
-  },
-  error: {
-    title: 'An error occurred',
-    description: 'Something went wrong during processing.',
-    icon: <XCircle size={28} />,
-    borderColor: 'border-red-300',
-    bgColor: 'bg-red-50/50',
-    iconBg: 'bg-red-100 text-red-600',
-    pulse: false,
-  },
+  idle:      { title: 'Waiting for next package', desc: 'Machine is ready. Place an item on the conveyor.', icon: <Clock size={20} />, accent: 'border-l-zinc-300' },
+  scanning:  { title: 'Barcode is being scanned', desc: 'Reading barcode and looking up the order.', icon: <ScanBarcode size={20} />, accent: 'border-l-blue-500' },
+  entering:  { title: 'Package entered the machine', desc: 'Item accepted and moving on the conveyor belt.', icon: <Package size={20} />, accent: 'border-l-blue-500' },
+  measuring: { title: 'Package is being measured', desc: '3D sensor recording dimensions (L x W x H).', icon: <Ruler size={20} />, accent: 'border-l-violet-500' },
+  wrapping:  { title: 'Box is being created', desc: 'Cardboard cut, folded, item packed.', icon: <Box size={20} />, accent: 'border-l-blue-500' },
+  labeling:  { title: 'Shipping label is being printed', desc: 'Generating and applying shipping label.', icon: <Tag size={20} />, accent: 'border-l-blue-500' },
+  verifying: { title: 'Label is being verified', desc: 'Exit scanner checking label match.', icon: <Loader size={20} className="animate-spin" />, accent: 'border-l-amber-500' },
+  completed: { title: 'Package completed successfully', desc: 'Verified and ready for shipping.', icon: <CheckCircle size={20} />, accent: 'border-l-green-600' },
+  rejected:  { title: 'Package was rejected', desc: 'Could not be processed, diverted to reject area.', icon: <XCircle size={20} />, accent: 'border-l-red-500' },
+  error:     { title: 'An error occurred', desc: 'Something went wrong during processing.', icon: <XCircle size={20} />, accent: 'border-l-red-500' },
 };
 
 export default function LiveActivityCard({ state, barcode, detail, elapsedSeconds }: LiveActivityCardProps) {
-  const config = activityConfig[state];
+  const c = config[state];
 
   return (
-    <div className={`rounded-2xl border-2 transition-all duration-500 ${config.borderColor} ${config.bgColor}`}>
-      <div className="px-8 py-7 flex items-start gap-6">
-        {/* Icon */}
-        <div className={`p-4 rounded-2xl flex-shrink-0 ${config.iconBg} ${config.pulse ? 'animate-pulse' : ''}`}>
-          {config.icon}
-        </div>
-
-        {/* Content */}
+    <div className={`bg-white border border-zinc-200 rounded-lg border-l-[3px] ${c.accent}`}>
+      <div className="px-5 py-4 flex items-start gap-4">
+        <div className="text-zinc-400 mt-0.5 flex-shrink-0">{c.icon}</div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-2xl font-bold text-gray-900 leading-tight">
-            {config.title}
-          </h2>
-          <p className="text-base text-gray-500 mt-2 leading-relaxed">
-            {detail || config.description}
-          </p>
-
-          {/* Meta */}
-          {(barcode || (elapsedSeconds !== undefined && elapsedSeconds > 0)) && (
-            <div className="flex items-center gap-3 mt-4">
+          <h2 className="text-lg font-semibold text-zinc-900 leading-snug">{c.title}</h2>
+          <p className="text-sm text-zinc-500 mt-1">{detail || c.desc}</p>
+          {(barcode || (elapsedSeconds && elapsedSeconds > 0)) && (
+            <div className="flex items-center gap-3 mt-3">
               {barcode && (
-                <span className="inline-flex items-center gap-2 text-sm text-gray-600 bg-white border border-gray-200 px-3 py-1.5 rounded-lg">
-                  <ScanBarcode size={14} className="text-gray-400" />
-                  <span className="font-mono">{barcode}</span>
-                </span>
+                <code className="text-xs text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded font-mono">
+                  {barcode}
+                </code>
               )}
               {elapsedSeconds !== undefined && elapsedSeconds > 0 && (
-                <span className="inline-flex items-center gap-2 text-sm text-gray-600 bg-white border border-gray-200 px-3 py-1.5 rounded-lg">
-                  <Clock size={14} className="text-gray-400" />
-                  {elapsedSeconds}s elapsed
-                </span>
+                <span className="text-xs text-zinc-400">{elapsedSeconds}s elapsed</span>
               )}
             </div>
           )}

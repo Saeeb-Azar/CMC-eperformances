@@ -1,8 +1,3 @@
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   GLOBALS
-   Reset, base styles, typography
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -12,38 +7,25 @@
 body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  line-height: var(--leading-normal);
+  line-height: 1.5;
   color: var(--clr-text);
   background: var(--clr-bg);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
-  color: var(--clr-text);
 }
 
 a { color: inherit; text-decoration: none; }
+code, .mono { font-family: var(--font-mono); }
 
-code, .font-mono {
-  font-family: var(--font-mono);
-}
-
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--clr-border); border-radius: var(--radius-full); }
-::-webkit-scrollbar-thumb:hover { background: var(--clr-text-muted); }
+::-webkit-scrollbar-thumb { background: var(--clr-border); border-radius: 2px; }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
 
 ::selection {
-  background: var(--clr-accent-soft);
-  color: var(--clr-accent);
-}
-
-/* Focus ring */
-:focus-visible {
-  outline: 2px solid var(--clr-border-focus);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  background: var(--clr-text);
+  color: var(--clr-surface);
 }

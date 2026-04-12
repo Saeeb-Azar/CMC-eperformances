@@ -1,14 +1,6 @@
 import {
-  ScanBarcode,
-  LogIn,
-  Ruler,
-  Tag,
-  CheckCircle,
-  XCircle,
-  Trash2,
-  Wifi,
-  FileText,
-  Info,
+  ScanBarcode, LogIn, Ruler, Tag, CheckCircle, XCircle,
+  Trash2, Wifi, FileText, Info,
 } from 'lucide-react';
 
 export interface LiveEvent {
@@ -26,82 +18,71 @@ interface LiveEventFeedProps {
   maxVisible?: number;
 }
 
-const severityStyles = {
-  info: { icon: <Info size={14} />, bg: 'bg-blue-50', text: 'text-blue-600', dot: 'bg-blue-400' },
-  success: { icon: <CheckCircle size={14} />, bg: 'bg-emerald-50', text: 'text-emerald-600', dot: 'bg-emerald-400' },
-  warning: { icon: <XCircle size={14} />, bg: 'bg-amber-50', text: 'text-amber-600', dot: 'bg-amber-400' },
-  error: { icon: <XCircle size={14} />, bg: 'bg-red-50', text: 'text-red-600', dot: 'bg-red-400' },
+const sevColors = {
+  info:    'text-blue-500',
+  success: 'text-green-600',
+  warning: 'text-amber-500',
+  error:   'text-red-500',
 };
 
-const eventIcons: Record<string, React.ReactNode> = {
-  ENQ: <ScanBarcode size={14} />,
-  IND: <LogIn size={14} />,
-  ACK: <Ruler size={14} />,
-  INV: <FileText size={14} />,
-  LAB: <Tag size={14} />,
-  LAB1: <Tag size={14} />,
-  END: <CheckCircle size={14} />,
-  REM: <Trash2 size={14} />,
-  HBT: <Wifi size={14} />,
+const icons: Record<string, React.ReactNode> = {
+  ENQ: <ScanBarcode size={13} />,
+  IND: <LogIn size={13} />,
+  ACK: <Ruler size={13} />,
+  INV: <FileText size={13} />,
+  LAB: <Tag size={13} />,
+  LAB1: <Tag size={13} />,
+  END: <CheckCircle size={13} />,
+  REM: <Trash2 size={13} />,
+  HBT: <Wifi size={13} />,
 };
 
-export default function LiveEventFeed({ events, maxVisible = 12 }: LiveEventFeedProps) {
+const fallback: Record<string, React.ReactNode> = {
+  info: <Info size={13} />,
+  success: <CheckCircle size={13} />,
+  warning: <XCircle size={13} />,
+  error: <XCircle size={13} />,
+};
+
+export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeedProps) {
   const visible = events.slice(0, maxVisible);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl">
-      {/* Header */}
-      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Live Activity</h3>
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs font-medium text-gray-400">Live</span>
+    <div className="bg-white border border-zinc-200 rounded-lg">
+      <div className="px-5 py-3 border-b border-zinc-100 flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Live Activity</h3>
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Live</span>
         </div>
       </div>
 
-      {/* Events */}
       <div className="max-h-[520px] overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="px-6 py-16 text-center text-gray-400 text-sm">
+          <div className="px-5 py-12 text-center text-zinc-400 text-sm">
             Waiting for activity...
           </div>
         ) : (
-          visible.map((event, idx) => {
-            const severity = severityStyles[event.severity];
-            const icon = eventIcons[event.technicalCode] || severity.icon;
+          visible.map((event) => {
+            const icon = icons[event.technicalCode] || fallback[event.severity];
+            const color = sevColors[event.severity];
 
             return (
               <div
                 key={event.id}
-                className={`px-6 py-4 flex items-start gap-4 transition-colors hover:bg-gray-50 ${
-                  idx < visible.length - 1 ? 'border-b border-gray-50' : ''
-                }`}
+                className="px-5 py-3 flex items-start gap-3 border-b border-zinc-50 last:border-b-0 hover:bg-zinc-50/50 transition-colors"
               >
-                {/* Icon */}
-                <div className={`p-2 rounded-lg flex-shrink-0 ${severity.bg} ${severity.text}`}>
-                  {icon}
-                </div>
-
-                {/* Content */}
+                <span className={`mt-0.5 flex-shrink-0 ${color}`}>{icon}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-900 leading-relaxed">
-                    {event.message}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <span className="text-xs text-gray-400">{event.timestamp}</span>
-                    <span className="text-xs text-gray-300 font-mono">
-                      {event.technicalCode}
-                    </span>
+                  <p className="text-sm text-zinc-800 leading-relaxed">{event.message}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[11px] text-zinc-400 tabular-nums">{event.timestamp}</span>
+                    <span className="text-[11px] text-zinc-300 font-mono">{event.technicalCode}</span>
                     {event.referenceId && (
-                      <span className="text-xs text-gray-300 font-mono">
-                        {event.referenceId}
-                      </span>
+                      <span className="text-[11px] text-zinc-300 font-mono">{event.referenceId}</span>
                     )}
                   </div>
                 </div>
-
-                {/* Severity indicator */}
-                <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${severity.dot}`} />
               </div>
             );
           })
