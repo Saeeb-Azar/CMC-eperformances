@@ -37,7 +37,7 @@ export default function LiveActivityCard({ state, barcode, detail, elapsedSecond
   return (
     <div className="hero-panel">
       <div className={`hero-panel__accent ${c.accent}`} />
-      <div className="flex items-start gap-5 px-6 py-5">
+      <div className="flex items-start gap-5 px-8 py-6">
         <div className={`mt-0.5 ${c.iconColor}`}>{c.icon}</div>
         <div className="flex-1 min-w-0">
           <h2 className="text-xl font-semibold text-gray-900">{c.title}</h2>
