@@ -23,7 +23,14 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+
+    # Start TCP gateway server — simulators connect TO us
+    gateway_port = settings.cmc_tcp_port
+    await connection_manager.start_server(settings.cmc_tcp_host, gateway_port)
+    logger.info(f"CMC TCP Gateway listening on port {gateway_port}")
+
     yield
+
     logger.info("Shutting down")
     await connection_manager.shutdown()
 
@@ -59,7 +66,6 @@ async def websocket_simulator(ws: WebSocket):
     await ws_manager.connect(ws)
     try:
         while True:
-            # Keep connection alive; client can send pings or commands
             await ws.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(ws)
@@ -77,3 +83,14 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/v1/gateway/status")
+def gateway_status():
+    """Return TCP gateway info so the frontend knows where simulators should connect."""
+    return {
+        "listening": True,
+        "port": settings.cmc_tcp_port,
+        "connected_machines": connection_manager.connected_machines,
+        "websocket_clients": ws_manager.client_count,
+    }

@@ -2,10 +2,10 @@ import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Plug, Unplug, Wifi, WifiOff,
+  Wifi, WifiOff, Copy, CheckCircle as CheckIcon,
   ScanBarcode, LogIn, Ruler, Tag, FileText,
   CheckCircle, XCircle, Trash2, Activity,
-  AlertTriangle, Info,
+  Info, Server,
 } from 'lucide-react';
 
 interface LiveEvent {
@@ -19,8 +19,8 @@ interface LiveEvent {
   timestamp: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const WS_BASE = API_BASE.replace(/^http/, 'ws');
+const API_BASE = import.meta.env.VITE_API_URL || '';
+const WS_BASE = API_BASE ? API_BASE.replace(/^http/, 'ws') : `ws://${window.location.host}`;
 
 const typeIcons: Record<string, React.ReactNode> = {
   ENQ: <ScanBarcode size={13} />,
@@ -44,22 +44,33 @@ const severityColors: Record<string, { bg: string; text: string }> = {
 
 export default function SimulatorPage() {
   const { t } = useTranslation();
-  const [host, setHost] = useState('127.0.0.1');
-  const [port, setPort] = useState('15001');
-  const [machineId, setMachineId] = useState('SIM-001');
-  const [connected, setConnected] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const [events, setEvents] = useState<LiveEvent[]>([]);
-  const [error, setError] = useState('');
+  const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
   const eventCounter = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
-  const eventsEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom
+  // The TCP address simulators should connect to
+  const tcpHost = window.location.hostname;
+  const tcpPort = 15001;
+
+  // Poll gateway status
   useEffect(() => {
-    eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [events]);
+    const poll = async () => {
+      try {
+        const base = API_BASE || '';
+        const res = await fetch(`${base}/api/v1/gateway/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setConnectedMachines(data.connected_machines || []);
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // WebSocket connection
   const connectWebSocket = useCallback(() => {
@@ -70,13 +81,17 @@ export default function SimulatorPage() {
 
     ws.onopen = () => {
       setWsConnected(true);
-      addEvent({ type: 'SYSTEM', severity: 'success', message: 'WebSocket connected to backend' });
+      addEvent({ type: 'SYSTEM', severity: 'success', message: 'WebSocket verbunden' });
     };
 
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         addEvent(data);
+        // Update connected machines from system events
+        if (data.type === 'SYSTEM' && data.message?.includes('connected')) {
+          setConnectedMachines(prev => [...new Set([...prev, data.machine_id].filter(Boolean))]);
+        }
       } catch {
         addEvent({ type: 'SYSTEM', severity: 'warning', message: `Raw: ${e.data}` });
       }
@@ -84,7 +99,6 @@ export default function SimulatorPage() {
 
     ws.onclose = () => {
       setWsConnected(false);
-      addEvent({ type: 'SYSTEM', severity: 'warning', message: 'WebSocket disconnected' });
     };
 
     ws.onerror = () => {
@@ -92,15 +106,12 @@ export default function SimulatorPage() {
     };
   }, []);
 
-  // Connect WebSocket on mount
   useEffect(() => {
     connectWebSocket();
-    return () => {
-      wsRef.current?.close();
-    };
+    return () => { wsRef.current?.close(); };
   }, [connectWebSocket]);
 
-  // Keep WS alive with pings
+  // Keepalive
   useEffect(() => {
     const interval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -124,36 +135,10 @@ export default function SimulatorPage() {
     }]);
   }
 
-  async function handleConnect() {
-    setError('');
-    setConnecting(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/simulator/connect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, port: parseInt(port), machine_id: machineId }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Connection failed');
-      }
-      setConnected(true);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Connection failed';
-      setError(msg);
-      addEvent({ type: 'SYSTEM', severity: 'error', message: `Connection failed: ${msg}` });
-    } finally {
-      setConnecting(false);
-    }
-  }
-
-  async function handleDisconnect() {
-    try {
-      await fetch(`${API_BASE}/api/v1/simulator/disconnect`, { method: 'POST' });
-      setConnected(false);
-    } catch {
-      setError('Disconnect failed');
-    }
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   const stats = {
@@ -162,6 +147,8 @@ export default function SimulatorPage() {
     end: events.filter(e => e.type === 'END').length,
     hbt: events.filter(e => e.type === 'HBT').length,
   };
+
+  const hasSimulator = connectedMachines.length > 0;
 
   return (
     <div>
@@ -202,11 +189,7 @@ export default function SimulatorPage() {
                     {wsConnected ? t('common.connected') : t('common.disconnected')}
                   </span>
                   {events.length > 0 && (
-                    <button
-                      onClick={() => setEvents([])}
-                      className="btn btn--ghost"
-                      style={{ height: 28, fontSize: 11, padding: '0 8px' }}
-                    >
+                    <button onClick={() => setEvents([])} className="btn btn--ghost" style={{ height: 28, fontSize: 11, padding: '0 8px' }}>
                       {t('common.clear')}
                     </button>
                   )}
@@ -232,7 +215,6 @@ export default function SimulatorPage() {
                         const sev = severityColors[ev.severity] || severityColors.info;
                         const icon = typeIcons[ev.type] || (ev.severity === 'error' ? <XCircle size={13} /> : <Info size={13} />);
                         const time = new Date(ev.timestamp).toLocaleTimeString('de-DE');
-
                         return (
                           <tr key={ev.id}>
                             <td>
@@ -249,7 +231,6 @@ export default function SimulatorPage() {
                     )}
                   </tbody>
                 </table>
-                <div ref={eventsEndRef} />
               </div>
             </div>
           </div>
@@ -258,102 +239,84 @@ export default function SimulatorPage() {
           <div className="stack-4">
             {/* Connection Status */}
             <div className="hero-panel">
-              <div className={`hero-panel__accent ${connected ? 'hero-panel__accent--success' : wsConnected ? 'hero-panel__accent--active' : 'hero-panel__accent--danger'}`} />
+              <div className={`hero-panel__accent ${hasSimulator ? 'hero-panel__accent--success' : wsConnected ? 'hero-panel__accent--active' : 'hero-panel__accent--danger'}`} />
               <div className="flex items-center gap-4 px-8 py-5">
-                <div className={connected ? 'text-emerald-500' : wsConnected ? 'text-blue-500' : 'text-gray-400'}>
-                  {connected ? <Wifi size={22} /> : <WifiOff size={22} />}
+                <div className={hasSimulator ? 'text-emerald-500' : wsConnected ? 'text-blue-500' : 'text-gray-400'}>
+                  {hasSimulator ? <Wifi size={22} /> : <WifiOff size={22} />}
                 </div>
                 <div>
                   <p className="text-lg font-semibold" style={{ color: 'var(--clr-text)' }}>
-                    {connected ? t('simulator.simulatorConnected') : wsConnected ? t('simulator.backendConnected') : t('common.disconnected')}
+                    {hasSimulator ? t('simulator.simulatorConnected') : wsConnected ? t('simulator.backendConnected') : t('common.disconnected')}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {connected ? `${host}:${port} · ${machineId}` : wsConnected ? t('simulator.noSimulator') : t('simulator.noConnection')}
+                    {hasSimulator ? `${connectedMachines.length} Maschine(n) verbunden` : wsConnected ? t('simulator.noSimulator') : t('simulator.noConnection')}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Connection Form */}
+            {/* Connected machines */}
+            {connectedMachines.length > 0 && (
+              <div className="panel">
+                <div className="panel__header">
+                  <h3 className="panel__title">Verbundene Maschinen</h3>
+                </div>
+                <div className="panel__body">
+                  {connectedMachines.map(m => (
+                    <div key={m} className="flex items-center gap-3 py-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span className="text-sm font-mono" style={{ color: 'var(--clr-text)' }}>{m}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Simulator Connection Info */}
             <div className="panel">
               <div className="panel__header">
-                <h3 className="panel__title">{t('simulator.connection')}</h3>
+                <div className="flex items-center gap-2">
+                  <Server size={16} className="text-blue-500" />
+                  <h3 className="panel__title">Simulator verbinden</h3>
+                </div>
               </div>
               <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>{t('simulator.hostIp')}</label>
-                  <input
-                    type="text"
-                    value={host}
-                    onChange={(e) => setHost(e.target.value)}
-                    className="input"
-                    placeholder="192.168.178.41"
-                    disabled={connected}
-                    style={{ fontFamily: 'var(--font-mono)' }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>{t('simulator.port')}</label>
-                  <input
-                    type="text"
-                    value={port}
-                    onChange={(e) => setPort(e.target.value)}
-                    className="input"
-                    placeholder="15001"
-                    disabled={connected}
-                    style={{ fontFamily: 'var(--font-mono)' }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--clr-text-muted)' }}>{t('simulator.machineId')}</label>
-                  <input
-                    type="text"
-                    value={machineId}
-                    onChange={(e) => setMachineId(e.target.value)}
-                    className="input"
-                    placeholder="SIM-001"
-                    disabled={connected}
-                    style={{ fontFamily: 'var(--font-mono)' }}
-                  />
-                </div>
+                <p className="text-sm" style={{ color: 'var(--clr-text-secondary)', lineHeight: 1.6 }}>
+                  Das Backend lauscht auf Port <strong>{tcpPort}</strong>. Konfiguriere deinen Simulator als <strong>TCP Client</strong> und verbinde ihn mit dieser Adresse:
+                </p>
 
-                {error && (
-                  <div className="flex items-center gap-2 text-xs p-3 rounded-lg" style={{ background: 'var(--clr-danger-soft)', color: 'var(--clr-danger-text)' }}>
-                    <AlertTriangle size={14} />
-                    {error}
+                {/* TCP Address to copy */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-4 py-3 rounded-lg font-mono text-sm" style={{ background: 'var(--clr-surface-sunken)', color: 'var(--clr-text)' }}>
+                    {tcpHost}:{tcpPort}
                   </div>
-                )}
-
-                {!connected ? (
                   <button
-                    onClick={handleConnect}
-                    disabled={connecting || !host || !port}
-                    className="btn btn--primary btn--lg w-full"
+                    onClick={() => handleCopy(`${tcpHost}:${tcpPort}`)}
+                    className="btn-icon"
+                    title="Kopieren"
                   >
-                    <Plug size={16} />
-                    {connecting ? t('simulator.connecting') : t('simulator.connectButton')}
+                    {copied ? <CheckIcon size={16} className="text-emerald-500" /> : <Copy size={16} />}
                   </button>
-                ) : (
-                  <button onClick={handleDisconnect} className="btn btn--secondary btn--lg w-full">
-                    <Unplug size={16} />
-                    {t('simulator.disconnect')}
-                  </button>
-                )}
+                </div>
+
+                <div className="text-xs p-3 rounded-lg" style={{ background: 'var(--clr-info-soft)', color: 'var(--clr-info-text)' }}>
+                  <strong>Hinweis:</strong> Für Railway musst du unter CMC Backend → Settings → Networking einen TCP Proxy für Port {tcpPort} einrichten.
+                </div>
               </div>
             </div>
 
-            {/* How to use */}
+            {/* Setup Guide */}
             <div className="panel">
               <div className="panel__header">
                 <h3 className="panel__title">{t('simulator.setupGuide')}</h3>
               </div>
               <div className="panel__body" style={{ fontSize: 'var(--text-sm)', color: 'var(--clr-text-secondary)', lineHeight: 1.7 }}>
                 <ol style={{ paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <li>Start <strong>CW1000 CIS Simulator</strong> on your PC</li>
-                  <li>Set mode to <strong>"Server"</strong> on port <strong>15001</strong></li>
-                  <li>Run the backend locally: <code className="mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--clr-surface-sunken)' }}>uvicorn app.main:app</code></li>
-                  <li>Enter the simulator IP address above</li>
-                  <li>Click <strong>Connect</strong> and start scanning</li>
+                  <li>Öffne den <strong>CW1000 CIS Simulator</strong></li>
+                  <li>Setze den Modus auf <strong>"Client"</strong></li>
+                  <li>Trage die Adresse ein: <code className="mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--clr-surface-sunken)' }}>{tcpHost}:{tcpPort}</code></li>
+                  <li>Klicke <strong>"Connect"</strong> im Simulator</li>
+                  <li>Events erscheinen hier automatisch</li>
                 </ol>
               </div>
             </div>
