@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -19,15 +20,21 @@ from app.modules.simulator.router import router as simulator_router
 
 settings = get_settings()
 
+# Resolve TCP gateway port — avoid collision with Uvicorn's HTTP port
+_uvicorn_port = int(os.environ.get("PORT", 8000))
+_tcp_port = settings.cmc_tcp_port
+if _tcp_port == _uvicorn_port:
+    _tcp_port = _uvicorn_port + 1
+    logger.warning(f"TCP port {settings.cmc_tcp_port} conflicts with HTTP port, using {_tcp_port}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
 
     # Start TCP gateway server — simulators connect TO us
-    gateway_port = settings.cmc_tcp_port
-    await connection_manager.start_server(settings.cmc_tcp_host, gateway_port)
-    logger.info(f"CMC TCP Gateway listening on port {gateway_port}")
+    await connection_manager.start_server(settings.cmc_tcp_host, _tcp_port)
+    logger.info(f"CMC TCP Gateway listening on port {_tcp_port}")
 
     yield
 
@@ -90,7 +97,7 @@ def gateway_status():
     """Return TCP gateway info so the frontend knows where simulators should connect."""
     return {
         "listening": True,
-        "port": settings.cmc_tcp_port,
+        "port": _tcp_port,
         "connected_machines": connection_manager.connected_machines,
         "websocket_clients": ws_manager.client_count,
     }
