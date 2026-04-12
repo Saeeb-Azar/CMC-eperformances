@@ -302,11 +302,11 @@ export default function SimulatorPage() {
               </div>
               <div className="panel__body" style={{ fontSize: 'var(--text-sm)', color: 'var(--clr-text-secondary)', lineHeight: 1.7 }}>
                 <ol style={{ paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <li>{t('simulator.step1')}</li>
-                  <li>{t('simulator.step2')}</li>
-                  <li>{t('simulator.step3')}</li>
-                  <li>{t('simulator.step4')}</li>
-                  <li>{t('simulator.step5')}</li>
+                  <li dangerouslySetInnerHTML={{ __html: t('simulator.step1') }} />
+                  <li dangerouslySetInnerHTML={{ __html: t('simulator.step2') }} />
+                  <li dangerouslySetInnerHTML={{ __html: t('simulator.step3') }} />
+                  <li dangerouslySetInnerHTML={{ __html: t('simulator.step4') }} />
+                  <li dangerouslySetInnerHTML={{ __html: t('simulator.step5') }} />
                 </ol>
               </div>
             </div>
