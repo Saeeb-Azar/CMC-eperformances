@@ -19,8 +19,9 @@ interface LiveEvent {
   timestamp: string;
 }
 
-// Normalize API_BASE — auto-add https:// if the env var is just a hostname
-let API_BASE = import.meta.env.VITE_API_URL || '';
+// Runtime config (from env.js) or build-time config (from Vite)
+const _env = (window as unknown as Record<string, unknown>).__ENV__ as Record<string, string> | undefined;
+let API_BASE = _env?.VITE_API_URL || import.meta.env.VITE_API_URL || '';
 if (API_BASE && !API_BASE.startsWith('http')) {
   API_BASE = `https://${API_BASE}`;
 }
