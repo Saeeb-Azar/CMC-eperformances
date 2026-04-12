@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, Package, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Clock, ChevronRight, Package } from 'lucide-react';
 
 export interface ErrorItem {
   id: string;
@@ -17,54 +17,60 @@ interface ErrorPanelProps {
 export default function ErrorPanel({ errors }: ErrorPanelProps) {
   if (errors.length === 0) {
     return (
-      <div className="bg-surface rounded-2xl border border-border p-6">
-        <h3 className="text-sm font-medium text-text-primary mb-4">Issues</h3>
-        <div className="text-center py-8">
+      <div className="bg-white border border-gray-200 rounded-2xl">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Issues</h3>
+        </div>
+        <div className="px-6 py-10 text-center">
           <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
             <Package size={20} className="text-emerald-500" />
           </div>
-          <p className="text-sm text-text-secondary">No issues right now</p>
-          <p className="text-xs text-text-muted mt-1">Everything is running smoothly</p>
+          <p className="text-sm font-medium text-gray-600">No issues right now</p>
+          <p className="text-xs text-gray-400 mt-1">Everything is running smoothly</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-surface rounded-2xl border border-border overflow-hidden">
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-        <h3 className="text-sm font-medium text-text-primary">Issues</h3>
-        <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+    <div className="bg-white border border-gray-200 rounded-2xl">
+      {/* Header */}
+      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Issues</h3>
+        <span className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 px-2.5 py-0.5 rounded-full">
           {errors.length} active
         </span>
       </div>
 
-      <div className="divide-y divide-border-light">
-        {errors.map((err) => (
+      {/* Error items */}
+      <div>
+        {errors.map((err, idx) => (
           <div
             key={err.id}
-            className="px-5 py-4 hover:bg-surface-secondary transition-colors cursor-pointer group"
+            className={`px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer group ${
+              idx < errors.length - 1 ? 'border-b border-gray-50' : ''
+            }`}
           >
             <div className="flex items-start gap-3">
               <div
-                className={`p-1.5 rounded-lg mt-0.5 ${
-                  err.severity === 'error' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'
+                className={`p-2 rounded-lg flex-shrink-0 mt-0.5 ${
+                  err.severity === 'error'
+                    ? 'bg-red-50 text-red-500 border border-red-100'
+                    : 'bg-amber-50 text-amber-500 border border-amber-100'
                 }`}
               >
                 <AlertTriangle size={16} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary">{err.title}</p>
-                <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+                <p className="text-sm font-semibold text-gray-900">{err.title}</p>
+                <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
                   {err.description}
                 </p>
                 <div className="flex items-center gap-3 mt-2">
                   {err.barcode && (
-                    <span className="text-[11px] text-text-muted font-mono">
-                      {err.barcode}
-                    </span>
+                    <span className="text-xs text-gray-400 font-mono">{err.barcode}</span>
                   )}
-                  <span className="flex items-center gap-1 text-[11px] text-text-muted">
+                  <span className="flex items-center gap-1 text-xs text-gray-400">
                     <Clock size={10} />
                     {err.timestamp}
                   </span>
@@ -72,7 +78,7 @@ export default function ErrorPanel({ errors }: ErrorPanelProps) {
               </div>
               <ChevronRight
                 size={16}
-                className="text-text-muted mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="text-gray-300 mt-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
               />
             </div>
           </div>

@@ -49,18 +49,20 @@ export default function LiveEventFeed({ events, maxVisible = 12 }: LiveEventFeed
   const visible = events.slice(0, maxVisible);
 
   return (
-    <div className="bg-surface rounded-2xl border border-border overflow-hidden">
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-        <h3 className="text-sm font-medium text-text-primary">Live Activity</h3>
-        <div className="flex items-center gap-1.5">
+    <div className="bg-white border border-gray-200 rounded-2xl">
+      {/* Header */}
+      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Live Activity</h3>
+        <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs text-text-muted">Live</span>
+          <span className="text-xs font-medium text-gray-400">Live</span>
         </div>
       </div>
 
-      <div className="divide-y divide-border-light max-h-[480px] overflow-y-auto">
+      {/* Events */}
+      <div className="max-h-[520px] overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="px-5 py-12 text-center text-text-muted text-sm">
+          <div className="px-6 py-16 text-center text-gray-400 text-sm">
             Waiting for activity...
           </div>
         ) : (
@@ -71,35 +73,35 @@ export default function LiveEventFeed({ events, maxVisible = 12 }: LiveEventFeed
             return (
               <div
                 key={event.id}
-                className={`px-5 py-3 flex items-start gap-3 transition-all duration-300 hover:bg-surface-secondary ${
-                  idx === 0 ? 'bg-surface-secondary/50' : ''
+                className={`px-6 py-4 flex items-start gap-4 transition-colors hover:bg-gray-50 ${
+                  idx < visible.length - 1 ? 'border-b border-gray-50' : ''
                 }`}
               >
                 {/* Icon */}
-                <div className={`p-1.5 rounded-lg mt-0.5 ${severity.bg} ${severity.text}`}>
+                <div className={`p-2 rounded-lg flex-shrink-0 ${severity.bg} ${severity.text}`}>
                   {icon}
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary leading-relaxed">
+                  <p className="text-sm text-gray-900 leading-relaxed">
                     {event.message}
                   </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[11px] text-text-muted">{event.timestamp}</span>
-                    <span className="text-[11px] text-text-muted font-mono opacity-50">
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <span className="text-xs text-gray-400">{event.timestamp}</span>
+                    <span className="text-xs text-gray-300 font-mono">
                       {event.technicalCode}
                     </span>
                     {event.referenceId && (
-                      <span className="text-[11px] text-text-muted font-mono opacity-50">
+                      <span className="text-xs text-gray-300 font-mono">
                         {event.referenceId}
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Severity dot */}
-                <div className={`w-1.5 h-1.5 rounded-full mt-2 ${severity.dot}`} />
+                {/* Severity indicator */}
+                <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${severity.dot}`} />
               </div>
             );
           })
