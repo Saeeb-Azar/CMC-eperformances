@@ -205,12 +205,17 @@
     "connectButton": "Connect to Simulator",
     "connecting": "Connecting...",
     "disconnect": "Disconnect",
+    "connectSimulator": "Connect Simulator",
+    "connectDesc": "The backend listens internally on port {{port}}. On Railway, the TCP port is exposed via proxy.",
+    "railwaySetup": "Railway TCP Proxy",
+    "railwaySteps": "Go to CMC Backend → Settings → Networking. Find the TCP Proxy address (metro.proxy.rlwy.net:XXXXX). Enter this address in your simulator.",
+    "internalPort": "Internal port",
     "setupGuide": "Setup Guide",
-    "step1": "Start the <strong>CW1000 CIS Simulator</strong> on your PC",
-    "step2": "Set mode to <strong>\"Server\"</strong> on port <strong>15001</strong>",
-    "step3": "Run the backend locally:",
-    "step4": "Enter the simulator IP address above",
-    "step5": "Click <strong>Connect</strong> and start scanning"
+    "step1": "Open the <strong>CW1000 CIS Simulator</strong>",
+    "step2": "Set mode to <strong>\"Client\"</strong>",
+    "step3": "Open <strong>CMD</strong> and run <code>nslookup metro.proxy.rlwy.net</code> to get the IP",
+    "step4": "Enter the IP and TCP proxy port in the simulator, click <strong>\"OPEN\"</strong>",
+    "step5": "Events appear here automatically"
   },
   "control": {
     "tenants": {

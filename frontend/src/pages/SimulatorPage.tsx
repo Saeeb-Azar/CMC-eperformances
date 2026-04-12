@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Wifi, WifiOff, Copy, CheckCircle as CheckIcon,
+  Wifi, WifiOff,
   ScanBarcode, LogIn, Ruler, Tag, FileText,
   CheckCircle, XCircle, Trash2, Activity,
   Info, Server,
@@ -19,7 +19,11 @@ interface LiveEvent {
   timestamp: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+// Normalize API_BASE — auto-add https:// if the env var is just a hostname
+let API_BASE = import.meta.env.VITE_API_URL || '';
+if (API_BASE && !API_BASE.startsWith('http')) {
+  API_BASE = `https://${API_BASE}`;
+}
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_BASE = API_BASE ? API_BASE.replace(/^https?:/, wsProtocol) : `${wsProtocol}//${window.location.host}`;
 
@@ -48,23 +52,19 @@ export default function SimulatorPage() {
   const [wsConnected, setWsConnected] = useState(false);
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
+  const [gatewayPort, setGatewayPort] = useState(15001);
   const eventCounter = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
-
-  // The TCP address simulators should connect to
-  const tcpHost = window.location.hostname;
-  const tcpPort = 15001;
 
   // Poll gateway status
   useEffect(() => {
     const poll = async () => {
       try {
-        const base = API_BASE || '';
-        const res = await fetch(`${base}/api/v1/gateway/status`);
+        const res = await fetch(`${API_BASE}/api/v1/gateway/status`);
         if (res.ok) {
           const data = await res.json();
           setConnectedMachines(data.connected_machines || []);
+          if (data.port) setGatewayPort(data.port);
         }
       } catch { /* ignore */ }
     };
@@ -138,12 +138,6 @@ export default function SimulatorPage() {
       raw: data.raw,
       timestamp: data.timestamp || new Date().toISOString(),
     }]);
-  }
-
-  function handleCopy(text: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   const stats = {
@@ -282,31 +276,22 @@ export default function SimulatorPage() {
               <div className="panel__header">
                 <div className="flex items-center gap-2">
                   <Server size={16} className="text-blue-500" />
-                  <h3 className="panel__title">Simulator verbinden</h3>
+                  <h3 className="panel__title">{t('simulator.connectSimulator')}</h3>
                 </div>
               </div>
               <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <p className="text-sm" style={{ color: 'var(--clr-text-secondary)', lineHeight: 1.6 }}>
-                  Das Backend lauscht auf Port <strong>{tcpPort}</strong>. Konfiguriere deinen Simulator als <strong>TCP Client</strong> und verbinde ihn mit dieser Adresse:
+                  {t('simulator.connectDesc', { port: gatewayPort })}
                 </p>
 
-                {/* TCP Address to copy */}
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 px-4 py-3 rounded-lg font-mono text-sm" style={{ background: 'var(--clr-surface-sunken)', color: 'var(--clr-text)' }}>
-                    {tcpHost}:{tcpPort}
-                  </div>
-                  <button
-                    onClick={() => handleCopy(`${tcpHost}:${tcpPort}`)}
-                    className="btn-icon"
-                    title="Kopieren"
-                  >
-                    {copied ? <CheckIcon size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                  </button>
+                <div className="text-xs p-3 rounded-lg" style={{ background: 'var(--clr-info-soft)', color: 'var(--clr-info-text)', lineHeight: 1.6 }}>
+                  <strong>{t('simulator.railwaySetup')}:</strong><br />
+                  {t('simulator.railwaySteps', { port: gatewayPort })}
                 </div>
 
-                <div className="text-xs p-3 rounded-lg" style={{ background: 'var(--clr-info-soft)', color: 'var(--clr-info-text)' }}>
-                  <strong>Hinweis:</strong> Für Railway musst du unter CMC Backend → Settings → Networking einen TCP Proxy für Port {tcpPort} einrichten.
-                </div>
+                <p className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
+                  {t('simulator.internalPort')}: <code className="mono px-1.5 py-0.5 rounded" style={{ background: 'var(--clr-surface-sunken)' }}>{gatewayPort}</code>
+                </p>
               </div>
             </div>
 
@@ -317,11 +302,11 @@ export default function SimulatorPage() {
               </div>
               <div className="panel__body" style={{ fontSize: 'var(--text-sm)', color: 'var(--clr-text-secondary)', lineHeight: 1.7 }}>
                 <ol style={{ paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <li>Öffne den <strong>CW1000 CIS Simulator</strong></li>
-                  <li>Setze den Modus auf <strong>"Client"</strong></li>
-                  <li>Trage die Adresse ein: <code className="mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--clr-surface-sunken)' }}>{tcpHost}:{tcpPort}</code></li>
-                  <li>Klicke <strong>"Connect"</strong> im Simulator</li>
-                  <li>Events erscheinen hier automatisch</li>
+                  <li>{t('simulator.step1')}</li>
+                  <li>{t('simulator.step2')}</li>
+                  <li>{t('simulator.step3')}</li>
+                  <li>{t('simulator.step4')}</li>
+                  <li>{t('simulator.step5')}</li>
                 </ol>
               </div>
             </div>
