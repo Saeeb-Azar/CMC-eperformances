@@ -11,7 +11,7 @@
 }
 
 .panel__header {
-  padding: var(--sp-5) var(--sp-6);
+  padding: var(--sp-5) var(--sp-8);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -30,7 +30,7 @@
 }
 
 .panel__body {
-  padding: var(--sp-6) var(--sp-6) var(--sp-8);
+  padding: var(--sp-6) var(--sp-8) var(--sp-8);
 }
 
 /* Hero panel: accent top bar */

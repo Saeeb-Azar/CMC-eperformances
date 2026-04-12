@@ -54,11 +54,11 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
         <table className="w-full">
           <thead>
             <tr>
-              <th className="text-left px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 44 }}></th>
+              <th className="text-left pl-8 pr-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 52 }}></th>
               <th className="text-left px-0 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100">Event</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 100 }}>Code</th>
-              <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 100 }}>Reference</th>
-              <th className="text-right px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 80 }}>Time</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 120 }}>Reference</th>
+              <th className="text-right pr-8 pl-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/50 border-b border-gray-100" style={{ width: 90 }}>Time</th>
             </tr>
           </thead>
           <tbody>
@@ -76,7 +76,7 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
 
                 return (
                   <tr key={event.id} className="border-b border-gray-50 last:border-b-0">
-                    <td className="px-6 py-4">
+                    <td className="pl-8 pr-4 py-4">
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${sev.bg} ${sev.color}`}>
                         {icon}
                       </div>
@@ -96,7 +96,7 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
                         <span className="text-gray-200">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="pr-8 pl-4 py-4 text-right">
                       <span className="text-xs text-gray-400 tabular-nums">{event.timestamp}</span>
                     </td>
                   </tr>

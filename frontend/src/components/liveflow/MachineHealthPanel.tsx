@@ -31,7 +31,7 @@ export default function MachineHealthPanel({
       </div>
 
       {/* System status table */}
-      <div className="px-6 py-4">
+      <div className="px-8 py-4">
         <table className="w-full">
           <tbody>
             {indicators.map((ind) => {
@@ -56,7 +56,7 @@ export default function MachineHealthPanel({
       </div>
 
       {/* Metrics */}
-      <div className="px-6 py-4 border-t border-gray-100">
+      <div className="px-8 py-4 border-t border-gray-100">
         <table className="w-full">
           <tbody>
             <tr className="border-b border-gray-50">
@@ -76,7 +76,7 @@ export default function MachineHealthPanel({
       </div>
 
       {/* Uptime */}
-      <div className="px-6 py-4 border-t border-gray-100">
+      <div className="px-8 py-4 border-t border-gray-100">
         <div className="flex justify-between mb-2">
           <span className="text-sm text-gray-500">Uptime (24h)</span>
           <span className="text-sm font-semibold text-gray-900 tabular-nums">{uptimePercent}%</span>

@@ -25,7 +25,7 @@ export default function ErrorPanel({ errors }: ErrorPanelProps) {
       </div>
 
       {errors.length === 0 ? (
-        <div className="px-5 py-10 text-center">
+        <div className="px-8 py-10 text-center">
           <CheckCircle2 size={20} className="text-emerald-500 mx-auto mb-2" />
           <p className="text-sm text-gray-600">No issues right now</p>
           <p className="text-xs text-gray-400 mt-0.5">Everything running smoothly</p>
@@ -35,7 +35,7 @@ export default function ErrorPanel({ errors }: ErrorPanelProps) {
           {errors.map((err, idx) => (
             <div
               key={err.id}
-              className={`px-5 py-4 flex items-start gap-3 hover:bg-gray-50 transition-colors cursor-pointer group ${
+              className={`px-8 py-4 flex items-start gap-3 cursor-pointer group ${
                 idx < errors.length - 1 ? 'border-b border-gray-50' : ''
               }`}
             >
