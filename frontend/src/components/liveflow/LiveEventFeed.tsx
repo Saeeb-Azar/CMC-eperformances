@@ -18,11 +18,11 @@ interface LiveEventFeedProps {
   maxVisible?: number;
 }
 
-const sevColor = {
-  info: 'text-blue-500',
-  success: 'text-emerald-500',
-  warning: 'text-amber-500',
-  error: 'text-red-500',
+const sevConfig = {
+  info:    { color: 'text-blue-500',    bg: 'bg-blue-50',    line: 'bg-blue-200' },
+  success: { color: 'text-emerald-500', bg: 'bg-emerald-50', line: 'bg-emerald-200' },
+  warning: { color: 'text-amber-500',   bg: 'bg-amber-50',   line: 'bg-amber-200' },
+  error:   { color: 'text-red-500',     bg: 'bg-red-50',     line: 'bg-red-200' },
 };
 
 const icons: Record<string, React.ReactNode> = {
@@ -49,27 +49,55 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
         </div>
       </div>
 
-      <div className="max-h-[520px] overflow-y-auto">
+      <div className="px-6 py-5 max-h-[560px] overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="px-5 py-16 text-center text-gray-400 text-sm">Waiting for activity...</div>
+          <div className="py-16 text-center text-gray-400 text-sm">Waiting for activity...</div>
         ) : (
-          visible.map((event) => {
-            const icon = icons[event.technicalCode] || fallbackIcons[event.severity];
-            const color = sevColor[event.severity];
-            return (
-              <div key={event.id} className="px-5 py-3.5 flex items-start gap-3.5 border-b border-gray-50 last:border-b-0 hover:bg-gray-50/50 transition-colors">
-                <span className={`mt-0.5 flex-shrink-0 ${color}`}>{icon}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-700 leading-relaxed">{event.message}</p>
-                  <div className="flex items-center gap-2.5 mt-1">
-                    <span className="text-xs text-gray-400 tabular-nums">{event.timestamp}</span>
-                    <span className="text-xs text-gray-300 font-mono">{event.technicalCode}</span>
-                    {event.referenceId && <span className="text-xs text-gray-300 font-mono">{event.referenceId}</span>}
+          <div className="relative">
+            {/* Timeline vertical line */}
+            <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gray-100" />
+
+            <div className="space-y-0">
+              {visible.map((event, idx) => {
+                const sev = sevConfig[event.severity];
+                const icon = icons[event.technicalCode] || fallbackIcons[event.severity];
+                const isFirst = idx === 0;
+
+                return (
+                  <div key={event.id} className="relative flex gap-4 py-3.5 group">
+                    {/* Timeline node */}
+                    <div className="relative z-10 flex-shrink-0">
+                      <div className={`w-[30px] h-[30px] rounded-lg flex items-center justify-center ${sev.bg} ${sev.color} ${isFirst ? 'ring-2 ring-white shadow-sm' : ''}`}>
+                        {icon}
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm leading-relaxed ${isFirst ? 'text-gray-900 font-medium' : 'text-gray-700'}`}>
+                            {event.message}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="text-xs text-gray-300 font-mono">{event.technicalCode}</span>
+                            {event.referenceId && (
+                              <span className="text-xs text-gray-300 font-mono">{event.referenceId}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Timestamp right-aligned */}
+                        <span className="text-xs text-gray-400 tabular-nums flex-shrink-0 pt-0.5">
+                          {event.timestamp}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
     </div>
