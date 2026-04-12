@@ -20,7 +20,8 @@ interface LiveEvent {
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-const WS_BASE = API_BASE ? API_BASE.replace(/^http/, 'ws') : `ws://${window.location.host}`;
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_BASE = API_BASE ? API_BASE.replace(/^https?:/, wsProtocol) : `${wsProtocol}//${window.location.host}`;
 
 const typeIcons: Record<string, React.ReactNode> = {
   ENQ: <ScanBarcode size={13} />,
@@ -76,34 +77,38 @@ export default function SimulatorPage() {
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(`${WS_BASE}/ws/simulator`);
-    wsRef.current = ws;
+    try {
+      const ws = new WebSocket(`${WS_BASE}/ws/simulator`);
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      setWsConnected(true);
-      addEvent({ type: 'SYSTEM', severity: 'success', message: 'WebSocket verbunden' });
-    };
+      ws.onopen = () => {
+        setWsConnected(true);
+        addEvent({ type: 'SYSTEM', severity: 'success', message: 'WebSocket verbunden' });
+      };
 
-    ws.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        addEvent(data);
-        // Update connected machines from system events
-        if (data.type === 'SYSTEM' && data.message?.includes('connected')) {
-          setConnectedMachines(prev => [...new Set([...prev, data.machine_id].filter(Boolean))]);
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          addEvent(data);
+          if (data.type === 'SYSTEM' && data.message?.includes('connected')) {
+            setConnectedMachines(prev => [...new Set([...prev, data.machine_id].filter(Boolean))]);
+          }
+        } catch {
+          addEvent({ type: 'SYSTEM', severity: 'warning', message: `Raw: ${e.data}` });
         }
-      } catch {
-        addEvent({ type: 'SYSTEM', severity: 'warning', message: `Raw: ${e.data}` });
-      }
-    };
+      };
 
-    ws.onclose = () => {
-      setWsConnected(false);
-    };
+      ws.onclose = () => {
+        setWsConnected(false);
+      };
 
-    ws.onerror = () => {
+      ws.onerror = () => {
+        setWsConnected(false);
+      };
+    } catch {
       setWsConnected(false);
-    };
+      addEvent({ type: 'SYSTEM', severity: 'error', message: 'WebSocket-Verbindung fehlgeschlagen' });
+    }
   }, []);
 
   useEffect(() => {
