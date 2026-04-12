@@ -25,16 +25,23 @@ _uvicorn_port = int(os.environ.get("PORT", 8000))
 _tcp_port = settings.cmc_tcp_port
 if _tcp_port == _uvicorn_port:
     _tcp_port = _uvicorn_port + 1
-    logger.warning(f"TCP port {settings.cmc_tcp_port} conflicts with HTTP port, using {_tcp_port}")
+_tcp_active = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _tcp_active
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"HTTP port (PORT env): {_uvicorn_port}, TCP gateway target port: {_tcp_port}")
 
-    # Start TCP gateway server — simulators connect TO us
-    await connection_manager.start_server(settings.cmc_tcp_host, _tcp_port)
-    logger.info(f"CMC TCP Gateway listening on port {_tcp_port}")
+    # Start TCP gateway — non-fatal: if port is busy, HTTP/WS still works
+    try:
+        await connection_manager.start_server(settings.cmc_tcp_host, _tcp_port)
+        _tcp_active = True
+        logger.info(f"CMC TCP Gateway listening on port {_tcp_port}")
+    except OSError as e:
+        logger.warning(f"Could not start TCP gateway on port {_tcp_port}: {e}")
+        logger.warning("HTTP and WebSocket will work, but TCP simulator connections are disabled")
 
     yield
 
@@ -96,8 +103,9 @@ def health():
 def gateway_status():
     """Return TCP gateway info so the frontend knows where simulators should connect."""
     return {
-        "listening": True,
+        "listening": _tcp_active,
         "port": _tcp_port,
+        "http_port": _uvicorn_port,
         "connected_machines": connection_manager.connected_machines,
         "websocket_clients": ws_manager.client_count,
     }
