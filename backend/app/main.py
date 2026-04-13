@@ -83,6 +83,19 @@ async def websocket_simulator(ws: WebSocket):
         ws_manager.disconnect(ws)
 
 
+@app.websocket("/ws/ping")
+async def websocket_ping(ws: WebSocket):
+    """Minimal WebSocket echo endpoint — for verifying WS works through Railway's proxy."""
+    await ws.accept()
+    await ws.send_text("pong")
+    try:
+        while True:
+            msg = await ws.receive_text()
+            await ws.send_text(f"echo: {msg}")
+    except WebSocketDisconnect:
+        pass
+
+
 @app.get("/")
 def root():
     return {
