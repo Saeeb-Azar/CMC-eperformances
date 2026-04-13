@@ -86,11 +86,15 @@ export default function SimulatorPage() {
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
+    const wsUrl = `${WS_BASE}/ws/simulator`;
+    console.log('[Simulator] Connecting WebSocket to:', wsUrl);
+
     try {
-      const ws = new WebSocket(`${WS_BASE}/ws/simulator`);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        console.log('[Simulator] WebSocket OPEN');
         setWsConnected(true);
         addEvent({ type: 'SYSTEM', severity: 'success', message: 'WebSocket verbunden' });
       };
@@ -107,14 +111,17 @@ export default function SimulatorPage() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        console.warn('[Simulator] WebSocket CLOSE:', { code: e.code, reason: e.reason, wasClean: e.wasClean });
         setWsConnected(false);
       };
 
-      ws.onerror = () => {
+      ws.onerror = (e) => {
+        console.error('[Simulator] WebSocket ERROR:', e);
         setWsConnected(false);
       };
-    } catch {
+    } catch (err) {
+      console.error('[Simulator] WebSocket creation failed:', err);
       setWsConnected(false);
       addEvent({ type: 'SYSTEM', severity: 'error', message: 'WebSocket-Verbindung fehlgeschlagen' });
     }
