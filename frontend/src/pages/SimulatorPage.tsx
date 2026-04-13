@@ -30,6 +30,12 @@ if (API_BASE && !API_BASE.startsWith('http')) {
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_BASE = API_BASE ? API_BASE.replace(/^https?:/, wsProtocol) : `${wsProtocol}//${window.location.host}`;
 
+// Debug: log the configuration (visible in browser console)
+console.log('[Simulator] window.__ENV__:', _env);
+console.log('[Simulator] import.meta.env.VITE_API_URL:', import.meta.env.VITE_API_URL);
+console.log('[Simulator] API_BASE:', API_BASE);
+console.log('[Simulator] WS_BASE:', WS_BASE);
+
 const typeIcons: Record<string, React.ReactNode> = {
   ENQ: <ScanBarcode size={13} />,
   IND: <LogIn size={13} />,
