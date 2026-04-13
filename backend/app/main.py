@@ -163,9 +163,13 @@ def health():
 @app.get("/api/v1/gateway/status")
 def gateway_status():
     """Return TCP gateway info so the frontend knows where simulators should connect."""
+    # bound_port is the actual port the server bound to — may differ from
+    # settings.cmc_tcp_port if Railway's PORT env var collided with it.
+    actual_port = connection_manager.bound_port or settings.cmc_tcp_port
     return {
         "listening": connection_manager._server is not None,
-        "port": settings.cmc_tcp_port,
+        "port": actual_port,
+        "configured_port": settings.cmc_tcp_port,
         "connected_machines": connection_manager.connected_machines,
         "websocket_clients": ws_manager.client_count,
     }

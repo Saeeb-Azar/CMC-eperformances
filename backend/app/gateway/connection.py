@@ -44,10 +44,16 @@ class ConnectionManager:
     def __init__(self):
         self._connections: dict[str, MachineConnection] = {}
         self._server: asyncio.Server | None = None
+        self._bound_port: int | None = None
 
     @property
     def connected_machines(self) -> list[str]:
         return [mid for mid, conn in self._connections.items() if conn.is_alive]
+
+    @property
+    def bound_port(self) -> int | None:
+        """Port the TCP gateway actually bound to (may differ from config due to PORT conflicts)."""
+        return self._bound_port
 
     def get_connection(self, machine_id: str) -> MachineConnection | None:
         conn = self._connections.get(machine_id)
@@ -59,6 +65,7 @@ class ConnectionManager:
 
     async def start_server(self, host: str, port: int) -> None:
         self._server = await asyncio.start_server(self._handle_client, host, port)
+        self._bound_port = port
         logger.info(f"CMC Gateway listening on {host}:{port}")
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
