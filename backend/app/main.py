@@ -1,8 +1,10 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -94,6 +96,39 @@ async def websocket_ping(ws: WebSocket):
             await ws.send_text(f"echo: {msg}")
     except WebSocketDisconnect:
         pass
+
+
+@app.get("/api/v1/events/stream")
+async def sse_stream():
+    """Server-Sent Events endpoint — same data as /ws/simulator but via HTTP.
+
+    Works through any proxy without WebSocket upgrade support.
+    """
+    queue = ws_manager.add_sse_client()
+
+    async def event_generator():
+        try:
+            # Initial connection event
+            yield f"data: {{\"type\":\"SYSTEM\",\"severity\":\"success\",\"message\":\"SSE connected\"}}\n\n"
+            while True:
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=25)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # Keepalive comment every 25s to prevent proxy timeouts
+                    yield ": keepalive\n\n"
+        finally:
+            ws_manager.remove_sse_client(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx buffering
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/")
