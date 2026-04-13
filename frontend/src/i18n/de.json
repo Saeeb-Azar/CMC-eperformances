@@ -215,7 +215,26 @@
     "step2": "Setze den Modus auf <strong>\"Client\"</strong>",
     "step3": "Öffne <strong>CMD</strong> und führe <code>nslookup metro.proxy.rlwy.net</code> aus um die IP zu bekommen",
     "step4": "Trage die IP und den TCP Proxy Port im Simulator ein, klicke <strong>\"OPEN\"</strong>",
-    "step5": "Events erscheinen hier automatisch"
+    "step5": "Events erscheinen hier automatisch",
+    "filterPlaceholder": "Filter: Referenz, Barcode, Maschine, Nachricht...",
+    "allTypes": "Alle",
+    "packageFlow": "Paket-Verlauf",
+    "packageFlowDesc": "Lebenszyklus pro Referenz-ID",
+    "noPackages": "Noch keine Pakete verarbeitet",
+    "rawTcp": "Roh-TCP",
+    "parsedFields": "Geparste Felder",
+    "noDetails": "Keine Details verfügbar",
+    "totalReceived": "Empfangen gesamt",
+    "stage": {
+      "ENQ": "Gescannt",
+      "IND": "Eingeführt",
+      "ACK": "Vermessen",
+      "INV": "Rechnung",
+      "LAB1": "Etikett 1",
+      "LAB2": "Etikett 2",
+      "END": "Abgeschlossen",
+      "REM": "Entfernt"
+    }
   },
   "control": {
     "tenants": {

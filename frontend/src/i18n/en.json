@@ -215,7 +215,26 @@
     "step2": "Set mode to <strong>\"Client\"</strong>",
     "step3": "Open <strong>CMD</strong> and run <code>nslookup metro.proxy.rlwy.net</code> to get the IP",
     "step4": "Enter the IP and TCP proxy port in the simulator, click <strong>\"OPEN\"</strong>",
-    "step5": "Events appear here automatically"
+    "step5": "Events appear here automatically",
+    "filterPlaceholder": "Filter: reference, barcode, machine, message...",
+    "allTypes": "All",
+    "packageFlow": "Package Flow",
+    "packageFlowDesc": "Lifecycle per reference ID",
+    "noPackages": "No packages processed yet",
+    "rawTcp": "Raw TCP",
+    "parsedFields": "Parsed Fields",
+    "noDetails": "No details available",
+    "totalReceived": "Total received",
+    "stage": {
+      "ENQ": "Scanned",
+      "IND": "Inducted",
+      "ACK": "Measured",
+      "INV": "Invoice",
+      "LAB1": "Label 1",
+      "LAB2": "Label 2",
+      "END": "Completed",
+      "REM": "Removed"
+    }
   },
   "control": {
     "tenants": {
