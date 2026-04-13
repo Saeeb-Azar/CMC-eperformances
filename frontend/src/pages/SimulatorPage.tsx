@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Wifi, WifiOff,
   ScanBarcode, LogIn, Ruler, Tag, FileText,
@@ -27,14 +27,6 @@ let API_BASE = (_env?.VITE_API_URL || import.meta.env.VITE_API_URL || '')
 if (API_BASE && !API_BASE.startsWith('http')) {
   API_BASE = `https://${API_BASE}`;
 }
-const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const WS_BASE = API_BASE ? API_BASE.replace(/^https?:/, wsProtocol) : `${wsProtocol}//${window.location.host}`;
-
-// Debug: log the configuration (visible in browser console)
-console.log('[Simulator] window.__ENV__:', _env);
-console.log('[Simulator] import.meta.env.VITE_API_URL:', import.meta.env.VITE_API_URL);
-console.log('[Simulator] API_BASE:', API_BASE);
-console.log('[Simulator] WS_BASE:', WS_BASE);
 
 const typeIcons: Record<string, React.ReactNode> = {
   ENQ: <ScanBarcode size={13} />,
@@ -56,95 +48,62 @@ const severityColors: Record<string, { bg: string; text: string }> = {
   error: { bg: 'bg-red-50', text: 'text-red-600' },
 };
 
+const POLL_INTERVAL_MS = 1000;
+
 export default function SimulatorPage() {
   const { t } = useTranslation();
-  const [wsConnected, setWsConnected] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
   const [gatewayPort, setGatewayPort] = useState(15001);
-  const eventCounter = useRef(0);
-  const wsRef = useRef<WebSocket | null>(null);
-  const sseRef = useRef<EventSource | null>(null);
+  const sinceIdRef = useRef(0);
 
-  // Poll gateway status
+  // HTTP polling — the only transport that's guaranteed to work through
+  // Railway's proxy. Pulls new events + machine list every second.
   useEffect(() => {
+    let cancelled = false;
+
     const poll = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/gateway/status`);
-        if (res.ok) {
-          const data = await res.json();
-          setConnectedMachines(data.connected_machines || []);
-          if (data.port) setGatewayPort(data.port);
+        const res = await fetch(
+          `${API_BASE}/api/v1/events/recent?since=${sinceIdRef.current}`,
+          { cache: 'no-store' }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        setConnected(true);
+        if (Array.isArray(data.connected_machines)) {
+          setConnectedMachines(data.connected_machines);
         }
-      } catch { /* ignore */ }
-    };
-    poll();
-    const interval = setInterval(poll, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // SSE stream (primary) — works through any HTTP proxy
-  const connectSSE = useCallback(() => {
-    if (sseRef.current) return;
-    const url = `${API_BASE}/api/v1/events/stream`;
-    console.log('[Simulator] Connecting SSE to:', url);
-    const es = new EventSource(url);
-    sseRef.current = es;
-
-    es.onopen = () => {
-      console.log('[Simulator] SSE OPEN');
-      setWsConnected(true);
-    };
-
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        addEvent(data);
-        if (data.type === 'SYSTEM' && data.message?.includes('connected')) {
-          setConnectedMachines(prev => [...new Set([...prev, data.machine_id].filter(Boolean))]);
+        if (Array.isArray(data.events) && data.events.length > 0) {
+          setEvents(prev => {
+            const next = [...prev, ...data.events].slice(-500);
+            return next;
+          });
+        }
+        if (typeof data.latest_id === 'number') {
+          sinceIdRef.current = data.latest_id;
         }
       } catch {
-        addEvent({ type: 'SYSTEM', severity: 'warning', message: `Raw: ${e.data}` });
+        if (!cancelled) setConnected(false);
       }
     };
 
-    es.onerror = (e) => {
-      console.warn('[Simulator] SSE ERROR (EventSource will auto-reconnect):', e);
-      setWsConnected(false);
-    };
-  }, []);
+    // Fetch gateway status once (for port display)
+    fetch(`${API_BASE}/api/v1/gateway/status`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.port) setGatewayPort(d.port); })
+      .catch(() => { /* ignore */ });
 
-  useEffect(() => {
-    connectSSE();
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
-      sseRef.current?.close();
-      sseRef.current = null;
+      cancelled = true;
+      clearInterval(interval);
     };
-  }, [connectSSE]);
-
-  // Keepalive (legacy WS path)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send('ping');
-      }
-    }, 30000);
-    return () => clearInterval(interval);
   }, []);
-
-  function addEvent(data: Partial<LiveEvent>) {
-    eventCounter.current += 1;
-    setEvents(prev => [...prev.slice(-200), {
-      id: eventCounter.current,
-      type: data.type || 'UNKNOWN',
-      severity: data.severity || 'info',
-      message: data.message || '',
-      machine_id: data.machine_id,
-      data: data.data,
-      raw: data.raw,
-      timestamp: data.timestamp || new Date().toISOString(),
-    }]);
-  }
 
   const stats = {
     total: events.filter(e => e.type !== 'SYSTEM').length,
@@ -189,9 +148,9 @@ export default function SimulatorPage() {
               <div className="panel__header">
                 <h3 className="panel__title">{t('simulator.liveFeed')}</h3>
                 <div className="flex items-center gap-2">
-                  {wsConnected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                  {connected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
                   <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {wsConnected ? t('common.connected') : t('common.disconnected')}
+                    {connected ? t('common.connected') : t('common.disconnected')}
                   </span>
                   {events.length > 0 && (
                     <button onClick={() => setEvents([])} className="btn btn--ghost" style={{ height: 28, fontSize: 11, padding: '0 8px' }}>
@@ -244,17 +203,17 @@ export default function SimulatorPage() {
           <div className="stack-4">
             {/* Connection Status */}
             <div className="hero-panel">
-              <div className={`hero-panel__accent ${hasSimulator ? 'hero-panel__accent--success' : wsConnected ? 'hero-panel__accent--active' : 'hero-panel__accent--danger'}`} />
+              <div className={`hero-panel__accent ${hasSimulator ? 'hero-panel__accent--success' : connected ? 'hero-panel__accent--active' : 'hero-panel__accent--danger'}`} />
               <div className="flex items-center gap-4 px-8 py-5">
-                <div className={hasSimulator ? 'text-emerald-500' : wsConnected ? 'text-blue-500' : 'text-gray-400'}>
+                <div className={hasSimulator ? 'text-emerald-500' : connected ? 'text-blue-500' : 'text-gray-400'}>
                   {hasSimulator ? <Wifi size={22} /> : <WifiOff size={22} />}
                 </div>
                 <div>
                   <p className="text-lg font-semibold" style={{ color: 'var(--clr-text)' }}>
-                    {hasSimulator ? t('simulator.simulatorConnected') : wsConnected ? t('simulator.backendConnected') : t('common.disconnected')}
+                    {hasSimulator ? t('simulator.simulatorConnected') : connected ? t('simulator.backendConnected') : t('common.disconnected')}
                   </p>
                   <p className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {hasSimulator ? `${connectedMachines.length} Maschine(n) verbunden` : wsConnected ? t('simulator.noSimulator') : t('simulator.noConnection')}
+                    {hasSimulator ? `${connectedMachines.length} Maschine(n) verbunden` : connected ? t('simulator.noSimulator') : t('simulator.noConnection')}
                   </p>
                 </div>
               </div>

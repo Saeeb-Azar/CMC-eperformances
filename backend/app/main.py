@@ -131,6 +131,21 @@ async def sse_stream():
     )
 
 
+@app.get("/api/v1/events/recent")
+def events_recent(since: int = 0, limit: int = 200):
+    """HTTP polling endpoint — returns events newer than `since` (event id).
+
+    This is the reliable fallback for Railway's proxy, which can drop long-lived
+    connections (WebSocket / SSE). The frontend polls this every ~1s.
+    """
+    events, latest_id = ws_manager.get_events_since(since, limit=limit)
+    return {
+        "latest_id": latest_id,
+        "events": events,
+        "connected_machines": connection_manager.connected_machines,
+    }
+
+
 @app.get("/")
 def root():
     return {
