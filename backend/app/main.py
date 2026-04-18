@@ -26,19 +26,24 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     http_port = os.environ.get("PORT", "not set")
-    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    logger.info(f"PORT env = {http_port}")
-
-    # TCP gateway — try to start, but never crash the app
     tcp_port = settings.cmc_tcp_port
-    try:
-        # Avoid conflict with the HTTP port
-        if http_port.isdigit() and int(http_port) == tcp_port:
-            tcp_port = int(http_port) + 1
-        await connection_manager.start_server(settings.cmc_tcp_host, tcp_port)
-        logger.info(f"TCP Gateway listening on port {tcp_port}")
-    except Exception as e:
-        logger.warning(f"TCP Gateway failed to start: {e} — HTTP/WS still available")
+    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"HTTP PORT env = {http_port}, CMC_TCP_PORT = {tcp_port}")
+
+    # HTTP and TCP gateway must use distinct ports.
+    # On Railway: set PORT (e.g. 8080) for HTTP, and CMC_TCP_PORT (default 15001)
+    # for the raw-TCP gateway exposed via the Railway TCP proxy.
+    if http_port.isdigit() and int(http_port) == tcp_port:
+        logger.error(
+            f"PORT ({http_port}) equals CMC_TCP_PORT ({tcp_port}). "
+            "Set them to different values — TCP gateway not started."
+        )
+    else:
+        try:
+            await connection_manager.start_server(settings.cmc_tcp_host, tcp_port)
+            logger.info(f"TCP Gateway listening on port {tcp_port}")
+        except Exception as e:
+            logger.warning(f"TCP Gateway failed to start: {e} — HTTP/WS still available")
 
     yield
 
