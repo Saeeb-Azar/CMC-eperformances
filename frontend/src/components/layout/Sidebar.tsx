@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -9,8 +9,15 @@ import {
 
 export default function Sidebar() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [controlOpen, setControlOpen] = useState(false);
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    navigate('/login', { replace: true });
+  };
 
   const navGroups = [
     {
@@ -125,7 +132,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar__bottom">
-        <button className="sidebar__link">
+        <button className="sidebar__link" onClick={handleLogout} type="button">
           <LogOut size={15} className="sidebar__link-icon" />
           <span>{t('nav.logout')}</span>
         </button>
