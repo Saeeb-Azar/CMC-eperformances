@@ -125,6 +125,23 @@ def _parse_json(text: str) -> list[dict]:
     return []
 
 
+# Positional field names for CMC CIS messages (sender → CIS).
+# Values are taken positionally from the pipe-delimited frame, in order,
+# after MACHINE_ID and TYPE. Extra trailing parts fall back to field_N.
+POSITIONAL_FIELDS: dict[str, list[str]] = {
+    "ENQ": ["event", "barcode", "source"],
+    "IND": ["reference_id"],
+    "ACK": ["reference_id", "good", "event", "area_carton", "height_mm", "length_mm", "width_mm"],
+    "INV": ["reference_id", "num_pages"],
+    "LAB1": ["reference_id", "good", "event", "weight_scale", "weight_carton", "weight_content", "feeders"],
+    "LAB2": ["reference_id", "good", "event", "weight_scale", "weight_carton", "weight_content", "feeders"],
+    "END": ["reference_id", "status", "sizes_length", "sizes_width", "sizes_height", "weight"],
+    "REM": ["reference_id"],
+    "HBT": [],
+    "STS": ["status"],
+}
+
+
 def _parse_pipe(text: str) -> list[dict]:
     """Parse pipe-delimited CMC CIS messages.
 
@@ -132,7 +149,8 @@ def _parse_pipe(text: str) -> list[dict]:
       TYPE|field1|field2|...
       MACHINE_ID|TYPE|field1|field2|...   (CMC CW1000 default)
 
-    Fields may be positional or key=value.
+    Field values may be positional (mapped to POSITIONAL_FIELDS) or key=value.
+    Anything past the known positional slots is stored as field_N.
     """
     events = []
     for line in text.splitlines():
@@ -157,12 +175,18 @@ def _parse_pipe(text: str) -> list[dict]:
         if type_idx == 1:
             data["machine_id"] = parts[0]
 
-        for i, part in enumerate(parts[type_idx + 1:]):
+        field_names = POSITIONAL_FIELDS.get(msg_type, [])
+        tail = parts[type_idx + 1:]
+        extra_idx = 0
+        for i, part in enumerate(tail):
             if "=" in part:
                 k, v = part.split("=", 1)
                 data[k.strip()] = v.strip()
+            elif i < len(field_names):
+                data[field_names[i]] = part
             else:
-                data[f"field_{i}"] = part
+                data[f"field_{extra_idx}"] = part
+                extra_idx += 1
 
         events.append({"type": msg_type, "data": data, "raw": line})
     return events

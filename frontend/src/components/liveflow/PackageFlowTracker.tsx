@@ -1,4 +1,5 @@
 import { ScanBarcode, LogIn, Ruler, Box, Tag, CheckCircle, XCircle, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface FlowStep {
   id: string;
@@ -34,10 +35,11 @@ const styles = {
 };
 
 export default function PackageFlowTracker({ steps = defaultSteps, showTechnical = false, onStepClick }: PackageFlowTrackerProps) {
+  const { t } = useTranslation();
   return (
     <div className="panel">
       <div className="panel__header">
-        <h3 className="panel__title">Package Journey</h3>
+        <h3 className="panel__title">{t('liveFlow.packageJourney')}</h3>
       </div>
       <div className="px-6 py-6">
         <div className="flex items-start">
