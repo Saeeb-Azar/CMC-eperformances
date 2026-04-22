@@ -81,12 +81,20 @@
     "technical": "Technical"
   },
   "auth": {
-    "signIn": "Sign In",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
     "email": "Email",
     "password": "Password",
-    "signInButton": "Sign In",
+    "signInButton": "Sign in",
     "errorEmpty": "Please enter email and password",
-    "subtitle": "CMC CartonWrap Dashboard"
+    "missingFields": "Please enter email and password",
+    "loginFailed": "Login failed",
+    "welcomeBack": "Welcome back — please sign in to continue.",
+    "subtitle": "CMC CartonWrap Dashboard",
+    "heroTitle": "A live view of your CartonWrap line",
+    "heroSubtitle": "Real-time station status, the full package lifecycle, and deep insights into dimensions, weights and throughput — straight from the machine.",
+    "devCredsLabel": "Default test credentials",
+    "useDevCreds": "fill in"
   },
   "dashboard": {
     "title": "Overview",

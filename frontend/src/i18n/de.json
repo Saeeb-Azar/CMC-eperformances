@@ -82,11 +82,19 @@
   },
   "auth": {
     "signIn": "Anmelden",
+    "signingIn": "Anmelden…",
     "email": "E-Mail",
     "password": "Passwort",
     "signInButton": "Anmelden",
     "errorEmpty": "Bitte E-Mail und Passwort eingeben",
-    "subtitle": "CMC CartonWrap Dashboard"
+    "missingFields": "Bitte E-Mail und Passwort eingeben",
+    "loginFailed": "Anmeldung fehlgeschlagen",
+    "welcomeBack": "Willkommen zurück – bitte melde dich an, um fortzufahren.",
+    "subtitle": "CMC CartonWrap Dashboard",
+    "heroTitle": "Überblick über deine CartonWrap-Linie",
+    "heroSubtitle": "Echtzeit-Status jeder Station, vollständiger Paket-Lebenszyklus, und tiefe Einblicke in Dimensionen, Gewichte und Durchsatz – live am Puls deiner Maschine.",
+    "devCredsLabel": "Standard-Zugang für Tests",
+    "useDevCreds": "eintragen"
   },
   "dashboard": {
     "title": "Übersicht",
