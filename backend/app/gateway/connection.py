@@ -123,13 +123,28 @@ class ConnectionManager:
                     # then fan out to browsers and persistence after.
                     response: dict | None = None
                     if msg_type != "UNKNOWN":
-                        response = build_response(msg_type, msg_data)
-                        msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
-                        response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         try:
-                            await conn.send(response_bytes)
+                            response = build_response(msg_type, msg_data)
+                            msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
+                            response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         except Exception as e:
-                            logger.error(f"Failed to send response: {e}")
+                            # Never let a serialisation bug take down the
+                            # read loop — log and keep processing.
+                            logger.exception(f"Failed to build {msg_type} response: {e}")
+                            response = None
+                            response_bytes = None
+
+                        if response_bytes is not None:
+                            try:
+                                await conn.send(response_bytes)
+                                logger.info(
+                                    "TCP reply %s → %s (%d bytes)",
+                                    msg_type,
+                                    response_bytes.replace(b"\x02", b"").replace(b"\x03", b"").decode("utf-8", "replace"),
+                                    len(response_bytes),
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to send response: {e}")
 
                     # STEP 2: fan out to dashboard clients and persistence.
                     # Both are fire-and-forget so a slow browser cannot back

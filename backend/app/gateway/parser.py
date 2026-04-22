@@ -261,7 +261,13 @@ def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> b
         "END": ["event", "reference_id", "result"],
         "INV": ["event", "reference_id", "result", "match_barcode"],
         "ENQ": [
-            "event", "reference_id", "result", "item_validated", "description",
+            # Note: CW1000 CIS rel 4.0 expects `item_validated` in the result
+            # slot here (it's the accept/reject flag for scanner). Including a
+            # separate `result` field before it makes the simulator refuse the
+            # frame (timeout). Layout mirrors the fields shown in the ENQ
+            # response panel: Item Validated, Reference ID, Description,
+            # Label Match, LAB1/LAB2/LAB3, INV, Sorter.
+            "event", "reference_id", "item_validated", "description",
             "label_match", "lab1_enabled", "lab2_enabled", "lab3_enabled",
             "inv_enabled", "sorter",
         ],
