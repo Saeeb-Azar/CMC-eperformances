@@ -38,19 +38,19 @@ export default function LoginPage() {
   };
 
   const useDevCreds = () => {
-    setEmail('admin@default.local');
+    setEmail('admin@eperformances.de');
     setPassword('admin123');
   };
 
   return (
     <div className="min-h-screen w-full flex bg-white text-slate-900 font-[-apple-system,BlinkMacSystemFont,'SF_Pro_Display','SF_Pro_Text',system-ui,Segoe_UI,Roboto,Helvetica,Arial,sans-serif]">
-      {/* Left: full-bleed machine scene */}
-      <div className="hidden lg:block relative flex-1 overflow-hidden">
+      {/* Left: full-bleed machine scene — 60% of viewport */}
+      <div className="hidden lg:block relative lg:w-[60%] overflow-hidden">
         <CartonWrapAnimation />
       </div>
 
-      {/* Right: sign-in form, centered */}
-      <div className="w-full lg:w-[520px] flex items-center justify-center px-8 lg:px-14 py-12">
+      {/* Right: sign-in form — 40% of viewport, content centered */}
+      <div className="w-full lg:w-[40%] flex items-center justify-center px-8 lg:px-14 py-12">
         <form
           onSubmit={handleLogin}
           className="w-full max-w-[400px] flex flex-col"
@@ -85,7 +85,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@default.local"
+                placeholder="admin@eperformances.de"
                 autoComplete="email"
                 className="bg-transparent outline-none text-[16px] w-full h-full text-slate-900 placeholder:text-slate-400"
                 required
@@ -133,7 +133,7 @@ export default function LoginPage() {
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <code className="font-mono text-[12.5px] text-slate-700">
-                admin@default.local
+                admin@eperformances.de
               </code>
               <span className="text-slate-300">·</span>
               <code className="font-mono text-[12.5px] text-slate-700">admin123</code>

@@ -31,7 +31,10 @@ from app.modules.tenants.models import Tenant
 
 DEFAULT_TENANT_SLUG = "default"
 DEFAULT_TENANT_NAME = "Default Tenant"
-DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@default.local")
+# Pydantic EmailStr (via email-validator) rejects ".local" because it's
+# reserved for mDNS, not a real TLD — and login would return 422. Use a
+# plain ".de" domain so the default creds actually round-trip.
+DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@eperformances.de")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin123")
 DEFAULT_ADMIN_NAME = "Default Admin"
 
