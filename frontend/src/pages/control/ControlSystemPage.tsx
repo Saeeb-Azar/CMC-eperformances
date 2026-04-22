@@ -1,22 +1,58 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
-import { useState } from 'react';
 import {
-  Construction,
-  RefreshCw,
-  Database,
-  Users,
-  Server,
-  Activity,
-  AlertTriangle,
-  CheckCircle,
-  Shield,
+  Construction, RefreshCw, Server, Activity,
+  AlertTriangle, CheckCircle, Shield,
 } from 'lucide-react';
+import { api, type GatewayStatus, type MachineRead } from '../../services/api';
 
 export default function ControlSystemPage() {
   const { t } = useTranslation();
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [forceUpdateConfirm, setForceUpdateConfirm] = useState(false);
+  const [gateway, setGateway] = useState<GatewayStatus | null>(null);
+  const [machines, setMachines] = useState<MachineRead[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const [g, m] = await Promise.allSettled([api.gatewayStatus(), api.listMachines()]);
+      if (cancelled) return;
+      if (g.status === 'fulfilled') setGateway(g.value);
+      if (m.status === 'fulfilled') setMachines(m.value);
+    };
+    load();
+    const interval = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  const connectedCount = gateway?.connected_machines.length ?? 0;
+  const machineTotal = machines.length;
+  const wsClients = gateway?.websocket_clients ?? 0;
+
+  const services = [
+    {
+      service: 'FastAPI Backend',
+      ok: true,
+      detail: 'Reachable',
+    },
+    {
+      service: 'TCP Gateway',
+      ok: gateway?.listening === true,
+      detail: gateway ? `Port ${gateway.port}` : 'Unknown',
+    },
+    {
+      service: 'WebSocket / Polling',
+      ok: wsClients >= 0,
+      detail: `${wsClients} clients`,
+    },
+    {
+      service: 'CMC Machines',
+      ok: connectedCount > 0,
+      detail: `${connectedCount} / ${machineTotal} connected`,
+    },
+  ];
 
   return (
     <div>
@@ -32,10 +68,10 @@ export default function ControlSystemPage() {
         {/* Stats */}
         <div className="grid-4 gap-4">
           {[
-            { label: t('control.system.activeSessions'), value: '23', icon: <Users size={18} /> },
-            { label: t('control.system.machinesConnected'), value: '5 / 6', icon: <Server size={18} /> },
-            { label: t('control.system.dbConnections'), value: '12', icon: <Database size={18} /> },
-            { label: t('control.system.eventsPerMin'), value: '142', icon: <Activity size={18} /> },
+            { label: t('control.system.machinesConnected'), value: `${connectedCount} / ${machineTotal}`, icon: <Server size={18} /> },
+            { label: 'WebSocket Clients', value: String(wsClients), icon: <Activity size={18} /> },
+            { label: t('control.system.activeSessions'), value: gateway ? '—' : '—', icon: <Activity size={18} /> },
+            { label: 'Gateway Port', value: gateway ? String(gateway.port) : '—', icon: <Server size={18} /> },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <div className="flex items-center justify-between w-full">
@@ -81,11 +117,6 @@ export default function ControlSystemPage() {
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${maintenanceMode ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
-              {maintenanceMode && (
-                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-xs text-amber-800"><strong>{t('control.system.maintenanceWarning', { count: 23 })}</strong></p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -110,9 +141,6 @@ export default function ControlSystemPage() {
                 </button>
               ) : (
                 <div className="space-y-3">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-xs text-blue-800"><strong>{t('control.system.confirmReload', { count: 23 })}</strong></p>
-                  </div>
                   <div className="flex gap-2">
                     <button onClick={() => setForceUpdateConfirm(false)} className="btn btn--secondary flex-1">{t('common.cancel')}</button>
                     <button onClick={() => setForceUpdateConfirm(false)} className="btn btn--primary flex-1">{t('control.system.confirmButton')}</button>
@@ -136,32 +164,20 @@ export default function ControlSystemPage() {
               <tr>
                 <th>{t('control.system.service')}</th>
                 <th style={{ width: 90 }}>{t('common.status')}</th>
-                <th style={{ width: 100 }}>{t('control.system.latency')}</th>
-                <th style={{ width: 100 }}>{t('control.system.lastCheck')}</th>
+                <th style={{ width: 200 }}>Detail</th>
               </tr>
             </thead>
             <tbody>
-              {[
-                { service: 'PostgreSQL Database', status: 'healthy', latency: '2ms', lastCheck: '5s ago' },
-                { service: 'FastAPI Backend', status: 'healthy', latency: '8ms', lastCheck: '5s ago' },
-                { service: 'TCP Gateway', status: 'healthy', latency: '1ms', lastCheck: '30s ago' },
-                { service: 'WebSocket Server', status: 'healthy', latency: '3ms', lastCheck: '5s ago' },
-                { service: 'Redis Cache', status: 'warning', latency: '45ms', lastCheck: '5s ago' },
-              ].map(s => (
+              {services.map(s => (
                 <tr key={s.service}>
                   <td><span className="cell-primary">{s.service}</span></td>
                   <td>
-                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                      s.status === 'healthy' ? 'text-emerald-600' : 'text-amber-600'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        s.status === 'healthy' ? 'bg-emerald-400' : 'bg-amber-400'
-                      }`} />
-                      {s.status === 'healthy' ? 'OK' : 'Slow'}
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${s.ok ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      {s.ok ? 'OK' : 'Offline'}
                     </span>
                   </td>
-                  <td><span className="cell-mono tabular-nums">{s.latency}</span></td>
-                  <td><span className="cell-muted">{s.lastCheck}</span></td>
+                  <td><span className="cell-muted">{s.detail}</span></td>
                 </tr>
               ))}
             </tbody>

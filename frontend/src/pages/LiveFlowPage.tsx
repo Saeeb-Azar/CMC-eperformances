@@ -1,56 +1,243 @@
 import { ScanBarcode, Printer, Wifi, AlertTriangle, Eye, Code } from 'lucide-react';
-import { useState } from 'react';
-import TopStatusBar from '../components/liveflow/TopStatusBar';
-import LiveActivityCard from '../components/liveflow/LiveActivityCard';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
+import LiveActivityCard, { type ActivityState } from '../components/liveflow/LiveActivityCard';
 import PackageFlowTracker, { type FlowStep } from '../components/liveflow/PackageFlowTracker';
 import LiveEventFeed, { type LiveEvent } from '../components/liveflow/LiveEventFeed';
 import ErrorPanel, { type ErrorItem } from '../components/liveflow/ErrorPanel';
 import MachineHealthPanel from '../components/liveflow/MachineHealthPanel';
+import { api, type DashboardOverview } from '../services/api';
 
-const demoSteps: FlowStep[] = [
-  { id: 'scan', label: 'Scanned', technicalCode: 'ENQ', icon: <ScanBarcode size={15} />, status: 'completed', timestamp: '14:32:01' },
-  { id: 'enter', label: 'Entered', technicalCode: 'IND', icon: <ScanBarcode size={15} />, status: 'completed', timestamp: '14:32:04' },
-  { id: 'measure', label: 'Measured', technicalCode: 'ACK', icon: <ScanBarcode size={15} />, status: 'completed', timestamp: '14:32:12' },
-  { id: 'wrap', label: 'Wrapped', technicalCode: '', icon: <ScanBarcode size={15} />, status: 'completed' },
-  { id: 'label', label: 'Labeled', technicalCode: 'LAB', icon: <ScanBarcode size={15} />, status: 'active', timestamp: '14:32:30' },
-  { id: 'complete', label: 'Completed', technicalCode: 'END', icon: <ScanBarcode size={15} />, status: 'pending' },
-];
+interface RawEvent {
+  id: number;
+  type: string;
+  severity: string;
+  message: string;
+  machine_id?: string;
+  data?: Record<string, unknown>;
+  raw?: string;
+  timestamp: string;
+}
 
-const demoEvents: LiveEvent[] = [
-  { id: '1', message: 'Shipping label is being printed for package', technicalCode: 'LAB1', severity: 'info', timestamp: '14:32:30', barcode: '4062196101493', referenceId: 'ref-0487' },
-  { id: '2', message: 'Dimensions recorded: 350 x 200 x 150 mm', technicalCode: 'ACK', severity: 'success', timestamp: '14:32:12', referenceId: 'ref-0487' },
-  { id: '3', message: 'Package approved by system', technicalCode: 'ACK', severity: 'success', timestamp: '14:32:12', referenceId: 'ref-0487' },
-  { id: '4', message: 'Package entered the machine', technicalCode: 'IND', severity: 'info', timestamp: '14:32:04', referenceId: 'ref-0487' },
-  { id: '5', message: 'Barcode scanned for package 4062196101493', technicalCode: 'ENQ', severity: 'info', timestamp: '14:32:01', barcode: '4062196101493', referenceId: 'ref-0487' },
-  { id: '6', message: 'Package completed successfully', technicalCode: 'END', severity: 'success', timestamp: '14:31:45', referenceId: 'ref-0486' },
-  { id: '7', message: 'Label verified and applied', technicalCode: 'END', severity: 'success', timestamp: '14:31:44', referenceId: 'ref-0486' },
-  { id: '8', message: 'Connection active', technicalCode: 'HBT', severity: 'info', timestamp: '14:31:30' },
-  { id: '9', message: 'Package rejected — dimensions exceed maximum', technicalCode: 'ACK', severity: 'warning', timestamp: '14:29:15', barcode: '8711319002345' },
-];
+const _env = (window as unknown as Record<string, unknown>).__ENV__ as
+  | Record<string, string>
+  | undefined;
+let API_BASE = (_env?.VITE_API_URL || import.meta.env.VITE_API_URL || '')
+  .split(',')[0]
+  .trim();
+if (API_BASE && !API_BASE.startsWith('http')) API_BASE = `https://${API_BASE}`;
 
-const demoErrors: ErrorItem[] = [
-  { id: '1', title: 'Label verification failed', description: 'The printed label barcode could not be verified by the exit scanner. Package was diverted to reject bin.', barcode: 'M320001', referenceId: 'ref-0482', timestamp: '14:25', severity: 'error' },
-  { id: '2', title: 'Package too large', description: 'Item dimensions exceed maximum allowed size. Automatically diverted after 3D measurement.', barcode: '8711319002345', referenceId: 'ref-0484', timestamp: '14:29', severity: 'warning' },
-];
+const FLOW_ORDER = ['ENQ', 'IND', 'ACK', 'LAB1', 'END'] as const;
 
-const healthIndicators = [
-  { label: 'Connection', status: 'healthy' as const, icon: <Wifi size={16} /> },
-  { label: 'Scanner', status: 'healthy' as const, icon: <ScanBarcode size={16} /> },
-  { label: 'Label Printer', status: 'healthy' as const, icon: <Printer size={16} /> },
-  { label: 'Errors Today', status: 'warning' as const, icon: <AlertTriangle size={16} /> },
-];
+const SEVERITY: Record<string, LiveEvent['severity']> = {
+  info: 'info',
+  success: 'success',
+  warning: 'warning',
+  error: 'error',
+};
+
+const TYPE_TO_ACTIVITY: Record<string, ActivityState> = {
+  ENQ: 'scanning',
+  IND: 'entering',
+  ACK: 'measuring',
+  INV: 'labeling',
+  LAB1: 'labeling',
+  LAB2: 'labeling',
+  END: 'completed',
+  REM: 'rejected',
+};
+
+const getRef = (ev: RawEvent): string | null => {
+  const d = ev.data as Record<string, unknown> | undefined;
+  const ref = d?.reference_id ?? d?.referenceId;
+  return typeof ref === 'string' && ref.length > 0 ? ref : null;
+};
+
+const getBarcode = (ev: RawEvent): string | undefined => {
+  const d = ev.data as Record<string, unknown> | undefined;
+  const b = d?.barcode;
+  return typeof b === 'string' && b.length > 0 ? b : undefined;
+};
+
+const formatTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+};
 
 export default function LiveFlowPage() {
   const [viewMode, setViewMode] = useState<'operator' | 'technical'>('operator');
+  const [events, setEvents] = useState<RawEvent[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const sinceRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/events/recent?since=${sinceRef.current}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (cancelled) return;
+        setConnected(true);
+        if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
+        if (Array.isArray(data.events) && data.events.length > 0) {
+          setEvents((prev) => [...prev, ...data.events].slice(-500));
+        }
+        if (typeof data.latest_id === 'number') sinceRef.current = data.latest_id;
+      } catch {
+        if (!cancelled) setConnected(false);
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      api.dashboard()
+        .then((d) => { if (!cancelled) setOverview(d); })
+        .catch(() => { /* ignore */ });
+    load();
+    const interval = setInterval(load, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Derive per-reference lifecycle
+  const latestRef = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const r = getRef(events[i]);
+      if (r) return r;
+    }
+    return null;
+  }, [events]);
+
+  const eventsForLatest = useMemo(
+    () => (latestRef ? events.filter((e) => getRef(e) === latestRef) : []),
+    [events, latestRef]
+  );
+
+  const steps = useMemo<FlowStep[]>(() => {
+    const stages = new Set(eventsForLatest.map((e) => e.type));
+    const latestType = eventsForLatest[eventsForLatest.length - 1]?.type;
+    const labels: Record<(typeof FLOW_ORDER)[number], string> = {
+      ENQ: 'Scanned',
+      IND: 'Entered',
+      ACK: 'Measured',
+      LAB1: 'Labeled',
+      END: 'Completed',
+    };
+    return FLOW_ORDER.map((code) => {
+      const done = stages.has(code);
+      const active = latestType === code;
+      const ts = eventsForLatest.find((e) => e.type === code)?.timestamp;
+      return {
+        id: code.toLowerCase(),
+        label: labels[code],
+        technicalCode: code,
+        icon: <ScanBarcode size={15} />,
+        status: done ? (active ? 'active' : 'completed') : 'pending',
+        timestamp: ts ? formatTime(ts) : undefined,
+      } as FlowStep;
+    });
+  }, [eventsForLatest]);
+
+  const latestType = eventsForLatest[eventsForLatest.length - 1]?.type;
+  const activityState: ActivityState = latestType
+    ? TYPE_TO_ACTIVITY[latestType] ?? 'idle'
+    : 'idle';
+
+  const latestBarcode = useMemo(() => {
+    for (let i = eventsForLatest.length - 1; i >= 0; i--) {
+      const b = getBarcode(eventsForLatest[i]);
+      if (b) return b;
+    }
+    return undefined;
+  }, [eventsForLatest]);
+
+  const firstTime = eventsForLatest[0]?.timestamp;
+  const lastTime = eventsForLatest[eventsForLatest.length - 1]?.timestamp;
+  const elapsedSeconds =
+    firstTime && lastTime
+      ? Math.max(0, Math.round((new Date(lastTime).getTime() - new Date(firstTime).getTime()) / 1000))
+      : 0;
+
+  const liveEvents: LiveEvent[] = useMemo(
+    () =>
+      events
+        .slice()
+        .reverse()
+        .filter((e) => e.type !== 'SYSTEM')
+        .slice(0, 40)
+        .map((e) => ({
+          id: String(e.id),
+          message: e.message,
+          technicalCode: e.type,
+          severity: SEVERITY[e.severity] ?? 'info',
+          timestamp: formatTime(e.timestamp),
+          barcode: getBarcode(e),
+          referenceId: getRef(e) ?? undefined,
+        })),
+    [events]
+  );
+
+  const errors: ErrorItem[] = useMemo(
+    () =>
+      events
+        .slice()
+        .reverse()
+        .filter((e) => e.severity === 'error' || e.severity === 'warning' || e.type === 'REM')
+        .slice(0, 10)
+        .map((e) => ({
+          id: String(e.id),
+          title: e.message,
+          description: e.raw ?? '',
+          barcode: getBarcode(e),
+          referenceId: getRef(e) ?? undefined,
+          timestamp: formatTime(e.timestamp),
+          severity: e.severity === 'error' || e.type === 'REM' ? 'error' : 'warning',
+        })),
+    [events]
+  );
+
+  const hasSimulator = connectedMachines.length > 0;
+  const machineState: MachineState = hasSimulator
+    ? activityState === 'rejected' || activityState === 'error'
+      ? 'error'
+      : 'running'
+    : connected
+      ? 'idle'
+      : 'offline';
+
+  type HealthStatus = 'healthy' | 'warning' | 'error' | 'offline';
+  const healthIndicators: { label: string; status: HealthStatus; icon: React.ReactNode }[] = [
+    { label: 'Connection', status: connected ? 'healthy' : 'error', icon: <Wifi size={16} /> },
+    { label: 'Scanner', status: hasSimulator ? 'healthy' : 'offline', icon: <ScanBarcode size={16} /> },
+    { label: 'Label Printer', status: hasSimulator ? 'healthy' : 'offline', icon: <Printer size={16} /> },
+    { label: 'Errors Today', status: (overview?.failed_today ?? 0) > 0 ? 'warning' : 'healthy', icon: <AlertTriangle size={16} /> },
+  ];
+
+  const primaryMachine = connectedMachines[0] ?? 'CW-—';
 
   return (
     <div>
       <TopStatusBar
-        machineState="running"
-        connectionActive={true}
-        activeBarcode="4062196101493"
-        currentStep="Labeling"
-        statusMessage="Packaging in progress"
+        machineState={machineState}
+        connectionActive={connected}
+        activeBarcode={latestBarcode ?? null}
+        currentStep={latestType ?? null}
+        statusMessage={hasSimulator ? 'Live stream active' : connected ? 'No simulator connected' : 'Backend disconnected'}
       />
 
       <div className="page-content">
@@ -78,29 +265,30 @@ export default function LiveFlowPage() {
 
         {/* Hero: current status */}
         <LiveActivityCard
-          state="labeling"
-          barcode="4062196101493"
-          detail="Generating and applying shipping label via DHL. The box has been wrapped and is at the labeler station."
-          elapsedSeconds={29}
+          state={activityState}
+          barcode={latestBarcode}
+          elapsedSeconds={elapsedSeconds}
         />
 
         {/* Flow tracker */}
-        <PackageFlowTracker steps={demoSteps} showTechnical={viewMode === 'technical'} />
+        <PackageFlowTracker steps={steps} showTechnical={viewMode === 'technical'} />
 
-        {/* Activity feed - full width */}
-        <LiveEventFeed events={demoEvents} />
+        {/* Activity feed */}
+        <LiveEventFeed events={liveEvents} />
 
-        {/* Machine Health + Issues side by side */}
+        {/* Machine Health + Issues */}
         <div className="grid-2 gap-5">
           <MachineHealthPanel
-            machineName="CW-001 Main Hall"
+            machineName={primaryMachine}
             indicators={healthIndicators}
-            packagesTotal={487}
-            packagesSuccess={461}
-            packagesRejected={22}
-            uptimePercent={98.7}
+            packagesTotal={overview?.total_orders_today ?? 0}
+            packagesSuccess={overview?.completed_today ?? 0}
+            packagesRejected={overview?.ejected_today ?? 0}
+            uptimePercent={overview && overview.machines_total > 0
+              ? Math.round((overview.machines_online / overview.machines_total) * 1000) / 10
+              : 0}
           />
-          <ErrorPanel errors={demoErrors} />
+          <ErrorPanel errors={errors} />
         </div>
       </div>
     </div>

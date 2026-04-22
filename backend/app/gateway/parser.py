@@ -22,7 +22,17 @@ def parse_message(raw: bytes) -> list[dict]:
     Parse raw TCP data into a list of event dicts.
     Returns: [{"type": "ENQ", "data": {...}, "raw": "..."}]
     """
-    text = raw.decode("utf-8", errors="replace").strip()
+    text = raw.decode("utf-8", errors="replace")
+    # Strip CMC CIS framing: STX (0x02) and ETX (0x03) — both binary and literal text forms
+    text = (
+        text.replace("\x02", "")
+            .replace("\x03", "")
+            .replace("<stx>", "")
+            .replace("<etx>", "")
+            .replace("<STX>", "")
+            .replace("<ETX>", "")
+            .strip()
+    )
     if not text:
         return []
 
@@ -44,7 +54,7 @@ def parse_message(raw: bytes) -> list[dict]:
     except Exception:
         pass
 
-    # Try pipe-delimited (TYPE|field1|field2|...)
+    # Try pipe-delimited (CMC CIS format: MACHINE_ID|TYPE|field1|...)
     try:
         events = _parse_pipe(text)
         if events:
@@ -116,23 +126,45 @@ def _parse_json(text: str) -> list[dict]:
 
 
 def _parse_pipe(text: str) -> list[dict]:
-    """Parse pipe-delimited messages: TYPE|field1=value1|field2=value2"""
+    """Parse pipe-delimited CMC CIS messages.
+
+    Supported layouts:
+      TYPE|field1|field2|...
+      MACHINE_ID|TYPE|field1|field2|...   (CMC CW1000 default)
+
+    Fields may be positional or key=value.
+    """
     events = []
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-        parts = line.split("|")
-        if parts and parts[0].upper() in KNOWN_TYPES:
-            msg_type = parts[0].upper()
-            data = {}
-            for part in parts[1:]:
-                if "=" in part:
-                    k, v = part.split("=", 1)
-                    data[k.strip()] = v.strip()
-                else:
-                    data[f"field_{len(data)}"] = part.strip()
-            events.append({"type": msg_type, "data": data, "raw": line})
+        parts = [p.strip() for p in line.split("|")]
+        if not parts:
+            continue
+
+        # Locate the message-type token (check first two positions)
+        type_idx = None
+        for i in range(min(2, len(parts))):
+            if parts[i].upper() in KNOWN_TYPES:
+                type_idx = i
+                break
+        if type_idx is None:
+            continue
+
+        msg_type = parts[type_idx].upper()
+        data: dict = {}
+        if type_idx == 1:
+            data["machine_id"] = parts[0]
+
+        for i, part in enumerate(parts[type_idx + 1:]):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                data[k.strip()] = v.strip()
+            else:
+                data[f"field_{i}"] = part
+
+        events.append({"type": msg_type, "data": data, "raw": line})
     return events
 
 
@@ -163,8 +195,47 @@ def build_response(msg_type: str, data: dict) -> dict:
     return responses.get(msg_type, {"result": 1})
 
 
-def serialize_response(msg_type: str, response: dict) -> bytes:
-    """Serialize a response dict back to bytes for TCP transmission."""
-    # Default: send as JSON (can be changed to XML when we know the exact format)
-    payload = {"type": msg_type.lower(), **response}
-    return (json.dumps(payload) + "\n").encode("utf-8")
+def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> bytes:
+    """Serialize a response dict in CMC CIS pipe-delimited format.
+
+    Output: <STX>MACHINE_ID|type|v1|v2|...<ETX>
+
+    STX (0x02) / ETX (0x03) are the CIS frame delimiters. Values are emitted
+    positionally in the order defined below per message type.
+    """
+    mid = str(response.pop("machine_id", "") or machine_id)
+
+    # Positional ordering per message type (matches CMC CW1000 CIS simulator)
+    order: dict[str, list[str]] = {
+        "HBT": ["result"],
+        "IND": ["reference_id", "result"],
+        "REM": ["reference_id", "result"],
+        "END": ["reference_id", "result"],
+        "INV": ["reference_id", "result", "match_barcode"],
+        "ENQ": [
+            "reference_id", "result", "item_validated", "description",
+            "label_match", "lab1_enabled", "lab2_enabled", "inv_enabled",
+        ],
+        "ACK": ["reference_id", "result", "item_validated", "flag"],
+        "LAB1": ["reference_id", "result", "match_barcode", "label_url", "status"],
+        "LAB2": ["reference_id", "result", "match_barcode", "label_url", "status"],
+    }
+
+    def _fmt(v):
+        if isinstance(v, bool):
+            return "1" if v else "0"
+        return "" if v is None else str(v)
+
+    mtype = msg_type.upper()
+    if mtype in order:
+        parts = [mid, msg_type.lower()]
+        for key in order[mtype]:
+            parts.append(_fmt(response.get(key, "")))
+    else:
+        # Unknown type: fall back to key=value so we don't lose info
+        parts = [mid, msg_type.lower()]
+        for k, v in response.items():
+            parts.append(f"{k}={_fmt(v)}")
+
+    payload = "|".join(parts)
+    return b"\x02" + payload.encode("utf-8") + b"\x03"
