@@ -9,7 +9,11 @@ alembic==1.14.0
 
 # Auth & Security
 python-jose[cryptography]==3.3.0
+# passlib 1.7.4 breaks with bcrypt >= 4.1 (can't read bcrypt.__about__ and
+# then incorrectly raises "password cannot be longer than 72 bytes" on any
+# input). Pin bcrypt to the last 4.0.x that still exposes __about__.
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 pydantic[email]==2.10.0
 pydantic-settings==2.6.0
 
