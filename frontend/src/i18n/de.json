@@ -289,7 +289,8 @@
     "machine": "Maschine",
     "sequence": "Sequenz",
     "maxDimensions": "Max. Abmessungen",
-    "stations": "Stationen"
+    "stations": "Stationen",
+    "autoProvisionHint": "Maschinen registrieren sich automatisch, sobald der Simulator eine erste Nachricht (z. B. HBT oder ENQ) sendet. Verbinde deinen CW1000-Simulator – er erscheint dann hier."
   },
   "analytics": {
     "title": "Analysen",

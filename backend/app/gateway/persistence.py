@@ -13,6 +13,7 @@ and never show up on the dashboard, orders, audit, or analytics pages.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,9 +21,33 @@ from sqlalchemy import select
 
 from app.core.database import async_session
 from app.core.logging import logger
+from app.core.security import hash_password
 from app.modules.audit.models import AuditLog
+from app.modules.auth.models import User
 from app.modules.machines.models import Machine
 from app.modules.orders.models import OrderState
+from app.modules.tenants.models import Tenant
+
+
+DEFAULT_TENANT_SLUG = "default"
+DEFAULT_TENANT_NAME = "Default Tenant"
+DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@default.local")
+DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin123")
+DEFAULT_ADMIN_NAME = "Default Admin"
+
+
+async def bootstrap_defaults() -> None:
+    """Ensure the app has a default tenant and an admin user so the UI is
+    usable on first boot without manual DB seeding. Safe to call repeatedly.
+    """
+    async with async_session() as db:
+        try:
+            tenant = await _get_or_create_default_tenant(db)
+            await _get_or_create_default_admin(db, tenant)
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"bootstrap_defaults failed: {e}", exc_info=True)
 
 
 def _int(v: Any) -> int | None:
@@ -45,19 +70,12 @@ def _now() -> datetime:
 async def persist_event(event_type: str, payload: dict) -> None:
     """Upsert OrderState + append AuditLog for a single CMC event."""
     machine_id = payload.get("machine_id") or ""
-    reference_id = payload.get("reference_id") or ""
     if not machine_id:
         return
 
     async with async_session() as db:
         try:
-            machine = await _get_machine(db, machine_id)
-            if machine is None:
-                logger.warning(
-                    f"Ignoring {event_type} from unknown machine {machine_id}"
-                )
-                return
-
+            machine = await _get_or_create_machine(db, machine_id)
             order, prev_state = await _apply_event(db, machine, event_type, payload)
             await _write_audit(db, machine, order, event_type, payload, prev_state)
             await db.commit()
@@ -66,12 +84,77 @@ async def persist_event(event_type: str, payload: dict) -> None:
             logger.error(f"persist_event({event_type}) failed: {e}", exc_info=True)
 
 
-async def _get_machine(db, machine_id: str) -> Machine | None:
-    # machine_id from the TCP frame is the configured "0001"-style id
+async def _get_or_create_machine(db, machine_id: str) -> Machine:
+    """Look up the machine by its CIS id, auto-provision tenant + machine
+    on first contact so the simulator works without manual setup.
+    """
     res = await db.execute(
         select(Machine).where(Machine.machine_id == machine_id)
     )
-    return res.scalar_one_or_none()
+    machine = res.scalar_one_or_none()
+    if machine is not None:
+        return machine
+
+    tenant = await _get_or_create_default_tenant(db)
+    machine = Machine(
+        tenant_id=tenant.id,
+        machine_id=machine_id,
+        name=f"Simulator {machine_id}",
+        model="CW1000",
+        tcp_role="server",
+        tcp_host="0.0.0.0",
+        tcp_port=15001,
+        status="RUNNING",
+        is_online=True,
+    )
+    db.add(machine)
+    await db.flush()  # so machine.id is available for following inserts
+    logger.info(f"Auto-provisioned machine {machine_id} under tenant {tenant.slug}")
+    return machine
+
+
+async def _get_or_create_default_tenant(db) -> Tenant:
+    res = await db.execute(
+        select(Tenant).where(Tenant.slug == DEFAULT_TENANT_SLUG)
+    )
+    tenant = res.scalar_one_or_none()
+    if tenant is not None:
+        return tenant
+    tenant = Tenant(
+        name=DEFAULT_TENANT_NAME,
+        slug=DEFAULT_TENANT_SLUG,
+        plan="enterprise",
+        is_active=True,
+    )
+    db.add(tenant)
+    await db.flush()
+    logger.info(f"Auto-provisioned default tenant {tenant.id}")
+    return tenant
+
+
+async def _get_or_create_default_admin(db, tenant: Tenant) -> User:
+    res = await db.execute(
+        select(User).where(User.email == DEFAULT_ADMIN_EMAIL)
+    )
+    user = res.scalar_one_or_none()
+    if user is not None:
+        return user
+    user = User(
+        email=DEFAULT_ADMIN_EMAIL,
+        hashed_password=hash_password(DEFAULT_ADMIN_PASSWORD),
+        full_name=DEFAULT_ADMIN_NAME,
+        role="super_admin",
+        tenant_id=tenant.id,
+        is_active=True,
+    )
+    db.add(user)
+    await db.flush()
+    logger.info(
+        "Auto-provisioned default admin user — email=%s  password=%s (set DEFAULT_ADMIN_EMAIL/DEFAULT_ADMIN_PASSWORD env vars to override)",
+        DEFAULT_ADMIN_EMAIL,
+        DEFAULT_ADMIN_PASSWORD,
+    )
+    return user
 
 
 async def _find_order(db, machine: Machine, reference_id: str) -> OrderState | None:
@@ -95,6 +178,16 @@ async def _apply_event(
     ref = payload.get("reference_id") or ""
     now = _now()
     prev_state: str | None = None
+
+    # Every event marks the machine as alive
+    machine.last_event_at = now
+    machine.is_online = True
+    if machine.status in ("STOP", "OFFLINE"):
+        machine.status = "RUNNING"
+
+    if event_type == "HBT":
+        machine.last_heartbeat_at = now
+        return None, None
 
     if event_type == "ENQ":
         # ENQ is the first touch — create a new order unless one already exists
