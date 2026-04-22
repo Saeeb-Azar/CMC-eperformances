@@ -70,6 +70,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Health-check / polling events are high-frequency (HBT every few seconds,
+# STS on demand) and by themselves carry no operational information. We still
+# refresh the machine's heartbeat timestamp so "online/offline" works, but
+# skip the audit-log write so the Protokolle table stays readable and the DB
+# doesn't balloon with tens of thousands of rows per day.
+AUDIT_SKIP_TYPES: frozenset[str] = frozenset({"HBT", "STS"})
+
+
 async def persist_event(event_type: str, payload: dict) -> None:
     """Upsert OrderState + append AuditLog for a single CMC event."""
     machine_id = payload.get("machine_id") or ""
@@ -80,7 +88,8 @@ async def persist_event(event_type: str, payload: dict) -> None:
         try:
             machine = await _get_or_create_machine(db, machine_id)
             order, prev_state = await _apply_event(db, machine, event_type, payload)
-            await _write_audit(db, machine, order, event_type, payload, prev_state)
+            if event_type not in AUDIT_SKIP_TYPES:
+                await _write_audit(db, machine, order, event_type, payload, prev_state)
             await db.commit()
         except Exception as e:
             await db.rollback()
