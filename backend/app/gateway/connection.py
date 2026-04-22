@@ -152,9 +152,9 @@ class ConnectionManager:
                             logger.error(f"Failed to send response: {e}")
 
                     # Persist the event to the DB so it shows up across
-                    # dashboard/orders/audit/analytics. HBT has no order
-                    # context, so we only log machine health indirectly.
-                    if msg_type not in ("UNKNOWN", "HBT"):
+                    # dashboard/orders/audit/analytics. HBT just refreshes
+                    # the heartbeat timestamp on the machine row.
+                    if msg_type != "UNKNOWN":
                         asyncio.create_task(persist_event(msg_type, dict(msg_data)))
 
         except asyncio.CancelledError:

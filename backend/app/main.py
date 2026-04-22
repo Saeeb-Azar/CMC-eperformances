@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.logging import logger
 from app.gateway.websocket import ws_manager
 from app.gateway.connection import connection_manager
+from app.gateway.persistence import bootstrap_defaults
 
 # Import routers from all modules
 from app.modules.auth.router import router as auth_router
@@ -28,6 +29,12 @@ async def lifespan(app: FastAPI):
     http_port = os.environ.get("PORT", "not set")
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"PORT env = {http_port}")
+
+    # Seed default tenant + admin user so the UI is usable immediately.
+    try:
+        await bootstrap_defaults()
+    except Exception as e:
+        logger.warning(f"bootstrap_defaults failed: {e} — app still starting")
 
     # TCP gateway — try to start, but never crash the app
     tcp_port = settings.cmc_tcp_port

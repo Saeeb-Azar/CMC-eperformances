@@ -58,7 +58,16 @@ export default function MachinesPage() {
               {loading ? (
                 <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
               ) : machines.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-gray-400">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                      <span>{t('common.noData')}</span>
+                      <span style={{ fontSize: 12, color: 'var(--clr-text-muted)', maxWidth: 520, lineHeight: 1.5 }}>
+                        {t('machines.autoProvisionHint')}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 machines.map((m) => (
                   <tr key={m.id}>
