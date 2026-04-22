@@ -116,37 +116,42 @@ class ConnectionManager:
                     msg_type = event["type"]
                     msg_data = event["data"]
 
-                    # Broadcast to all WebSocket clients
-                    await ws_manager.broadcast({
-                        "type": msg_type,
-                        "severity": "info" if msg_type != "UNKNOWN" else "warning",
-                        "message": _describe_event(msg_type, msg_data),
-                        "machine_id": machine_id,
-                        "data": msg_data,
-                        "raw": event.get("raw", ""),
-                    })
-
-                    # Build and send response back to the machine
+                    # STEP 1 (latency-critical): answer the machine as fast
+                    # as possible. The CMC simulator times out after ~2s, so
+                    # any slow WebSocket client or DB write must not delay
+                    # the TCP reply. We build and send the response first,
+                    # then fan out to browsers and persistence after.
+                    response: dict | None = None
                     if msg_type != "UNKNOWN":
                         response = build_response(msg_type, msg_data)
                         msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                         response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         try:
                             await conn.send(response_bytes)
-
-                            await ws_manager.broadcast({
-                                "type": f"{msg_type}_RESPONSE",
-                                "severity": "success",
-                                "message": f"Sent {msg_type.lower()} response",
-                                "machine_id": machine_id,
-                                "data": response,
-                            })
                         except Exception as e:
                             logger.error(f"Failed to send response: {e}")
 
-                    # Persist the event to the DB so it shows up across
-                    # dashboard/orders/audit/analytics. HBT just refreshes
-                    # the heartbeat timestamp on the machine row.
+                    # STEP 2: fan out to dashboard clients and persistence.
+                    # Both are fire-and-forget so a slow browser cannot back
+                    # up the TCP reply loop for the next message.
+                    asyncio.create_task(ws_manager.broadcast({
+                        "type": msg_type,
+                        "severity": "info" if msg_type != "UNKNOWN" else "warning",
+                        "message": _describe_event(msg_type, msg_data),
+                        "machine_id": machine_id,
+                        "data": msg_data,
+                        "raw": event.get("raw", ""),
+                    }))
+
+                    if response is not None:
+                        asyncio.create_task(ws_manager.broadcast({
+                            "type": f"{msg_type}_RESPONSE",
+                            "severity": "success",
+                            "message": f"Sent {msg_type.lower()} response",
+                            "machine_id": machine_id,
+                            "data": response,
+                        }))
+
                     if msg_type != "UNKNOWN":
                         asyncio.create_task(persist_event(msg_type, dict(msg_data)))
 
