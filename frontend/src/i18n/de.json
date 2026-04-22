@@ -298,7 +298,25 @@
     "sequence": "Sequenz",
     "maxDimensions": "Max. Abmessungen",
     "stations": "Stationen",
-    "autoProvisionHint": "Maschinen registrieren sich automatisch, sobald der Simulator eine erste Nachricht (z. B. HBT oder ENQ) sendet. Verbinde deinen CW1000-Simulator – er erscheint dann hier."
+    "autoProvisionHint": "Maschinen registrieren sich automatisch, sobald der Simulator eine erste Nachricht (z. B. HBT oder ENQ) sendet. Verbinde deinen CW1000-Simulator – er erscheint dann hier.",
+    "form": {
+      "title": "Neue Maschine",
+      "subtitle": "CMC CartonWrap Linie konfigurieren",
+      "machineId": "Maschine-ID",
+      "machineIdHint": "4-stellige CIS-ID wie im Simulator (z. B. 0001)",
+      "name": "Name",
+      "model": "Modell",
+      "tcpRole": "TCP-Rolle",
+      "roleServer": "Server (Maschine verbindet sich)",
+      "roleClient": "Client (Backend verbindet)",
+      "tcpHost": "TCP-Host",
+      "tcpPort": "Port",
+      "maxDimensions": "Max. Abmessungen",
+      "stations": "Aktive Stationen",
+      "create": "Maschine anlegen",
+      "errorRequired": "Bitte Maschine-ID und Namen angeben",
+      "errorGeneric": "Anlegen fehlgeschlagen"
+    }
   },
   "analytics": {
     "title": "Analysen",
