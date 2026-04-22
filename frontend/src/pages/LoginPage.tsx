@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Mail, Lock, Loader2, ArrowRight, Package } from 'lucide-react';
+import { Mail, Lock, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import CartonWrapAnimation from '../components/auth/CartonWrapAnimation';
 
@@ -13,7 +13,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Already logged in? Skip the page.
   if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
     return <Navigate to="/" replace />;
   }
@@ -44,89 +43,109 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-white">
-      {/* Left: animated CartonWrap machine illustration */}
-      <div className="hidden md:flex md:w-1/2 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 relative overflow-hidden">
+    <div className="min-h-screen w-full flex bg-white text-slate-900 font-[-apple-system,BlinkMacSystemFont,'SF_Pro_Display','SF_Pro_Text',system-ui,Segoe_UI,Roboto,Helvetica,Arial,sans-serif]">
+      {/* Left: full-bleed machine scene */}
+      <div className="hidden lg:block relative flex-1 overflow-hidden">
         <CartonWrapAnimation />
-        <div className="absolute top-8 left-8 flex items-center gap-2 text-white">
-          <Package size={20} />
-          <span className="text-sm font-semibold tracking-wide">ePerformances</span>
-        </div>
-        <div className="absolute bottom-10 left-8 right-8 text-white">
-          <h3 className="text-2xl font-semibold leading-tight mb-2">{t('auth.heroTitle')}</h3>
-          <p className="text-sm text-white/70 leading-relaxed max-w-md">{t('auth.heroSubtitle')}</p>
-        </div>
       </div>
 
-      {/* Right: sign-in form */}
-      <div className="flex w-full md:w-1/2 items-center justify-center px-6 py-12">
-        <form onSubmit={handleLogin} className="w-full max-w-sm flex flex-col">
-          <h2 className="text-3xl font-semibold text-gray-900">{t('auth.signIn')}</h2>
-          <p className="text-sm text-gray-500 mt-2">{t('auth.welcomeBack')}</p>
+      {/* Right: sign-in form, centered */}
+      <div className="w-full lg:w-[520px] flex items-center justify-center px-8 lg:px-14 py-12">
+        <form
+          onSubmit={handleLogin}
+          className="w-full max-w-[400px] flex flex-col"
+        >
+          <h1
+            className="text-[40px] lg:text-[48px] leading-[1.05] font-semibold tracking-[-0.03em] text-slate-900"
+          >
+            {t('auth.signIn')}
+          </h1>
+          <p className="mt-3 text-[15px] text-slate-500 leading-relaxed">
+            {t('auth.welcomeBack')}
+          </p>
 
           {error && (
-            <div className="mt-5 p-3 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm">
+            <div className="mt-6 px-4 py-3 rounded-2xl bg-red-50 border border-red-100 text-red-700 text-[13px] leading-relaxed break-words">
               {error}
             </div>
           )}
 
           {/* Email */}
-          <label className="text-xs font-medium text-gray-500 mt-6 mb-1.5">{t('auth.email')}</label>
-          <div className="flex items-center bg-white border border-gray-300/70 h-11 rounded-lg px-3 gap-2 focus-within:border-indigo-500 transition-colors">
-            <Mail size={15} className="text-gray-400" />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@default.local"
-              autoComplete="email"
-              className="bg-transparent outline-none text-sm w-full h-full text-gray-800 placeholder:text-gray-400"
-              required
-            />
+          <div className="mt-9">
+            <label
+              htmlFor="email"
+              className="block text-[13px] font-medium text-slate-600 mb-2"
+            >
+              {t('auth.email')}
+            </label>
+            <div className="group flex items-center h-14 rounded-2xl bg-slate-100/80 border border-transparent px-4 gap-3 transition-all focus-within:bg-white focus-within:border-slate-900/10 focus-within:shadow-[0_0_0_4px_rgba(15,23,42,0.06)]">
+              <Mail size={18} className="text-slate-400 shrink-0" />
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@default.local"
+                autoComplete="email"
+                className="bg-transparent outline-none text-[16px] w-full h-full text-slate-900 placeholder:text-slate-400"
+                required
+              />
+            </div>
           </div>
 
           {/* Password */}
-          <label className="text-xs font-medium text-gray-500 mt-4 mb-1.5">{t('auth.password')}</label>
-          <div className="flex items-center bg-white border border-gray-300/70 h-11 rounded-lg px-3 gap-2 focus-within:border-indigo-500 transition-colors">
-            <Lock size={15} className="text-gray-400" />
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              className="bg-transparent outline-none text-sm w-full h-full text-gray-800 placeholder:text-gray-400"
-              required
-            />
+          <div className="mt-5">
+            <label
+              htmlFor="password"
+              className="block text-[13px] font-medium text-slate-600 mb-2"
+            >
+              {t('auth.password')}
+            </label>
+            <div className="group flex items-center h-14 rounded-2xl bg-slate-100/80 border border-transparent px-4 gap-3 transition-all focus-within:bg-white focus-within:border-slate-900/10 focus-within:shadow-[0_0_0_4px_rgba(15,23,42,0.06)]">
+              <Lock size={18} className="text-slate-400 shrink-0" />
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className="bg-transparent outline-none text-[16px] w-full h-full text-slate-900 placeholder:text-slate-400"
+                required
+              />
+            </div>
           </div>
 
           {/* Submit */}
           <button
             type="submit"
             disabled={loading}
-            className="mt-8 h-11 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            className="mt-9 h-14 rounded-2xl bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white text-[16px] font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(15,23,42,0.18)]"
           >
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+            {loading && <Loader2 size={18} className="animate-spin" />}
             {loading ? t('auth.signingIn') : t('auth.signIn')}
           </button>
 
-          {/* Dev credentials hint */}
-          <div className="mt-6 p-3 rounded-lg bg-indigo-50/60 border border-indigo-100 text-xs text-indigo-900 leading-relaxed">
-            <span className="font-semibold">{t('auth.devCredsLabel')}:</span>{' '}
-            <code className="font-mono">admin@default.local</code>{' / '}
-            <code className="font-mono">admin123</code>{' '}
-            <button
-              type="button"
-              onClick={useDevCreds}
-              className="ml-1 underline text-indigo-600 hover:text-indigo-700"
-            >
-              {t('auth.useDevCreds')}
-            </button>
+          {/* Dev credentials callout */}
+          <div className="mt-7 rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3 text-[13px] text-slate-600 leading-relaxed">
+            <div className="font-medium text-slate-700 mb-1">
+              {t('auth.devCredsLabel')}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <code className="font-mono text-[12.5px] text-slate-700">
+                admin@default.local
+              </code>
+              <span className="text-slate-300">·</span>
+              <code className="font-mono text-[12.5px] text-slate-700">admin123</code>
+              <button
+                type="button"
+                onClick={useDevCreds}
+                className="ml-auto text-[12.5px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+              >
+                {t('auth.useDevCreds')} →
+              </button>
+            </div>
           </div>
-
-          <p className="text-center text-xs text-gray-400 mt-8">
-            &copy; 2026 ePerformances
-          </p>
         </form>
       </div>
     </div>

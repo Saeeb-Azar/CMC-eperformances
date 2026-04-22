@@ -1,4 +1,17 @@
-const BASE = '/api/v1';
+// Backend URL: prefer runtime env.js injected at deploy time, fall back to the
+// Vite build-time env var, then to same-origin (works in local dev behind a
+// Vite proxy). Same resolution logic as SimulatorPage so every request goes
+// to the actual backend instead of the SPA's index.html.
+const _env = (window as unknown as Record<string, unknown>).__ENV__ as
+  | Record<string, string>
+  | undefined;
+let API_HOST = (_env?.VITE_API_URL || import.meta.env.VITE_API_URL || '')
+  .split(',')[0]
+  .trim();
+if (API_HOST && !API_HOST.startsWith('http')) {
+  API_HOST = `https://${API_HOST}`;
+}
+const BASE = `${API_HOST}/api/v1`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('access_token');
