@@ -234,8 +234,14 @@ async def _apply_event(
         order.dimension_height_mm = _int(payload.get("height_mm"))
         order.dimension_length_mm = _int(payload.get("length_mm"))
         order.dimension_width_mm = _int(payload.get("width_mm"))
-        order.state = "SCANNED" if order.ack_result else "EJECTED"
-        if not order.ack_result:
+        if order.ack_result:
+            order.state = "SCANNED"
+        else:
+            # Per CMC process doc, section 7 row #3: when the 3D sensor
+            # rejects the item (too large), the state is *deleted* — the
+            # order was never accepted downstream, so no ejection record is
+            # needed, the order simply returns to the packing queue.
+            order.state = "DELETED"
             order.ejection_reason = "dimensions_rejected"
 
     elif event_type == "INV":
@@ -251,7 +257,11 @@ async def _apply_event(
         order.lab1_weight_content = _int(payload.get("weight_insert")) or _int(
             payload.get("weight_content")
         )
-        order.state = "LABELED" if order.lab1_result else "FAILED"
+        # Only advance the state on success. A LAB1 error flags the item as
+        # "bad" on the machine, but the actual state transition happens at
+        # END (status!=1 → EJECTED) per process doc section 7 row #4.
+        if order.lab1_result:
+            order.state = "LABELED"
 
     elif event_type == "LAB2":
         order.lab2_at = now
@@ -269,13 +279,47 @@ async def _apply_event(
         order.final_width_mm = _int(payload.get("sizes_width"))
         order.final_height_mm = _int(payload.get("sizes_height"))
         order.final_weight_g = _int(payload.get("weight"))
-        order.state = "COMPLETED" if status == 1 else "FAILED"
+        # END status=1 means the machine verified the label; the package is
+        # physically done. We go straight to COMPLETED. FAILED is reserved
+        # for cases where status=1 but downstream WMS writes fail (we have
+        # no such writes yet). END status!=1 means the machine ejected the
+        # package — state EJECTED, not FAILED (process doc section 7 row #5).
+        if status == 1:
+            order.state = "COMPLETED"
+        else:
+            order.state = "EJECTED"
+            if not order.ejection_reason:
+                order.ejection_reason = "label_verification_failed"
+        # Sequence-based cleanup: any older active state on this machine
+        # that never reached END has been removed from the belt. Eject them
+        # so they stop showing as "on conveyor" in the dashboard.
+        await _eject_stale_predecessors(db, machine, order.enq_sequence)
 
     elif event_type == "REM":
         order.rem_at = now
         order.state = "DELETED"
 
     return order, prev_state
+
+
+async def _eject_stale_predecessors(db, machine: Machine, current_seq: int) -> None:
+    """When END fires, any active order on the same machine with an
+    older enq_sequence was silently lost (jam, manual removal without REM,
+    etc.). Transition them to EJECTED so the dashboard stops counting them
+    as on-conveyor.
+    """
+    active_states = ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED")
+    res = await db.execute(
+        select(OrderState).where(
+            OrderState.machine_db_id == machine.id,
+            OrderState.state.in_(active_states),
+            OrderState.enq_sequence < current_seq,
+        )
+    )
+    for stale in res.scalars().all():
+        stale.state = "EJECTED"
+        if not stale.ejection_reason:
+            stale.ejection_reason = "skipped_by_subsequent_end"
 
 
 def _source_label(code: Any) -> str:
