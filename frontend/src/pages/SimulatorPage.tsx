@@ -360,7 +360,11 @@ export default function SimulatorPage() {
                                 </div>
                               </td>
                               <td><span className="cell-mono">{ev.type}</span></td>
-                              <td><span className={ev.type !== 'SYSTEM' ? 'cell-primary' : ''}>{ev.message}</span></td>
+                              <td>
+                                <span className={ev.type !== 'SYSTEM' ? 'cell-primary' : ''}>
+                                  {t(`liveFlow.eventDict.${ev.type}.short`, { defaultValue: ev.message })}
+                                </span>
+                              </td>
                               <td>
                                 {ref && (
                                   <span
@@ -379,6 +383,34 @@ export default function SimulatorPage() {
                               <tr>
                                 <td colSpan={6} style={{ background: 'var(--clr-surface-sunken)', padding: 12 }}>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    {/* Human-readable meaning of this message type */}
+                                    {(() => {
+                                      const key = ev.type;
+                                      const tech = t(`liveFlow.eventDict.${key}.technical`, { defaultValue: '' });
+                                      const detail = t(`liveFlow.eventDict.${key}.detail`, { defaultValue: '' });
+                                      if (!tech && !detail) return null;
+                                      return (
+                                        <div
+                                          style={{
+                                            display: 'flex', flexDirection: 'column', gap: 4,
+                                            padding: 10, borderRadius: 6,
+                                            background: 'var(--clr-surface)',
+                                            border: '1px solid var(--clr-border)',
+                                          }}
+                                        >
+                                          {tech && (
+                                            <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--clr-primary)' }}>
+                                              {tech}
+                                            </div>
+                                          )}
+                                          {detail && (
+                                            <div style={{ fontSize: 12, color: 'var(--clr-text)', lineHeight: 1.5 }}>
+                                              {detail}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                     {ev.machine_id && (
                                       <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
                                         {t('audit.machineCol')}: <code className="cell-mono">{ev.machine_id}</code>
