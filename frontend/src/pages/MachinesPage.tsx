@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
-import { Server, Wifi, WifiOff, Tag, FileText, Ruler } from 'lucide-react';
+import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus } from 'lucide-react';
 import { api, type MachineRead } from '../services/api';
+import MachineFormModal from '../components/machines/MachineFormModal';
 
 const formatHeartbeat = (iso: string | null): string => {
   if (!iso) return '—';
@@ -17,13 +18,19 @@ export default function MachinesPage() {
   const { t } = useTranslation();
   const [machines, setMachines] = useState<MachineRead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const reload = () =>
+    api.listMachines()
+      .then((m) => { setMachines(m); setLoading(false); })
+      .catch(() => { setMachines([]); setLoading(false); });
 
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
-      api.listMachines()
-        .then((m) => { if (!cancelled) { setMachines(m); setLoading(false); } })
-        .catch(() => { if (!cancelled) { setMachines([]); setLoading(false); } });
+    const load = () => {
+      if (cancelled) return;
+      reload();
+    };
     load();
     const interval = setInterval(load, 5000);
     return () => { cancelled = true; clearInterval(interval); };
@@ -38,8 +45,23 @@ export default function MachinesPage() {
             <h1 className="page-header__title">{t('machines.pageTitle')}</h1>
             <p className="page-header__desc">{t('machines.pageDesc')}</p>
           </div>
-          <button className="btn btn--primary btn--lg">{t('machines.addMachine')}</button>
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="btn btn--primary btn--lg"
+          >
+            <Plus size={16} /> {t('machines.addMachine')}
+          </button>
         </div>
+
+        <MachineFormModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onCreated={(m) => {
+            setMachines((prev) => [m, ...prev]);
+            reload();
+          }}
+        />
 
         <div className="panel">
           <table className="table">

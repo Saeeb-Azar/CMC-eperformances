@@ -92,6 +92,22 @@ export interface MachineStatusRead {
   total_heartbeats_24h: number;
 }
 
+export interface MachineCreateInput {
+  machine_id: string;
+  name: string;
+  model?: string;
+  tcp_role?: 'server' | 'client';
+  tcp_host?: string;
+  tcp_port?: number;
+  lab1_enabled?: boolean;
+  lab2_enabled?: boolean;
+  inv_enabled?: boolean;
+  pre_create_labels?: boolean;
+  max_length_mm?: number;
+  max_width_mm?: number;
+  max_height_mm?: number;
+}
+
 export interface OrderStateListItem {
   id: string;
   reference_id: string;
@@ -241,6 +257,11 @@ export const api = {
 
   // Machines
   listMachines: () => request<MachineRead[]>('/machines'),
+  createMachine: (data: MachineCreateInput) =>
+    request<MachineRead>('/machines', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),
 
   // Orders
