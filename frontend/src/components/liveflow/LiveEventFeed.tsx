@@ -2,6 +2,7 @@ import {
   ScanBarcode, LogIn, Ruler, Tag, CheckCircle, XCircle,
   Trash2, Wifi, FileText, Info,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface LiveEvent {
   id: string;
@@ -37,15 +38,16 @@ const fallbackIcons: Record<string, React.ReactNode> = {
 };
 
 export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeedProps) {
+  const { t } = useTranslation();
   const visible = events.slice(0, maxVisible);
 
   return (
     <div className="panel">
       <div className="panel__header">
-        <h3 className="panel__title">Live Activity</h3>
+        <h3 className="panel__title">{t('liveFlow.liveActivity')}</h3>
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs text-gray-400">Live</span>
+          <span className="text-xs text-gray-400">{t('liveFlow.live')}</span>
         </div>
       </div>
 
@@ -54,15 +56,15 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
           <thead>
             <tr>
               <th style={{ width: 52 }}></th>
-              <th>Event</th>
-              <th style={{ width: 70 }}>Code</th>
-              <th style={{ width: 100 }}>Reference</th>
-              <th style={{ width: 80 }} className="!text-right">Time</th>
+              <th>{t('liveFlow.event')}</th>
+              <th style={{ width: 70 }}>{t('liveFlow.code')}</th>
+              <th style={{ width: 100 }}>{t('liveFlow.reference')}</th>
+              <th style={{ width: 80 }} className="!text-right">{t('liveFlow.time')}</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr><td colSpan={5} className="!text-center !py-16 text-gray-400">Waiting for activity...</td></tr>
+              <tr><td colSpan={5} className="!text-center !py-16 text-gray-400">{t('liveFlow.waitingForActivity')}</td></tr>
             ) : (
               visible.map((event, idx) => {
                 const sev = sevConfig[event.severity];

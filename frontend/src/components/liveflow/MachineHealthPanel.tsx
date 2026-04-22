@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface HealthIndicator {
   label: string;
   status: 'healthy' | 'warning' | 'error' | 'offline';
@@ -13,26 +15,28 @@ interface MachineHealthPanelProps {
   uptimePercent: number;
 }
 
-const statusMap = {
-  healthy: { color: 'text-emerald-600', dot: 'bg-emerald-400', label: 'OK' },
-  warning: { color: 'text-amber-600', dot: 'bg-amber-400', label: 'Warning' },
-  error:   { color: 'text-red-600', dot: 'bg-red-400', label: 'Error' },
-  offline: { color: 'text-gray-400', dot: 'bg-gray-300', label: 'Offline' },
-};
-
 export default function MachineHealthPanel({
   machineName, indicators, packagesTotal, packagesSuccess, packagesRejected, uptimePercent,
 }: MachineHealthPanelProps) {
+  const { t } = useTranslation();
+
+  const statusMap = {
+    healthy: { color: 'text-emerald-600', dot: 'bg-emerald-400', label: t('liveFlow.statusOk') },
+    warning: { color: 'text-amber-600',   dot: 'bg-amber-400',   label: t('liveFlow.statusWarning') },
+    error:   { color: 'text-red-600',     dot: 'bg-red-400',     label: t('liveFlow.statusError') },
+    offline: { color: 'text-gray-400',    dot: 'bg-gray-300',    label: t('liveFlow.statusOffline') },
+  };
+
   const metrics = [
-    { label: 'Packages today', value: packagesTotal, color: 'text-gray-900' },
-    { label: 'Successful', value: packagesSuccess, color: 'text-emerald-600' },
-    { label: 'Rejected', value: packagesRejected, color: 'text-amber-600' },
+    { label: t('liveFlow.packagesToday'), value: packagesTotal, color: 'text-gray-900' },
+    { label: t('liveFlow.successful'),    value: packagesSuccess, color: 'text-emerald-600' },
+    { label: t('liveFlow.rejected'),      value: packagesRejected, color: 'text-amber-600' },
   ];
 
   return (
     <div className="panel">
       <div className="panel__header">
-        <h3 className="panel__title">Machine Health</h3>
+        <h3 className="panel__title">{t('liveFlow.machineHealth')}</h3>
         <span className="text-xs text-gray-400">{machineName}</span>
       </div>
 
@@ -41,8 +45,8 @@ export default function MachineHealthPanel({
         <thead>
           <tr>
             <th style={{ width: 36 }}></th>
-            <th>Component</th>
-            <th style={{ width: 90 }} className="!text-right">Status</th>
+            <th>{t('liveFlow.component')}</th>
+            <th style={{ width: 90 }} className="!text-right">{t('liveFlow.status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -68,8 +72,8 @@ export default function MachineHealthPanel({
       <table className="table">
         <thead>
           <tr>
-            <th>Metric</th>
-            <th style={{ width: 80 }} className="!text-right">Value</th>
+            <th>{t('liveFlow.metric')}</th>
+            <th style={{ width: 80 }} className="!text-right">{t('liveFlow.value')}</th>
           </tr>
         </thead>
         <tbody>
@@ -84,7 +88,7 @@ export default function MachineHealthPanel({
           <tr>
             <td>
               <div className="flex items-center justify-between">
-                <span>Uptime (24h)</span>
+                <span>{t('liveFlow.uptime24h')}</span>
               </div>
             </td>
             <td className="!text-right">

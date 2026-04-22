@@ -1,4 +1,5 @@
 import { AlertTriangle, Clock, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface ErrorItem {
   id: string;
@@ -13,10 +14,12 @@ export interface ErrorItem {
 interface ErrorPanelProps { errors: ErrorItem[]; }
 
 export default function ErrorPanel({ errors }: ErrorPanelProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="panel">
       <div className="panel__header">
-        <h3 className="panel__title">Issues</h3>
+        <h3 className="panel__title">{t('liveFlow.issues')}</h3>
         {errors.length > 0 && (
           <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-md">
             {errors.length}
@@ -27,8 +30,8 @@ export default function ErrorPanel({ errors }: ErrorPanelProps) {
       {errors.length === 0 ? (
         <div className="px-8 py-10 text-center">
           <CheckCircle2 size={20} className="text-emerald-500 mx-auto mb-2" />
-          <p className="text-sm text-gray-600">No issues right now</p>
-          <p className="text-xs text-gray-400 mt-0.5">Everything running smoothly</p>
+          <p className="text-sm text-gray-600">{t('liveFlow.noIssues')}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{t('liveFlow.runningSmoothly')}</p>
         </div>
       ) : (
         <div>

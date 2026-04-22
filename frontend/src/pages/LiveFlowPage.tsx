@@ -1,5 +1,6 @@
 import { ScanBarcode, Printer, Wifi, AlertTriangle, Eye, Code } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
 import LiveActivityCard, { type ActivityState } from '../components/liveflow/LiveActivityCard';
 import PackageFlowTracker, { type FlowStep } from '../components/liveflow/PackageFlowTracker';
@@ -65,6 +66,7 @@ const formatTime = (iso: string) => {
 };
 
 export default function LiveFlowPage() {
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<'operator' | 'technical'>('operator');
   const [events, setEvents] = useState<RawEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -132,11 +134,11 @@ export default function LiveFlowPage() {
     const stages = new Set(eventsForLatest.map((e) => e.type));
     const latestType = eventsForLatest[eventsForLatest.length - 1]?.type;
     const labels: Record<(typeof FLOW_ORDER)[number], string> = {
-      ENQ: 'Scanned',
-      IND: 'Entered',
-      ACK: 'Measured',
-      LAB1: 'Labeled',
-      END: 'Completed',
+      ENQ: t('liveFlow.scanned'),
+      IND: t('liveFlow.entered'),
+      ACK: t('liveFlow.measured'),
+      LAB1: t('liveFlow.labeled'),
+      END: t('liveFlow.completedStation'),
     };
     return FLOW_ORDER.map((code) => {
       const done = stages.has(code);
@@ -151,7 +153,7 @@ export default function LiveFlowPage() {
         timestamp: ts ? formatTime(ts) : undefined,
       } as FlowStep;
     });
-  }, [eventsForLatest]);
+  }, [eventsForLatest, t]);
 
   const latestType = eventsForLatest[eventsForLatest.length - 1]?.type;
   const activityState: ActivityState = latestType
@@ -222,10 +224,10 @@ export default function LiveFlowPage() {
 
   type HealthStatus = 'healthy' | 'warning' | 'error' | 'offline';
   const healthIndicators: { label: string; status: HealthStatus; icon: React.ReactNode }[] = [
-    { label: 'Connection', status: connected ? 'healthy' : 'error', icon: <Wifi size={16} /> },
-    { label: 'Scanner', status: hasSimulator ? 'healthy' : 'offline', icon: <ScanBarcode size={16} /> },
-    { label: 'Label Printer', status: hasSimulator ? 'healthy' : 'offline', icon: <Printer size={16} /> },
-    { label: 'Errors Today', status: (overview?.failed_today ?? 0) > 0 ? 'warning' : 'healthy', icon: <AlertTriangle size={16} /> },
+    { label: t('liveFlow.healthConnection'), status: connected ? 'healthy' : 'error', icon: <Wifi size={16} /> },
+    { label: t('liveFlow.healthScanner'), status: hasSimulator ? 'healthy' : 'offline', icon: <ScanBarcode size={16} /> },
+    { label: t('liveFlow.healthPrinter'), status: hasSimulator ? 'healthy' : 'offline', icon: <Printer size={16} /> },
+    { label: t('liveFlow.healthErrors'), status: (overview?.failed_today ?? 0) > 0 ? 'warning' : 'healthy', icon: <AlertTriangle size={16} /> },
   ];
 
   const primaryMachine = connectedMachines[0] ?? 'CW-—';
@@ -237,28 +239,28 @@ export default function LiveFlowPage() {
         connectionActive={connected}
         activeBarcode={latestBarcode ?? null}
         currentStep={latestType ?? null}
-        statusMessage={hasSimulator ? 'Live stream active' : connected ? 'No simulator connected' : 'Backend disconnected'}
+        statusMessage={hasSimulator ? t('liveFlow.streamActive') : connected ? t('liveFlow.noSimulator') : t('liveFlow.backendDisconnected')}
       />
 
       <div className="page-content">
         {/* Page header */}
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">CMC Live Flow</h1>
-            <p className="page-header__desc">Real-time packaging status and event stream</p>
+            <h1 className="page-header__title">{t('liveFlow.pageTitle')}</h1>
+            <p className="page-header__desc">{t('liveFlow.pageDesc')}</p>
           </div>
           <div className="segmented">
             <button
               onClick={() => setViewMode('operator')}
               className={`segmented__item ${viewMode === 'operator' ? 'segmented__item--active' : ''}`}
             >
-              <Eye size={14} /> Operator
+              <Eye size={14} /> {t('liveFlow.operator')}
             </button>
             <button
               onClick={() => setViewMode('technical')}
               className={`segmented__item ${viewMode === 'technical' ? 'segmented__item--active' : ''}`}
             >
-              <Code size={14} /> Technical
+              <Code size={14} /> {t('liveFlow.technical')}
             </button>
           </div>
         </div>
