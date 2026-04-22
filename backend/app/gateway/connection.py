@@ -153,6 +153,18 @@ class ConnectionManager:
                             except Exception as e:
                                 logger.error(f"Failed to send response: {e}")
 
+                        # ENQ frames don't carry a reference_id on the wire
+                        # (the CIS assigns one in the reply). Inject the
+                        # reference we just chose back into the parsed data
+                        # so the dashboard can group the scan with the
+                        # subsequent IND/ACK/LAB1/END events for the same
+                        # package — otherwise the Paket-Verlauf tracker
+                        # never lights up "Gescannt".
+                        if response and isinstance(msg_data, dict) and not msg_data.get("reference_id"):
+                            assigned_ref = response.get("reference_id")
+                            if assigned_ref:
+                                msg_data["reference_id"] = assigned_ref
+
                     # STEP 2: fan out to dashboard clients and persistence.
                     # Both are fire-and-forget so a slow browser cannot back
                     # up the TCP reply loop for the next message.
