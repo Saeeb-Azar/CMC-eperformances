@@ -180,7 +180,10 @@ export default function LiveFlowPage() {
       events
         .slice()
         .reverse()
-        .filter((e) => e.type !== 'SYSTEM')
+        // SYSTEM is only connection chatter, and *_RESPONSE is just the
+        // backend echoing that it replied — neither is meaningful for an
+        // operator. Keep the feed focused on real CMC messages.
+        .filter((e) => e.type !== 'SYSTEM' && !e.type.endsWith('_RESPONSE'))
         .slice(0, 40)
         .map((e) => ({
           id: String(e.id),
