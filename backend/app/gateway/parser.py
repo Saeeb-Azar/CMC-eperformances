@@ -204,9 +204,15 @@ def build_response(msg_type: str, data: dict) -> dict:
     barcode = data.get("barcode", "")
 
     if msg_type == "ENQ" and not ref:
-        # Derive a reference id from the barcode when the machine hasn't
-        # supplied one yet (scanner station).
-        ref = f"ref-{barcode or datetime.now(timezone.utc).strftime('%H%M%S')}"
+        # Derive a reference id matching the CW1000 simulator's own default
+        # ("ref0001") — "ref" + zero-padded event counter. Keeps the string
+        # short and uniform with what the operator types into subsequent
+        # IND/ACK/LAB1/END fields.
+        event_num = str(event or "").strip().lstrip("0")
+        try:
+            ref = f"ref{int(event_num):04d}" if event_num else "ref0001"
+        except ValueError:
+            ref = "ref0001"
 
     responses = {
         "ENQ": {
@@ -218,7 +224,9 @@ def build_response(msg_type: str, data: dict) -> dict:
             "label_match": barcode,
             "lab1_enabled": True,
             "lab2_enabled": False,
+            "lab3_enabled": False,
             "inv_enabled": False,
+            "sorter": 0,
         },
         "IND": {"event": event, "reference_id": ref, "result": 1},
         "ACK": {"event": event, "reference_id": ref, "result": 1, "item_validated": True, "flag": "PROCESSABLE"},
@@ -254,7 +262,8 @@ def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> b
         "INV": ["event", "reference_id", "result", "match_barcode"],
         "ENQ": [
             "event", "reference_id", "result", "item_validated", "description",
-            "label_match", "lab1_enabled", "lab2_enabled", "inv_enabled",
+            "label_match", "lab1_enabled", "lab2_enabled", "lab3_enabled",
+            "inv_enabled", "sorter",
         ],
         "ACK": ["event", "reference_id", "result", "item_validated", "flag"],
         "LAB1": ["event", "reference_id", "result", "match_barcode", "label_url", "status"],
