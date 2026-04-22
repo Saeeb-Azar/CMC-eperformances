@@ -128,7 +128,8 @@ class ConnectionManager:
                     # Build and send response back to the machine
                     if msg_type != "UNKNOWN":
                         response = build_response(msg_type, msg_data)
-                        response_bytes = serialize_response(msg_type, response)
+                        msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
+                        response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         try:
                             await conn.send(response_bytes)
 

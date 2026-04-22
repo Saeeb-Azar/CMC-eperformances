@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatCard from '../components/ui/StatCard';
@@ -10,34 +11,71 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar,
 } from 'recharts';
+import {
+  api,
+  type DashboardOverview,
+  type ThroughputData,
+  type StationTiming,
+  type OrderStateListItem,
+} from '../services/api';
 
-const demoThroughput = Array.from({ length: 24 }, (_, i) => ({
-  hour: `${String(i).padStart(2, '0')}:00`,
-  completed: Math.floor(Math.random() * 40 + 20),
-  ejected: Math.floor(Math.random() * 5),
-  failed: Math.floor(Math.random() * 2),
-}));
+const tooltipStyle = {
+  background: '#18181b',
+  border: 'none',
+  borderRadius: '8px',
+  color: '#f3f4f6',
+  fontSize: '12px',
+};
 
-const demoTimings = [
-  { pair: 'ENQ → IND', avg: 3.2 },
-  { pair: 'IND → ACK', avg: 8.5 },
-  { pair: 'ACK → LAB1', avg: 22.1 },
-  { pair: 'LAB1 → END', avg: 6.8 },
-];
+const formatHour = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:00`;
+};
 
-const recentOrders = [
-  { id: '1', ref: 'ref-0487', barcode: '4062196101493', state: 'COMPLETED', time: '14:32' },
-  { id: '2', ref: 'ref-0486', barcode: 'M319991', state: 'COMPLETED', time: '14:31' },
-  { id: '3', ref: 'ref-0485', barcode: '4052400033054', state: 'LABELED', time: '14:30' },
-  { id: '4', ref: 'ref-0484', barcode: '8711319002345', state: 'EJECTED', time: '14:29' },
-  { id: '5', ref: 'ref-0483', barcode: '4062196101493', state: 'SCANNED', time: '14:28' },
-  { id: '6', ref: 'ref-0482', barcode: 'M320001', state: 'FAILED', time: '14:25' },
-];
-
-const tooltipStyle = { background: '#18181b', border: 'none', borderRadius: '8px', color: '#f3f4f6', fontSize: '12px' };
+const formatTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
 export default function DashboardPage() {
   const { t } = useTranslation();
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [throughput, setThroughput] = useState<ThroughputData[]>([]);
+  const [timings, setTimings] = useState<StationTiming[]>([]);
+  const [recent, setRecent] = useState<OrderStateListItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const [o, th, tm, rc] = await Promise.allSettled([
+        api.dashboard(),
+        api.throughput(24),
+        api.timings(7),
+        api.listOrders({ limit: '6' }),
+      ]);
+      if (cancelled) return;
+      if (o.status === 'fulfilled') setOverview(o.value);
+      if (th.status === 'fulfilled') setThroughput(th.value);
+      if (tm.status === 'fulfilled') setTimings(tm.value);
+      if (rc.status === 'fulfilled') setRecent(rc.value);
+    };
+    load();
+    const interval = setInterval(load, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const throughputChart = throughput.map((p) => ({
+    hour: formatHour(p.timestamp),
+    completed: p.completed,
+    ejected: p.ejected,
+    failed: p.failed,
+  }));
+
+  const timingsChart = timings.map((ts) => ({
+    pair: `${ts.station_from} → ${ts.station_to}`,
+    avg: Number(ts.avg_seconds.toFixed(1)),
+  }));
 
   return (
     <div>
@@ -52,20 +90,20 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* KPI Cards - big, readable */}
+        {/* KPI Cards */}
         <div className="grid-4 gap-4">
-          <StatCard label={t('dashboard.ordersToday')} value={487} sub={t('dashboard.vsYesterday')} icon={<Package size={20} />} color="info" />
-          <StatCard label={t('dashboard.completed')} value={461} sub={t('dashboard.successRate')} icon={<CheckCircle size={20} />} color="success" />
-          <StatCard label={t('dashboard.ejected')} value={22} sub={t('dashboard.rejectRate')} icon={<AlertTriangle size={20} />} color="warning" />
-          <StatCard label={t('dashboard.failed')} value={4} sub={t('dashboard.requireResolution')} icon={<XCircle size={20} />} color="danger" />
+          <StatCard label={t('dashboard.ordersToday')} value={overview?.total_orders_today ?? 0} icon={<Package size={20} />} color="info" />
+          <StatCard label={t('dashboard.completed')} value={overview?.completed_today ?? 0} sub={overview ? `${overview.success_rate_percent.toFixed(1)}%` : undefined} icon={<CheckCircle size={20} />} color="success" />
+          <StatCard label={t('dashboard.ejected')} value={overview?.ejected_today ?? 0} sub={overview ? `${overview.reject_rate_percent.toFixed(1)}%` : undefined} icon={<AlertTriangle size={20} />} color="warning" />
+          <StatCard label={t('dashboard.failed')} value={overview?.failed_today ?? 0} icon={<XCircle size={20} />} color="danger" />
         </div>
 
         {/* Second row KPIs */}
         <div className="grid-4 gap-4">
-          <StatCard label={t('dashboard.activeOnConveyor')} value={3} sub={t('dashboard.acrossAllMachines')} icon={<Activity size={20} />} color="info" />
-          <StatCard label={t('dashboard.machinesOnline')} value="2 / 3" sub="CW-001, CW-002" icon={<Server size={20} />} color="success" />
-          <StatCard label={t('dashboard.avgProcessing')} value="38.4s" sub={t('dashboard.enqToEnd')} icon={<Clock size={20} />} />
-          <StatCard label={t('dashboard.throughputHour')} value={32} sub={t('dashboard.lastHour')} icon={<TrendingUp size={20} />} />
+          <StatCard label={t('dashboard.activeOnConveyor')} value={overview?.active_on_conveyor ?? 0} icon={<Activity size={20} />} color="info" />
+          <StatCard label={t('dashboard.machinesOnline')} value={overview ? `${overview.machines_online} / ${overview.machines_total}` : '—'} icon={<Server size={20} />} color="success" />
+          <StatCard label={t('dashboard.avgProcessing')} value={overview?.avg_processing_time_seconds != null ? `${overview.avg_processing_time_seconds.toFixed(1)}s` : '—'} sub={t('dashboard.enqToEnd')} icon={<Clock size={20} />} />
+          <StatCard label={t('dashboard.throughputHour')} value={throughput.length > 0 ? throughput[throughput.length - 1].total : 0} sub={t('dashboard.lastHour')} icon={<TrendingUp size={20} />} />
         </div>
 
         {/* Charts */}
@@ -76,17 +114,23 @@ export default function DashboardPage() {
               <h3 className="panel__title">{t('dashboard.throughput24h')}</h3>
             </div>
             <div className="panel__body">
-              <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={demoThroughput}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis dataKey="hour" tick={{ fontSize: 11 }} stroke="#d1d5db" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="#d1d5db" />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="completed" stackId="1" fill="#059669" fillOpacity={0.15} stroke="#059669" strokeWidth={1.5} />
-                  <Area type="monotone" dataKey="ejected" stackId="1" fill="#d97706" fillOpacity={0.15} stroke="#d97706" strokeWidth={1.5} />
-                  <Area type="monotone" dataKey="failed" stackId="1" fill="#dc2626" fillOpacity={0.15} stroke="#dc2626" strokeWidth={1.5} />
-                </AreaChart>
-              </ResponsiveContainer>
+              {throughputChart.length === 0 ? (
+                <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
+                  {t('common.noData')}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <AreaChart data={throughputChart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                    <XAxis dataKey="hour" tick={{ fontSize: 11 }} stroke="#d1d5db" />
+                    <YAxis tick={{ fontSize: 11 }} stroke="#d1d5db" />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Area type="monotone" dataKey="completed" stackId="1" fill="#059669" fillOpacity={0.15} stroke="#059669" strokeWidth={1.5} />
+                    <Area type="monotone" dataKey="ejected" stackId="1" fill="#d97706" fillOpacity={0.15} stroke="#d97706" strokeWidth={1.5} />
+                    <Area type="monotone" dataKey="failed" stackId="1" fill="#dc2626" fillOpacity={0.15} stroke="#dc2626" strokeWidth={1.5} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -97,15 +141,21 @@ export default function DashboardPage() {
               <span className="panel__subtitle">{t('dashboard.average')}</span>
             </div>
             <div className="panel__body">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={demoTimings} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} stroke="#d1d5db" unit="s" />
-                  <YAxis dataKey="pair" type="category" tick={{ fontSize: 11 }} stroke="#d1d5db" width={90} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="avg" fill="#2563eb" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {timingsChart.length === 0 ? (
+                <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
+                  {t('common.noData')}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={timingsChart} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                    <XAxis type="number" tick={{ fontSize: 11 }} stroke="#d1d5db" unit="s" />
+                    <YAxis dataKey="pair" type="category" tick={{ fontSize: 11 }} stroke="#d1d5db" width={90} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Bar dataKey="avg" fill="#2563eb" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -117,18 +167,24 @@ export default function DashboardPage() {
             <span className="panel__subtitle">{t('dashboard.last30min')}</span>
           </div>
           <div>
-            {recentOrders.map((order) => (
-              <div key={order.id} className="px-8 py-[18px] flex items-center justify-between border-b border-gray-100 last:border-b-0">
-                <div className="flex items-center gap-5">
-                  <span className="text-sm font-semibold font-mono text-gray-900">{order.ref}</span>
-                  <span className="text-sm text-gray-400 font-mono">{order.barcode}</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <StatusBadge status={order.state} />
-                  <span className="text-xs text-gray-400 tabular-nums w-12 text-right">{order.time}</span>
-                </div>
+            {recent.length === 0 ? (
+              <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
+                {t('common.noData')}
               </div>
-            ))}
+            ) : (
+              recent.map((order) => (
+                <div key={order.id} className="px-8 py-[18px] flex items-center justify-between border-b border-gray-100 last:border-b-0">
+                  <div className="flex items-center gap-5">
+                    <span className="text-sm font-semibold font-mono text-gray-900">{order.reference_id}</span>
+                    <span className="text-sm text-gray-400 font-mono">{order.barcode}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <StatusBadge status={order.state} />
+                    <span className="text-xs text-gray-400 tabular-nums w-12 text-right">{formatTime(order.created_at)}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -1,33 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { Search } from 'lucide-react';
+import { api, type OrderStateListItem } from '../services/api';
 
 const stateFilters = ['ALL', 'ASSIGNED', 'INDUCTED', 'SCANNED', 'LABELED', 'COMPLETED', 'FAILED', 'EJECTED', 'DELETED'];
 
-const demoOrders = [
-  { id: '1', reference_id: 'ref-0487', barcode: '4062196101493', state: 'COMPLETED', tracking_number: 'DHL-00487234', carrier: 'DHL', final_weight_g: 1250, created_at: '2026-04-11T14:32:00Z' },
-  { id: '2', reference_id: 'ref-0486', barcode: 'M319991', state: 'COMPLETED', tracking_number: 'DPD-99182734', carrier: 'DPD', final_weight_g: 890, created_at: '2026-04-11T14:31:00Z' },
-  { id: '3', reference_id: 'ref-0485', barcode: '4052400033054', state: 'LABELED', tracking_number: 'DHL-00485122', carrier: 'DHL', final_weight_g: null, created_at: '2026-04-11T14:30:00Z' },
-  { id: '4', reference_id: 'ref-0484', barcode: '8711319002345', state: 'EJECTED', tracking_number: null, carrier: null, final_weight_g: null, created_at: '2026-04-11T14:29:00Z' },
-  { id: '5', reference_id: 'ref-0483', barcode: '4062196101493', state: 'SCANNED', tracking_number: null, carrier: null, final_weight_g: null, created_at: '2026-04-11T14:28:00Z' },
-  { id: '6', reference_id: 'ref-0482', barcode: 'M320001', state: 'FAILED', tracking_number: 'DHL-00482901', carrier: 'DHL', final_weight_g: 2100, created_at: '2026-04-11T14:25:00Z' },
-  { id: '7', reference_id: 'ref-0481', barcode: '4052400033054', state: 'COMPLETED', tracking_number: 'FDX-817263', carrier: 'FedEx', final_weight_g: 1800, created_at: '2026-04-11T14:22:00Z' },
-  { id: '8', reference_id: 'ref-0480', barcode: '4062196101493', state: 'COMPLETED', tracking_number: 'DHL-00480555', carrier: 'DHL', final_weight_g: 950, created_at: '2026-04-11T14:20:00Z' },
-];
-
-const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const formatTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export default function OrdersPage() {
   const { t } = useTranslation();
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [search, setSearch] = useState('');
+  const [orders, setOrders] = useState<OrderStateListItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = demoOrders.filter((o) => {
-    if (activeFilter !== 'ALL' && o.state !== activeFilter) return false;
-    if (search && !o.reference_id.includes(search) && !o.barcode.includes(search) && !(o.tracking_number || '').includes(search)) return false;
-    return true;
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      const params: Record<string, string> = { limit: '200' };
+      if (activeFilter !== 'ALL') params.state = activeFilter;
+      api.listOrders(params)
+        .then((o) => { if (!cancelled) { setOrders(o); setLoading(false); } })
+        .catch(() => { if (!cancelled) { setOrders([]); setLoading(false); } });
+    };
+    load();
+    const interval = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeFilter]);
+
+  const filtered = orders.filter((o) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      o.reference_id.toLowerCase().includes(q) ||
+      o.barcode.toLowerCase().includes(q) ||
+      (o.tracking_number || '').toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -82,8 +93,10 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('orders.noMatch')}</td></tr>
+              {loading ? (
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{orders.length === 0 ? t('common.noData') : t('orders.noMatch')}</td></tr>
               ) : (
                 filtered.map((o) => (
                   <tr key={o.id}>

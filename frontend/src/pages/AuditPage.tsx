@@ -1,23 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import { Search } from 'lucide-react';
+import { api, type AuditLogRead } from '../services/api';
 
 const categories = ['ALL', 'machine_event', 'state_transition', 'user_action', 'error'];
 
-const demoLogs = [
-  { id: '1', event_type: 'ENQ', category: 'machine_event', machine_id: '0001', reference_id: 'ref-0487', previous_state: null, new_state: 'ASSIGNED', detail: 'Barcode 4062196101493 accepted', timestamp: '2026-04-11T14:32:01Z' },
-  { id: '2', event_type: 'state_transition', category: 'state_transition', machine_id: '0001', reference_id: 'ref-0487', previous_state: 'ASSIGNED', new_state: 'INDUCTED', detail: 'IND received', timestamp: '2026-04-11T14:32:04Z' },
-  { id: '3', event_type: 'ACK', category: 'machine_event', machine_id: '0001', reference_id: 'ref-0487', previous_state: null, new_state: null, detail: 'Dimensions: 350x200x150mm, PROCESSABLE', timestamp: '2026-04-11T14:32:12Z' },
-  { id: '4', event_type: 'LAB1', category: 'machine_event', machine_id: '0001', reference_id: 'ref-0487', previous_state: null, new_state: null, detail: 'Label generated via DHL API (1.2s)', timestamp: '2026-04-11T14:32:30Z' },
-  { id: '5', event_type: 'state_transition', category: 'state_transition', machine_id: '0001', reference_id: 'ref-0487', previous_state: 'SCANNED', new_state: 'LABELED', detail: 'Label applied, tracking DHL-00487234', timestamp: '2026-04-11T14:32:31Z' },
-  { id: '6', event_type: 'END', category: 'machine_event', machine_id: '0001', reference_id: 'ref-0487', previous_state: null, new_state: null, detail: 'Exit verification PASSED', timestamp: '2026-04-11T14:32:38Z' },
-  { id: '7', event_type: 'state_transition', category: 'state_transition', machine_id: '0001', reference_id: 'ref-0487', previous_state: 'LABELED', new_state: 'COMPLETED', detail: 'Pulpo completion OK', timestamp: '2026-04-11T14:32:39Z' },
-  { id: '8', event_type: 'resolve', category: 'user_action', machine_id: null, reference_id: 'ref-0482', previous_state: 'FAILED', new_state: 'COMPLETED', detail: 'Manually resolved by admin@company.de', timestamp: '2026-04-11T14:35:00Z' },
-  { id: '9', event_type: 'HBT', category: 'machine_event', machine_id: '0001', reference_id: null, previous_state: null, new_state: null, detail: 'Heartbeat OK, status RUNNING', timestamp: '2026-04-11T14:35:05Z' },
-];
-
-const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const formatTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 const categoryBadge: Record<string, string> = {
   machine_event: 'badge badge--info',
@@ -30,11 +20,31 @@ export default function AuditPage() {
   const { t } = useTranslation();
   const [activeCat, setActiveCat] = useState('ALL');
   const [search, setSearch] = useState('');
+  const [logs, setLogs] = useState<AuditLogRead[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = demoLogs.filter((log) => {
-    if (activeCat !== 'ALL' && log.category !== activeCat) return false;
-    if (search && !log.detail?.toLowerCase().includes(search.toLowerCase()) && !log.reference_id?.includes(search) && !log.event_type.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      const params: Record<string, string> = { limit: '200' };
+      if (activeCat !== 'ALL') params.category = activeCat;
+      api.auditLogs(params)
+        .then((l) => { if (!cancelled) { setLogs(l); setLoading(false); } })
+        .catch(() => { if (!cancelled) { setLogs([]); setLoading(false); } });
+    };
+    load();
+    const interval = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeCat]);
+
+  const filtered = logs.filter((log) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      (log.detail || '').toLowerCase().includes(q) ||
+      (log.reference_id || '').toLowerCase().includes(q) ||
+      log.event_type.toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -79,8 +89,10 @@ export default function AuditPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('audit.noMatch')}</td></tr>
+              {loading ? (
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{logs.length === 0 ? t('common.noData') : t('audit.noMatch')}</td></tr>
               ) : (
                 filtered.map((log) => (
                   <tr key={log.id}>

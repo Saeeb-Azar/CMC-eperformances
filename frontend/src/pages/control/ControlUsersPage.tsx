@@ -1,27 +1,54 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import { UserCircle, Plus, Search, MoreVertical } from 'lucide-react';
+import { api, type UserRead, type TenantRead } from '../../services/api';
 
-const demoUsers = [
-  { id: '1', name: 'Saeeb Azar', email: 'saeeb@eperformances.de', role: 'owner', tenant: 'ePerformances', lastLogin: '12.04.2026 14:30', isActive: true },
-  { id: '2', name: 'Max Müller', email: 'max@mueller-versand.de', role: 'admin', tenant: 'Müller Versand GmbH', lastLogin: '12.04.2026 13:15', isActive: true },
-  { id: '3', name: 'Anna Schmidt', email: 'anna@mueller-versand.de', role: 'operator', tenant: 'Müller Versand GmbH', lastLogin: '12.04.2026 11:42', isActive: true },
-  { id: '4', name: 'Jonas Weber', email: 'jonas@mueller-versand.de', role: 'operator', tenant: 'Müller Versand GmbH', lastLogin: '11.04.2026 16:20', isActive: true },
-  { id: '5', name: 'Lisa Becker', email: 'lisa@packship.de', role: 'admin', tenant: 'PackShip Solutions', lastLogin: '12.04.2026 09:05', isActive: true },
-  { id: '6', name: 'Tom Fischer', email: 'tom@packship.de', role: 'operator', tenant: 'PackShip Solutions', lastLogin: '10.04.2026 17:30', isActive: true },
-  { id: '7', name: 'Sarah Klein', email: 'sarah@quickbox.de', role: 'admin', tenant: 'QuickBox DE', lastLogin: '12.04.2026 08:10', isActive: true },
-  { id: '8', name: 'Peter Hoffmann', email: 'peter@logipack.io', role: 'admin', tenant: 'LogiPack International', lastLogin: '05.03.2026 14:00', isActive: false },
-];
+const formatLogin = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
 export default function ControlUsersPage() {
   const { t } = useTranslation();
+  const [users, setUsers] = useState<UserRead[]>([]);
+  const [tenants, setTenants] = useState<TenantRead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.allSettled([api.listUsers(), api.listTenants()]).then(([u, t]) => {
+      if (cancelled) return;
+      if (u.status === 'fulfilled') setUsers(u.value);
+      if (t.status === 'fulfilled') setTenants(t.value);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const tenantById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of tenants) map.set(t.id, t.name);
+    return map;
+  }, [tenants]);
 
   const roleBadge: Record<string, { label: string; cls: string }> = {
+    super_admin: { label: t('roles.owner'), cls: 'badge badge--accent' },
     owner: { label: t('roles.owner'), cls: 'badge badge--accent' },
+    tenant_admin: { label: t('roles.admin'), cls: 'badge badge--info' },
     admin: { label: t('roles.admin'), cls: 'badge badge--info' },
     operator: { label: t('roles.operator'), cls: 'badge badge--warning' },
     viewer: { label: t('roles.viewer'), cls: 'badge badge--neutral' },
   };
+
+  const filtered = users.filter((u) => {
+    if (roleFilter !== 'all' && u.role !== roleFilter && !(roleFilter === 'admin' && u.role === 'tenant_admin') && !(roleFilter === 'owner' && u.role === 'super_admin')) {
+      return false;
+    }
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return u.full_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
 
   return (
     <div>
@@ -39,7 +66,13 @@ export default function ControlUsersPage() {
         <div className="flex items-center justify-between">
           <div style={{ position: 'relative', width: 280 }}>
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-            <input type="text" placeholder={t('control.users.searchPlaceholder')} className="input input--with-icon" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('control.users.searchPlaceholder')}
+              className="input input--with-icon"
+            />
           </div>
           <div className="filter-tabs">
             {[
@@ -48,8 +81,14 @@ export default function ControlUsersPage() {
               { key: 'admin', label: t('roles.admin') },
               { key: 'operator', label: t('roles.operator') },
               { key: 'viewer', label: t('roles.viewer') },
-            ].map((f, i) => (
-              <button key={f.key} className={`filter-tab ${i === 0 ? 'filter-tab--active' : ''}`}>{f.label}</button>
+            ].map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setRoleFilter(f.key)}
+                className={`filter-tab ${roleFilter === f.key ? 'filter-tab--active' : ''}`}
+              >
+                {f.label}
+              </button>
             ))}
           </div>
         </div>
@@ -69,32 +108,38 @@ export default function ControlUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {demoUsers.map(u => {
-                const rb = roleBadge[u.role];
-                return (
-                  <tr key={u.id}>
-                    <td>
-                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                        <UserCircle size={18} className="text-gray-400" />
-                      </div>
-                    </td>
-                    <td>
-                      <span className="cell-primary block">{u.name}</span>
-                      <span className="cell-muted block mt-0.5">{u.email}</span>
-                    </td>
-                    <td><span className={rb.cls}>{rb.label}</span></td>
-                    <td>{u.tenant}</td>
-                    <td><span className="cell-mono">{u.lastLogin}</span></td>
-                    <td>
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${u.isActive ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${u.isActive ? 'bg-emerald-400' : 'bg-gray-300'}`} />
-                        {u.isActive ? t('common.active') : t('common.inactive')}
-                      </span>
-                    </td>
-                    <td><button className="btn-icon"><MoreVertical size={14} /></button></td>
-                  </tr>
-                );
-              })}
+              {loading ? (
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
+              ) : (
+                filtered.map(u => {
+                  const rb = roleBadge[u.role] ?? { label: u.role, cls: 'badge badge--neutral' };
+                  return (
+                    <tr key={u.id}>
+                      <td>
+                        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                          <UserCircle size={18} className="text-gray-400" />
+                        </div>
+                      </td>
+                      <td>
+                        <span className="cell-primary block">{u.full_name}</span>
+                        <span className="cell-muted block mt-0.5">{u.email}</span>
+                      </td>
+                      <td><span className={rb.cls}>{rb.label}</span></td>
+                      <td>{tenantById.get(u.tenant_id) ?? <span className="cell-muted">{u.tenant_id.slice(0, 8)}</span>}</td>
+                      <td><span className="cell-mono">{formatLogin(u.last_login)}</span></td>
+                      <td>
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-gray-400'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+                          {u.is_active ? t('common.active') : t('common.inactive')}
+                        </span>
+                      </td>
+                      <td><button className="btn-icon"><MoreVertical size={14} /></button></td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
