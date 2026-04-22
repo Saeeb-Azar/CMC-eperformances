@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from app.core.logging import logger
 from app.gateway.parser import parse_message, build_response, serialize_response
+from app.gateway.persistence import persist_event
 from app.gateway.websocket import ws_manager
 
 
@@ -149,6 +150,12 @@ class ConnectionManager:
                             })
                         except Exception as e:
                             logger.error(f"Failed to send response: {e}")
+
+                    # Persist the event to the DB so it shows up across
+                    # dashboard/orders/audit/analytics. HBT has no order
+                    # context, so we only log machine health indirectly.
+                    if msg_type not in ("UNKNOWN", "HBT"):
+                        asyncio.create_task(persist_event(msg_type, dict(msg_data)))
 
         except asyncio.CancelledError:
             pass

@@ -184,14 +184,14 @@ export default function LiveFlowPage() {
         .slice(0, 40)
         .map((e) => ({
           id: String(e.id),
-          message: e.message,
+          message: t(`liveFlow.eventDict.${e.type}.short`, { defaultValue: e.message }),
           technicalCode: e.type,
           severity: SEVERITY[e.severity] ?? 'info',
           timestamp: formatTime(e.timestamp),
           barcode: getBarcode(e),
           referenceId: getRef(e) ?? undefined,
         })),
-    [events]
+    [events, t]
   );
 
   const errors: ErrorItem[] = useMemo(

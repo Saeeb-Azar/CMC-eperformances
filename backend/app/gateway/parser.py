@@ -126,17 +126,18 @@ def _parse_json(text: str) -> list[dict]:
 
 
 # Positional field names for CMC CIS messages (sender → CIS).
-# Values are taken positionally from the pipe-delimited frame, in order,
-# after MACHINE_ID and TYPE. Extra trailing parts fall back to field_N.
+# Each CW1000 frame starts with <STX>MACHINE_ID|TYPE|EVENT|... and so the
+# second token after TYPE is the per-machine event counter, not a payload
+# field. reference_id follows the event on every message that carries one.
 POSITIONAL_FIELDS: dict[str, list[str]] = {
     "ENQ": ["event", "barcode", "source"],
-    "IND": ["reference_id"],
-    "ACK": ["reference_id", "good", "event", "area_carton", "height_mm", "length_mm", "width_mm"],
-    "INV": ["reference_id", "num_pages"],
-    "LAB1": ["reference_id", "good", "event", "weight_scale", "weight_carton", "weight_content", "feeders"],
-    "LAB2": ["reference_id", "good", "event", "weight_scale", "weight_carton", "weight_content", "feeders"],
-    "END": ["reference_id", "status", "sizes_length", "sizes_width", "sizes_height", "weight"],
-    "REM": ["reference_id"],
+    "IND": ["event", "reference_id"],
+    "ACK": ["event", "reference_id", "good", "bad", "height_mm", "length_mm", "width_mm", "area_carton"],
+    "INV": ["event", "reference_id", "num_pages"],
+    "LAB1": ["event", "reference_id", "good", "bad", "weight_scale", "weight_carton", "weight_insert", "feeders"],
+    "LAB2": ["event", "reference_id", "good", "bad", "weight_scale", "weight_carton", "weight_insert", "feeders"],
+    "END": ["event", "reference_id", "status", "sizes_length", "sizes_width", "sizes_height", "weight"],
+    "REM": ["event", "reference_id"],
     "HBT": [],
     "STS": ["status"],
 }
@@ -193,26 +194,39 @@ def _parse_pipe(text: str) -> list[dict]:
 
 
 def build_response(msg_type: str, data: dict) -> dict:
-    """Build a default CIS response for a CMC message type."""
+    """Build a default CIS response for a CMC message type.
+
+    Echoes back `event` and `reference_id` so the simulator recognises the
+    correlation; without them it reports "reference is wrong".
+    """
     ref = data.get("reference_id", data.get("referenceId", ""))
+    event = data.get("event", "")
+    barcode = data.get("barcode", "")
+
+    if msg_type == "ENQ" and not ref:
+        # Derive a reference id from the barcode when the machine hasn't
+        # supplied one yet (scanner station).
+        ref = f"ref-{barcode or datetime.now(timezone.utc).strftime('%H%M%S')}"
 
     responses = {
         "ENQ": {
-            "reference_id": ref or f"ref-{datetime.now(timezone.utc).strftime('%H%M%S')}",
+            "event": event,
+            "reference_id": ref,
             "result": 1,
             "item_validated": True,
             "description": "",
+            "label_match": barcode,
             "lab1_enabled": True,
             "lab2_enabled": False,
             "inv_enabled": False,
         },
-        "IND": {"reference_id": ref, "result": 1},
-        "ACK": {"reference_id": ref, "result": 1, "item_validated": True, "flag": "PROCESSABLE"},
-        "INV": {"reference_id": ref, "result": 1},
-        "LAB1": {"reference_id": ref, "result": 1, "match_barcode": "", "label_url": ""},
-        "LAB2": {"reference_id": ref, "result": 1, "match_barcode": ""},
-        "END": {"reference_id": ref, "result": 1},
-        "REM": {"reference_id": ref, "result": 1},
+        "IND": {"event": event, "reference_id": ref, "result": 1},
+        "ACK": {"event": event, "reference_id": ref, "result": 1, "item_validated": True, "flag": "PROCESSABLE"},
+        "INV": {"event": event, "reference_id": ref, "result": 1, "match_barcode": barcode},
+        "LAB1": {"event": event, "reference_id": ref, "result": 1, "match_barcode": barcode, "label_url": "", "status": ""},
+        "LAB2": {"event": event, "reference_id": ref, "result": 1, "match_barcode": barcode, "label_url": "", "status": ""},
+        "END": {"event": event, "reference_id": ref, "result": 1},
+        "REM": {"event": event, "reference_id": ref, "result": 1},
         "HBT": {"result": 1},
     }
 
@@ -229,20 +243,22 @@ def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> b
     """
     mid = str(response.pop("machine_id", "") or machine_id)
 
-    # Positional ordering per message type (matches CMC CW1000 CIS simulator)
+    # Positional ordering per message type (matches CMC CW1000 CIS simulator).
+    # Every response echoes the original `event` counter and reference_id so
+    # the simulator can correlate request/response pairs.
     order: dict[str, list[str]] = {
         "HBT": ["result"],
-        "IND": ["reference_id", "result"],
-        "REM": ["reference_id", "result"],
-        "END": ["reference_id", "result"],
-        "INV": ["reference_id", "result", "match_barcode"],
+        "IND": ["event", "reference_id", "result"],
+        "REM": ["event", "reference_id", "result"],
+        "END": ["event", "reference_id", "result"],
+        "INV": ["event", "reference_id", "result", "match_barcode"],
         "ENQ": [
-            "reference_id", "result", "item_validated", "description",
+            "event", "reference_id", "result", "item_validated", "description",
             "label_match", "lab1_enabled", "lab2_enabled", "inv_enabled",
         ],
-        "ACK": ["reference_id", "result", "item_validated", "flag"],
-        "LAB1": ["reference_id", "result", "match_barcode", "label_url", "status"],
-        "LAB2": ["reference_id", "result", "match_barcode", "label_url", "status"],
+        "ACK": ["event", "reference_id", "result", "item_validated", "flag"],
+        "LAB1": ["event", "reference_id", "result", "match_barcode", "label_url", "status"],
+        "LAB2": ["event", "reference_id", "result", "match_barcode", "label_url", "status"],
     }
 
     def _fmt(v):

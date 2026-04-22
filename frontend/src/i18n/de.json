@@ -135,6 +135,80 @@
     "labeled": "Etikettiert",
     "completedStation": "Abgeschlossen",
     "packageJourney": "Paket-Verlauf",
+    "eventDict": {
+      "ENQ": {
+        "label": "Scan",
+        "technical": "ENQ — Enquiry",
+        "short": "Barcode gescannt",
+        "detail": "Ein Paket wurde am Scanner erfasst. Das System prüft die Referenz und liefert dem Förderband die Freigabe."
+      },
+      "IND": {
+        "label": "Einführung",
+        "technical": "IND — Induction",
+        "short": "Paket am Förderband",
+        "detail": "Das Paket ist auf das Förderband gelangt und wird zum 3D-Sensor transportiert."
+      },
+      "ACK": {
+        "label": "Vermessung",
+        "technical": "ACK — Acknowledge (3D)",
+        "short": "3D-Vermessung",
+        "detail": "Der 3D-Sensor hat Länge, Breite und Höhe erfasst. Das System entscheidet, ob das Paket verarbeitbar ist."
+      },
+      "INV": {
+        "label": "Rechnung",
+        "technical": "INV — Invoice",
+        "short": "Beleg gedruckt",
+        "detail": "Ein Lieferschein bzw. eine Rechnung wird gedruckt und wandert mit dem Paket weiter."
+      },
+      "LAB1": {
+        "label": "Etikett 1",
+        "technical": "LAB1 — Primary Labeler",
+        "short": "Versandetikett gedruckt",
+        "detail": "Am ersten Etikettierer wird das Versandetikett mit Barcode und Trackingnummer aufgebracht."
+      },
+      "LAB2": {
+        "label": "Etikett 2",
+        "technical": "LAB2 — Secondary Labeler",
+        "short": "Zweites Etikett",
+        "detail": "Optionaler zweiter Etikettierer für Rücksendungen, Spezial-Barcodes oder Zollaufkleber."
+      },
+      "END": {
+        "label": "Ausgang",
+        "technical": "END — Exit Verifier",
+        "short": "Paket fertig",
+        "detail": "Der Ausgangsscanner prüft, ob das Etikett lesbar ist. Das Paket verlässt die Maschine."
+      },
+      "REM": {
+        "label": "Entfernt",
+        "technical": "REM — Remove",
+        "short": "Paket manuell entfernt",
+        "detail": "Ein Bediener hat das Paket vom Förderband genommen, bevor es die Maschine verlassen hat."
+      },
+      "HBT": {
+        "label": "Verbindung",
+        "technical": "HBT — Heartbeat",
+        "short": "Verbindungstest",
+        "detail": "Die Maschine meldet sich zyklisch, damit das System erkennt, dass sie online ist."
+      },
+      "STS": {
+        "label": "Status",
+        "technical": "STS — Status",
+        "short": "Maschinenstatus",
+        "detail": "Aktueller Betriebszustand der Maschine (läuft, pausiert, Fehler, …)."
+      },
+      "SYSTEM": {
+        "label": "System",
+        "technical": "SYSTEM",
+        "short": "Systemmeldung",
+        "detail": "Verbindung auf-/abgebaut, interne Meldung des Backends."
+      },
+      "UNKNOWN": {
+        "label": "Unbekannt",
+        "technical": "UNKNOWN",
+        "short": "Unbekannte Nachricht",
+        "detail": "Das Backend konnte das Frame nicht parsen. Format prüfen."
+      }
+    },
     "liveActivity": "Live-Aktivität",
     "live": "Live",
     "waitingForActivity": "Warte auf Aktivität...",

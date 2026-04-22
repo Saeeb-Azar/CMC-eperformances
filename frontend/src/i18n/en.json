@@ -135,6 +135,80 @@
     "labeled": "Labeled",
     "completedStation": "Completed",
     "packageJourney": "Package Journey",
+    "eventDict": {
+      "ENQ": {
+        "label": "Scan",
+        "technical": "ENQ — Enquiry",
+        "short": "Barcode scanned",
+        "detail": "A package was picked up at the scanner. The system looks up the order and grants the machine permission to proceed."
+      },
+      "IND": {
+        "label": "Induction",
+        "technical": "IND — Induction",
+        "short": "On conveyor",
+        "detail": "The package has entered the conveyor and is moving toward the 3D sensor."
+      },
+      "ACK": {
+        "label": "Measure",
+        "technical": "ACK — Acknowledge (3D)",
+        "short": "3D measurement",
+        "detail": "The 3D sensor captured length, width and height. The system decides whether the package can be processed."
+      },
+      "INV": {
+        "label": "Invoice",
+        "technical": "INV — Invoice",
+        "short": "Document printed",
+        "detail": "An invoice or delivery note is printed and travels with the package."
+      },
+      "LAB1": {
+        "label": "Label 1",
+        "technical": "LAB1 — Primary Labeler",
+        "short": "Shipping label printed",
+        "detail": "The primary labeler applies the shipping label with barcode and tracking number."
+      },
+      "LAB2": {
+        "label": "Label 2",
+        "technical": "LAB2 — Secondary Labeler",
+        "short": "Second label",
+        "detail": "Optional second labeler for returns, special barcodes, or customs stickers."
+      },
+      "END": {
+        "label": "Exit",
+        "technical": "END — Exit Verifier",
+        "short": "Package complete",
+        "detail": "The exit scanner verifies the label is readable and the package leaves the machine."
+      },
+      "REM": {
+        "label": "Removed",
+        "technical": "REM — Remove",
+        "short": "Manually removed",
+        "detail": "An operator took the package off the conveyor before it left the machine."
+      },
+      "HBT": {
+        "label": "Connection",
+        "technical": "HBT — Heartbeat",
+        "short": "Connection check",
+        "detail": "The machine pings periodically so the system knows it is online."
+      },
+      "STS": {
+        "label": "Status",
+        "technical": "STS — Status",
+        "short": "Machine state",
+        "detail": "Current operating state of the machine (running, paused, error, …)."
+      },
+      "SYSTEM": {
+        "label": "System",
+        "technical": "SYSTEM",
+        "short": "System message",
+        "detail": "Connection established/closed or internal backend message."
+      },
+      "UNKNOWN": {
+        "label": "Unknown",
+        "technical": "UNKNOWN",
+        "short": "Unknown message",
+        "detail": "The backend could not parse the frame. Check the format."
+      }
+    },
     "liveActivity": "Live Activity",
     "live": "Live",
     "waitingForActivity": "Waiting for activity...",
