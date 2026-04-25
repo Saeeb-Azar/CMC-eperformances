@@ -396,6 +396,25 @@
       "LAB2": "Label 2",
       "END": "Completed",
       "REM": "Removed"
+    },
+    "packetDetails": "Packet Details",
+    "packetDetailsDesc": "One row per packet — all values aggregated from events",
+    "labelOpen": "Open",
+    "statusOk": "OK",
+    "statusNotOk": "Not OK",
+    "statusInProgress": "In progress",
+    "col": {
+      "ref": "Reference",
+      "barcode": "Barcode",
+      "machine": "Machine",
+      "weight": "Weight",
+      "dimensions": "Dims (H×L×W)",
+      "label": "Label",
+      "carrier": "Carrier",
+      "tracking": "Tracking",
+      "stage": "Stage",
+      "status": "Status",
+      "lastSeen": "Last seen"
     }
   },
   "control": {

@@ -6,6 +6,7 @@ import {
   ScanBarcode, LogIn, Ruler, Tag, FileText,
   CheckCircle, XCircle, Trash2, Activity,
   Info, Server, ChevronRight, ChevronDown, Search,
+  Package as PackageIcon, ExternalLink,
 } from 'lucide-react';
 
 interface LiveEvent {
@@ -79,6 +80,41 @@ interface PackageSummary {
   firstSeen: string;
   lastSeen: string;
   rejected: boolean;
+  // Aggregated packet details extracted from event payloads
+  barcode?: string;
+  heightMm?: number;
+  lengthMm?: number;
+  widthMm?: number;
+  weightG?: number;
+  labelUrl?: string;
+  matchBarcode?: string;
+  carrier?: string;
+  trackingNumber?: string;
+  endStatusOk?: boolean;
+  lastStage?: string;
+}
+
+function pickStr(d: Record<string, unknown> | undefined, ...keys: string[]): string | undefined {
+  if (!d) return undefined;
+  for (const k of keys) {
+    const v = d[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+    if (typeof v === 'number') return String(v);
+  }
+  return undefined;
+}
+
+function pickNum(d: Record<string, unknown> | undefined, ...keys: string[]): number | undefined {
+  if (!d) return undefined;
+  for (const k of keys) {
+    const v = d[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.length > 0) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
 }
 
 export default function SimulatorPage() {
@@ -136,7 +172,7 @@ export default function SimulatorPage() {
     };
   }, []);
 
-  // Aggregate package lifecycles for the flow panel
+  // Aggregate package lifecycles for the flow panel + summary table
   const packages = useMemo<PackageSummary[]>(() => {
     const map = new Map<string, PackageSummary>();
     for (const ev of events) {
@@ -154,13 +190,56 @@ export default function SimulatorPage() {
         };
         map.set(ref, pkg);
       }
-      pkg.stages.add(ev.type);
+      // Track only request types for the stage chips (strip _RESPONSE suffix)
+      const baseType = ev.type.replace(/_RESPONSE$/, '');
+      if (!ev.type.endsWith('_RESPONSE')) {
+        pkg.stages.add(ev.type);
+        pkg.lastStage = ev.type;
+      }
       pkg.lastSeen = ev.timestamp;
-      if (ev.type === 'REM') pkg.rejected = true;
-      if (ev.type === 'END') {
-        const d = ev.data as Record<string, unknown> | undefined;
-        const status = d?.status;
-        if (status !== '1' && status !== 1 && !d?.good) pkg.rejected = true;
+      if (!pkg.machineId && ev.machine_id) pkg.machineId = ev.machine_id;
+
+      const d = ev.data as Record<string, unknown> | undefined;
+
+      // Per-stage data extraction
+      switch (baseType) {
+        case 'ENQ': {
+          const bc = pickStr(d, 'barcode');
+          if (bc) pkg.barcode = bc;
+          break;
+        }
+        case 'ACK': {
+          pkg.heightMm = pickNum(d, 'height_mm', 'heightMm', 'height') ?? pkg.heightMm;
+          pkg.lengthMm = pickNum(d, 'length_mm', 'lengthMm', 'length') ?? pkg.lengthMm;
+          pkg.widthMm = pickNum(d, 'width_mm', 'widthMm', 'width') ?? pkg.widthMm;
+          break;
+        }
+        case 'LAB1': {
+          pkg.weightG = pickNum(d, 'weight_scale', 'weightScale', 'weight') ?? pkg.weightG;
+          pkg.labelUrl = pickStr(d, 'label_url', 'labelUrl') ?? pkg.labelUrl;
+          pkg.matchBarcode = pickStr(d, 'match_barcode', 'matchBarcode') ?? pkg.matchBarcode;
+          pkg.carrier = pickStr(d, 'carrier') ?? pkg.carrier;
+          pkg.trackingNumber = pickStr(d, 'tracking_number', 'trackingNumber') ?? pkg.trackingNumber;
+          break;
+        }
+        case 'LAB2': {
+          pkg.weightG = pickNum(d, 'weight_scale', 'weightScale') ?? pkg.weightG;
+          pkg.matchBarcode = pickStr(d, 'match_barcode', 'matchBarcode') ?? pkg.matchBarcode;
+          break;
+        }
+        case 'END': {
+          if (!ev.type.endsWith('_RESPONSE')) {
+            const status = d?.status;
+            const ok = status === '1' || status === 1 || d?.good === true;
+            pkg.endStatusOk = ok;
+            if (!ok) pkg.rejected = true;
+          }
+          break;
+        }
+        case 'REM': {
+          pkg.rejected = true;
+          break;
+        }
       }
     }
     // Most recent first
@@ -650,6 +729,128 @@ export default function SimulatorPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Packet details — one row per packet with all key fields */}
+        <div className="panel" style={{ marginTop: 24 }}>
+          <div className="panel__header">
+            <div className="flex items-center gap-2">
+              <PackageIcon size={16} className="text-blue-500" />
+              <div>
+                <h3 className="panel__title">{t('simulator.packetDetails')}</h3>
+                <p className="text-xs" style={{ color: 'var(--clr-text-muted)', marginTop: 2 }}>
+                  {t('simulator.packetDetailsDesc')}
+                </p>
+              </div>
+            </div>
+            {packages.length > 0 && (
+              <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
+                {packages.length}
+              </span>
+            )}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th style={{ width: 120 }}>{t('simulator.col.ref')}</th>
+                  <th style={{ width: 140 }}>{t('simulator.col.barcode')}</th>
+                  <th style={{ width: 110 }}>{t('simulator.col.machine')}</th>
+                  <th className="!text-right" style={{ width: 90 }}>{t('simulator.col.weight')}</th>
+                  <th style={{ width: 130 }}>{t('simulator.col.dimensions')}</th>
+                  <th style={{ width: 90 }}>{t('simulator.col.label')}</th>
+                  <th style={{ width: 90 }}>{t('simulator.col.carrier')}</th>
+                  <th style={{ width: 140 }}>{t('simulator.col.tracking')}</th>
+                  <th style={{ width: 90 }}>{t('simulator.col.stage')}</th>
+                  <th style={{ width: 110 }}>{t('simulator.col.status')}</th>
+                  <th className="!text-right" style={{ width: 110 }}>{t('simulator.col.lastSeen')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {packages.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} style={{ textAlign: 'center', padding: '32px 0', color: 'var(--clr-text-muted)' }}>
+                      {t('simulator.noPackages')}
+                    </td>
+                  </tr>
+                ) : (
+                  packages.map(pkg => {
+                    const dims = (pkg.heightMm != null || pkg.lengthMm != null || pkg.widthMm != null)
+                      ? `${pkg.heightMm ?? '?'}×${pkg.lengthMm ?? '?'}×${pkg.widthMm ?? '?'} mm`
+                      : '';
+                    const completed = pkg.stages.has('END') && !pkg.rejected && pkg.endStatusOk !== false;
+                    const failed = pkg.rejected || pkg.endStatusOk === false;
+                    const statusColor = failed
+                      ? { bg: 'var(--clr-error-soft, #fee2e2)', text: 'var(--clr-error-text, #991b1b)' }
+                      : completed
+                        ? { bg: 'var(--clr-success-soft, #d1fae5)', text: 'var(--clr-success-text, #065f46)' }
+                        : { bg: 'var(--clr-info-soft, #dbeafe)', text: 'var(--clr-info-text, #1e40af)' };
+                    const statusLabel = failed
+                      ? t('simulator.statusNotOk')
+                      : completed
+                        ? t('simulator.statusOk')
+                        : t('simulator.statusInProgress');
+                    return (
+                      <tr
+                        key={pkg.ref}
+                        onClick={() => setTextFilter(pkg.ref)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td><span className="cell-mono" style={{ color: 'var(--clr-primary)' }}>{pkg.ref}</span></td>
+                        <td>{pkg.barcode ? <span className="cell-mono">{pkg.barcode}</span> : <span className="cell-muted">—</span>}</td>
+                        <td>{pkg.machineId ? <span className="cell-mono">{pkg.machineId}</span> : <span className="cell-muted">—</span>}</td>
+                        <td className="!text-right tabular-nums">
+                          {pkg.weightG != null ? `${pkg.weightG} g` : <span className="cell-muted">—</span>}
+                        </td>
+                        <td>{dims ? <span className="cell-mono">{dims}</span> : <span className="cell-muted">—</span>}</td>
+                        <td>
+                          {pkg.labelUrl ? (
+                            <a
+                              href={pkg.labelUrl}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: 'var(--clr-primary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              {t('simulator.labelOpen')} <ExternalLink size={11} />
+                            </a>
+                          ) : pkg.matchBarcode ? (
+                            <span className="cell-mono">{pkg.matchBarcode}</span>
+                          ) : (
+                            <span className="cell-muted">—</span>
+                          )}
+                        </td>
+                        <td>{pkg.carrier ? <span>{pkg.carrier}</span> : <span className="cell-muted">—</span>}</td>
+                        <td>{pkg.trackingNumber ? <span className="cell-mono">{pkg.trackingNumber}</span> : <span className="cell-muted">—</span>}</td>
+                        <td>
+                          {pkg.lastStage ? (
+                            <span className="cell-mono" style={{ fontSize: 11 }}>{pkg.lastStage}</span>
+                          ) : (
+                            <span className="cell-muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              background: statusColor.bg,
+                              color: statusColor.text,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="!text-right"><span className="cell-muted tabular-nums">{formatTime(pkg.lastSeen)}</span></td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

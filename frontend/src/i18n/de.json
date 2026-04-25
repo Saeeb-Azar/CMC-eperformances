@@ -396,6 +396,25 @@
       "LAB2": "Etikett 2",
       "END": "Abgeschlossen",
       "REM": "Entfernt"
+    },
+    "packetDetails": "Paket-Details",
+    "packetDetailsDesc": "Eine Zeile pro Paket — alle Werte aus den Events zusammengeführt",
+    "labelOpen": "Öffnen",
+    "statusOk": "OK",
+    "statusNotOk": "Nicht OK",
+    "statusInProgress": "Laufend",
+    "col": {
+      "ref": "Referenz",
+      "barcode": "Barcode",
+      "machine": "Maschine",
+      "weight": "Gewicht",
+      "dimensions": "Maße (H×L×B)",
+      "label": "Etikett",
+      "carrier": "Carrier",
+      "tracking": "Tracking",
+      "stage": "Stufe",
+      "status": "Status",
+      "lastSeen": "Zuletzt"
     }
   },
   "control": {
