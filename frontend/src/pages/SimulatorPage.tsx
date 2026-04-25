@@ -130,6 +130,7 @@ export default function SimulatorPage() {
   const [showSetup, setShowSetup] = useState(false);
   const [packetSearch, setPacketSearch] = useState('');
   const [packetFilters, setPacketFilters] = useState<FilterState>({ status: [], stage: [] });
+  const [mergeByBarcode, setMergeByBarcode] = useState(true);
   const sinceIdRef = useRef(0);
 
   // HTTP polling — the only transport that's guaranteed to work through
@@ -177,11 +178,36 @@ export default function SimulatorPage() {
 
   // Aggregate package lifecycles for the flow panel + summary table
   const packages = useMemo<PackageSummary[]>(() => {
+    // Pass 1 (only when merging): collect ref→barcode from ENQ events,
+    // so refs that share a barcode collapse into a single row.
+    const refToBarcode = new Map<string, string>();
+    if (mergeByBarcode) {
+      for (const ev of events) {
+        const ref = getRef(ev);
+        if (!ref) continue;
+        if (ev.type.replace(/_RESPONSE$/, '') !== 'ENQ') continue;
+        const d = ev.data as Record<string, unknown> | undefined;
+        const bc = pickStr(d, 'barcode');
+        if (bc) refToBarcode.set(ref, bc);
+      }
+    }
+    const knownBarcodes = new Set(refToBarcode.values());
+
+    const groupKey = (ref: string): string => {
+      if (!mergeByBarcode) return ref;
+      const bc = refToBarcode.get(ref);
+      if (bc) return `bc:${bc}`;
+      // ref might itself be a barcode that other ENQs have referred to
+      if (knownBarcodes.has(ref)) return `bc:${ref}`;
+      return ref;
+    };
+
     const map = new Map<string, PackageSummary>();
     for (const ev of events) {
       const ref = getRef(ev);
       if (!ref) continue;
-      let pkg = map.get(ref);
+      const key = groupKey(ref);
+      let pkg = map.get(key);
       if (!pkg) {
         pkg = {
           ref,
@@ -191,7 +217,11 @@ export default function SimulatorPage() {
           lastSeen: ev.timestamp,
           rejected: false,
         };
-        map.set(ref, pkg);
+        // If the group key is a barcode, prefer it on the row label
+        if (mergeByBarcode && key.startsWith('bc:')) {
+          pkg.barcode = key.slice(3);
+        }
+        map.set(key, pkg);
       }
       // Track only request types for the stage chips (strip _RESPONSE suffix)
       const baseType = ev.type.replace(/_RESPONSE$/, '');
@@ -249,7 +279,7 @@ export default function SimulatorPage() {
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()
     );
-  }, [events]);
+  }, [events, mergeByBarcode]);
 
   // Filter the event feed
   const visibleEvents = useMemo(() => {
@@ -744,6 +774,8 @@ export default function SimulatorPage() {
             filterState={packetFilters}
             onFilterChange={setPacketFilters}
             onRowClick={(pkg) => setTextFilter(pkg.ref)}
+            mergeByBarcode={mergeByBarcode}
+            onMergeByBarcodeChange={setMergeByBarcode}
           />
         </div>
       </div>
@@ -758,11 +790,16 @@ interface PacketTableProps {
   filterState: FilterState;
   onFilterChange: (v: FilterState) => void;
   onRowClick: (pkg: PackageSummary) => void;
+  mergeByBarcode: boolean;
+  onMergeByBarcodeChange: (v: boolean) => void;
 }
 
 function PacketDetailsTable(props: PacketTableProps) {
   const { t } = useTranslation();
-  const { packages, search, onSearchChange, filterState, onFilterChange, onRowClick } = props;
+  const {
+    packages, search, onSearchChange, filterState, onFilterChange, onRowClick,
+    mergeByBarcode, onMergeByBarcodeChange,
+  } = props;
 
   const stages = useMemo(() => {
     const set = new Set<string>();
@@ -918,6 +955,17 @@ function PacketDetailsTable(props: PacketTableProps) {
       onFilterChange={onFilterChange}
       onRowClick={onRowClick}
       emptyMessage={t('simulator.noPackages')}
+      headerActions={
+        <button
+          type="button"
+          onClick={() => onMergeByBarcodeChange(!mergeByBarcode)}
+          aria-pressed={mergeByBarcode}
+          className={`dt-filter-btn ${mergeByBarcode ? 'dt-filter-btn--active' : ''}`}
+          title={t('simulator.mergeByBarcodeHint')}
+        >
+          {t('simulator.mergeByBarcode')}
+        </button>
+      }
     />
   );
 }

@@ -410,6 +410,8 @@
     },
     "packetDetails": "Paket-Details",
     "packetDetailsDesc": "Eine Zeile pro Paket — alle Werte aus den Events zusammengeführt",
+    "mergeByBarcode": "Per Barcode mergen",
+    "mergeByBarcodeHint": "ENQ-Refs und nachfolgende Refs mit gleichem Barcode werden zu einer Zeile zusammengeführt",
     "labelOpen": "Öffnen",
     "statusOk": "OK",
     "statusNotOk": "Nicht OK",

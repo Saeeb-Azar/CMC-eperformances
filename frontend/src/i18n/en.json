@@ -410,6 +410,8 @@
     },
     "packetDetails": "Packet Details",
     "packetDetailsDesc": "One row per packet — all values aggregated from events",
+    "mergeByBarcode": "Merge by barcode",
+    "mergeByBarcodeHint": "ENQ refs and subsequent refs sharing the same barcode collapse into a single row",
     "labelOpen": "Open",
     "statusOk": "OK",
     "statusNotOk": "Not OK",

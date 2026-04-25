@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
+import DataTable, { type Column } from '../components/ui/DataTable';
 import {
   Package, CheckCircle, XCircle, AlertTriangle,
   Activity, Server, Clock, TrendingUp,
@@ -161,33 +162,49 @@ export default function DashboardPage() {
         </div>
 
         {/* Recent orders */}
-        <div className="panel">
-          <div className="panel__header">
-            <h3 className="panel__title">{t('dashboard.recentOrders')}</h3>
-            <span className="panel__subtitle">{t('dashboard.last30min')}</span>
-          </div>
-          <div>
-            {recent.length === 0 ? (
-              <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
-                {t('common.noData')}
-              </div>
-            ) : (
-              recent.map((order) => (
-                <div key={order.id} className="px-8 py-[18px] flex items-center justify-between border-b border-gray-100 last:border-b-0">
-                  <div className="flex items-center gap-5">
-                    <span className="text-sm font-semibold font-mono text-gray-900">{order.reference_id}</span>
-                    <span className="text-sm text-gray-400 font-mono">{order.barcode}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <StatusBadge status={order.state} />
-                    <span className="text-xs text-gray-400 tabular-nums w-12 text-right">{formatTime(order.created_at)}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <DashboardRecent recent={recent} />
       </div>
     </div>
+  );
+}
+
+function DashboardRecent({ recent }: { recent: OrderStateListItem[] }) {
+  const { t } = useTranslation();
+
+  const columns: Column<OrderStateListItem>[] = [
+    {
+      key: 'reference',
+      header: t('orders.reference'),
+      render: (o) => <span className="cell-mono cell-primary">{o.reference_id}</span>,
+    },
+    {
+      key: 'barcode',
+      header: t('orders.barcode'),
+      render: (o) => <span className="cell-mono">{o.barcode}</span>,
+    },
+    {
+      key: 'state',
+      header: t('orders.state'),
+      width: 130,
+      render: (o) => <StatusBadge status={o.state} />,
+    },
+    {
+      key: 'time',
+      header: t('orders.time'),
+      width: 90,
+      align: 'right',
+      render: (o) => <span className="cell-muted tabular-nums">{formatTime(o.created_at)}</span>,
+    },
+  ];
+
+  return (
+    <DataTable
+      title={t('dashboard.recentOrders')}
+      subtitle={t('dashboard.last30min')}
+      data={recent}
+      columns={columns}
+      rowKey={(o) => String(o.id)}
+      emptyMessage={t('common.noData')}
+    />
   );
 }
