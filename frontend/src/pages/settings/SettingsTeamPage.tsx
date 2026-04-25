@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
-import { UserCircle, Plus, Search, MoreVertical } from 'lucide-react';
+import DataTable, { type Column, type FilterState } from '../../components/ui/DataTable';
+import { UserCircle, Plus, MoreVertical } from 'lucide-react';
 import { api, type UserRead } from '../../services/api';
 
 const formatLogin = (iso: string | null) =>
@@ -12,6 +13,7 @@ export default function SettingsTeamPage() {
   const [users, setUsers] = useState<UserRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterState, setFilterState] = useState<FilterState>({ role: [], active: [] });
 
   useEffect(() => {
     let cancelled = false;
@@ -29,11 +31,83 @@ export default function SettingsTeamPage() {
     super_admin: { label: t('roles.owner'), cls: 'badge badge--accent' },
   };
 
-  const filtered = users.filter((u) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return u.full_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-  });
+  const roles = useMemo(() => Array.from(new Set(users.map((u) => u.role))).sort(), [users]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      if (q && !`${u.full_name} ${u.email}`.toLowerCase().includes(q)) return false;
+      const roleSel = filterState.role ?? [];
+      if (roleSel.length > 0 && !roleSel.includes(u.role)) return false;
+      const activeSel = filterState.active ?? [];
+      if (activeSel.length > 0) {
+        const wantActive = activeSel.includes('active');
+        const wantInactive = activeSel.includes('inactive');
+        if (u.is_active && !wantActive) return false;
+        if (!u.is_active && !wantInactive) return false;
+      }
+      return true;
+    });
+  }, [users, search, filterState]);
+
+  const columns: Column<UserRead>[] = [
+    {
+      key: 'icon',
+      header: '',
+      width: 56,
+      render: () => (
+        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+          <UserCircle size={18} className="text-gray-400" />
+        </div>
+      ),
+    },
+    {
+      key: 'member',
+      header: t('common.member'),
+      render: (u) => (
+        <div>
+          <span className="cell-primary block">{u.full_name}</span>
+          <span className="cell-muted block mt-0.5">{u.email}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: t('common.role'),
+      width: 130,
+      render: (u) => {
+        const rb = roleBadge[u.role] ?? { label: u.role, cls: 'badge badge--neutral' };
+        return <span className={rb.cls}>{rb.label}</span>;
+      },
+    },
+    {
+      key: 'lastLogin',
+      header: t('common.lastLogin'),
+      width: 160,
+      render: (u) => <span className="cell-mono">{formatLogin(u.last_login)}</span>,
+    },
+    {
+      key: 'status',
+      header: t('common.status'),
+      width: 110,
+      render: (u) => (
+        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-gray-400'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+          {u.is_active ? t('common.active') : t('common.inactive')}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: 48,
+      render: () => (
+        <button type="button" className="btn-icon" onClick={(e) => e.stopPropagation()}>
+          <MoreVertical size={14} />
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -47,7 +121,6 @@ export default function SettingsTeamPage() {
           <button className="btn btn--primary btn--lg"><Plus size={16} /> {t('settings.team.inviteMember')}</button>
         </div>
 
-        {/* Stats */}
         <div className="grid-4 gap-4">
           {[
             { label: t('settings.team.teamMembers'), value: users.length },
@@ -62,66 +135,34 @@ export default function SettingsTeamPage() {
           ))}
         </div>
 
-        {/* Search */}
-        <div style={{ position: 'relative', width: 280 }}>
-          <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('settings.team.searchPlaceholder')}
-            className="input input--with-icon"
-          />
-        </div>
-
-        {/* Team table */}
-        <div className="panel">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: 44 }}></th>
-                <th>{t('common.member')}</th>
-                <th style={{ width: 110 }}>{t('common.role')}</th>
-                <th style={{ width: 150 }}>{t('common.lastLogin')}</th>
-                <th style={{ width: 80 }}>{t('common.status')}</th>
-                <th style={{ width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
-              ) : (
-                filtered.map(u => {
-                  const rb = roleBadge[u.role] ?? { label: u.role, cls: 'badge badge--neutral' };
-                  return (
-                    <tr key={u.id}>
-                      <td>
-                        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                          <UserCircle size={18} className="text-gray-400" />
-                        </div>
-                      </td>
-                      <td>
-                        <span className="cell-primary block">{u.full_name}</span>
-                        <span className="cell-muted block mt-0.5">{u.email}</span>
-                      </td>
-                      <td><span className={rb.cls}>{rb.label}</span></td>
-                      <td><span className="cell-mono">{formatLogin(u.last_login)}</span></td>
-                      <td>
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-gray-400'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-emerald-400' : 'bg-gray-300'}`} />
-                          {u.is_active ? t('common.active') : t('common.inactive')}
-                        </span>
-                      </td>
-                      <td><button className="btn-icon"><MoreVertical size={14} /></button></td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          title={t('settings.team.teamMembers')}
+          totalCount={users.length}
+          data={loading ? [] : filtered}
+          columns={columns}
+          rowKey={(u) => String(u.id)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t('settings.team.searchPlaceholder')}
+          filterGroups={[
+            {
+              key: 'role',
+              label: t('common.role'),
+              options: roles.map((r) => ({ value: r, label: roleBadge[r]?.label ?? r })),
+            },
+            {
+              key: 'active',
+              label: t('common.status'),
+              options: [
+                { value: 'active', label: t('common.active') },
+                { value: 'inactive', label: t('common.inactive') },
+              ],
+            },
+          ]}
+          filterState={filterState}
+          onFilterChange={setFilterState}
+          emptyMessage={loading ? t('common.loading') : users.length === 0 ? t('common.noData') : t('common.noMatch')}
+        />
       </div>
     </div>
   );

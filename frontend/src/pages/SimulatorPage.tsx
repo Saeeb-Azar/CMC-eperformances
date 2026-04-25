@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
+import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
 import {
   Wifi, WifiOff,
   ScanBarcode, LogIn, Ruler, Tag, FileText,
   CheckCircle, XCircle, Trash2, Activity,
   Info, Server, ChevronRight, ChevronDown, Search,
-  Package as PackageIcon, ExternalLink,
+  ExternalLink,
 } from 'lucide-react';
 
 interface LiveEvent {
@@ -127,6 +128,8 @@ export default function SimulatorPage() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [textFilter, setTextFilter] = useState('');
   const [showSetup, setShowSetup] = useState(false);
+  const [packetSearch, setPacketSearch] = useState('');
+  const [packetFilters, setPacketFilters] = useState<FilterState>({ status: [], stage: [] });
   const sinceIdRef = useRef(0);
 
   // HTTP polling — the only transport that's guaranteed to work through
@@ -733,127 +736,188 @@ export default function SimulatorPage() {
         </div>
 
         {/* Packet details — one row per packet with all key fields */}
-        <div className="panel" style={{ marginTop: 24 }}>
-          <div className="panel__header">
-            <div className="flex items-center gap-2">
-              <PackageIcon size={16} className="text-blue-500" />
-              <div>
-                <h3 className="panel__title">{t('simulator.packetDetails')}</h3>
-                <p className="text-xs" style={{ color: 'var(--clr-text-muted)', marginTop: 2 }}>
-                  {t('simulator.packetDetailsDesc')}
-                </p>
-              </div>
-            </div>
-            {packages.length > 0 && (
-              <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                {packages.length}
-              </span>
-            )}
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 120 }}>{t('simulator.col.ref')}</th>
-                  <th style={{ width: 140 }}>{t('simulator.col.barcode')}</th>
-                  <th style={{ width: 110 }}>{t('simulator.col.machine')}</th>
-                  <th className="!text-right" style={{ width: 90 }}>{t('simulator.col.weight')}</th>
-                  <th style={{ width: 130 }}>{t('simulator.col.dimensions')}</th>
-                  <th style={{ width: 90 }}>{t('simulator.col.label')}</th>
-                  <th style={{ width: 90 }}>{t('simulator.col.carrier')}</th>
-                  <th style={{ width: 140 }}>{t('simulator.col.tracking')}</th>
-                  <th style={{ width: 90 }}>{t('simulator.col.stage')}</th>
-                  <th style={{ width: 110 }}>{t('simulator.col.status')}</th>
-                  <th className="!text-right" style={{ width: 110 }}>{t('simulator.col.lastSeen')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {packages.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} style={{ textAlign: 'center', padding: '32px 0', color: 'var(--clr-text-muted)' }}>
-                      {t('simulator.noPackages')}
-                    </td>
-                  </tr>
-                ) : (
-                  packages.map(pkg => {
-                    const dims = (pkg.heightMm != null || pkg.lengthMm != null || pkg.widthMm != null)
-                      ? `${pkg.heightMm ?? '?'}×${pkg.lengthMm ?? '?'}×${pkg.widthMm ?? '?'} mm`
-                      : '';
-                    const completed = pkg.stages.has('END') && !pkg.rejected && pkg.endStatusOk !== false;
-                    const failed = pkg.rejected || pkg.endStatusOk === false;
-                    const statusColor = failed
-                      ? { bg: 'var(--clr-error-soft, #fee2e2)', text: 'var(--clr-error-text, #991b1b)' }
-                      : completed
-                        ? { bg: 'var(--clr-success-soft, #d1fae5)', text: 'var(--clr-success-text, #065f46)' }
-                        : { bg: 'var(--clr-info-soft, #dbeafe)', text: 'var(--clr-info-text, #1e40af)' };
-                    const statusLabel = failed
-                      ? t('simulator.statusNotOk')
-                      : completed
-                        ? t('simulator.statusOk')
-                        : t('simulator.statusInProgress');
-                    return (
-                      <tr
-                        key={pkg.ref}
-                        onClick={() => setTextFilter(pkg.ref)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <td><span className="cell-mono" style={{ color: 'var(--clr-primary)' }}>{pkg.ref}</span></td>
-                        <td>{pkg.barcode ? <span className="cell-mono">{pkg.barcode}</span> : <span className="cell-muted">—</span>}</td>
-                        <td>{pkg.machineId ? <span className="cell-mono">{pkg.machineId}</span> : <span className="cell-muted">—</span>}</td>
-                        <td className="!text-right tabular-nums">
-                          {pkg.weightG != null ? `${pkg.weightG} g` : <span className="cell-muted">—</span>}
-                        </td>
-                        <td>{dims ? <span className="cell-mono">{dims}</span> : <span className="cell-muted">—</span>}</td>
-                        <td>
-                          {pkg.labelUrl ? (
-                            <a
-                              href={pkg.labelUrl}
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              onClick={(e) => e.stopPropagation()}
-                              style={{ color: 'var(--clr-primary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              {t('simulator.labelOpen')} <ExternalLink size={11} />
-                            </a>
-                          ) : pkg.matchBarcode ? (
-                            <span className="cell-mono">{pkg.matchBarcode}</span>
-                          ) : (
-                            <span className="cell-muted">—</span>
-                          )}
-                        </td>
-                        <td>{pkg.carrier ? <span>{pkg.carrier}</span> : <span className="cell-muted">—</span>}</td>
-                        <td>{pkg.trackingNumber ? <span className="cell-mono">{pkg.trackingNumber}</span> : <span className="cell-muted">—</span>}</td>
-                        <td>
-                          {pkg.lastStage ? (
-                            <span className="cell-mono" style={{ fontSize: 11 }}>{pkg.lastStage}</span>
-                          ) : (
-                            <span className="cell-muted">—</span>
-                          )}
-                        </td>
-                        <td>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              padding: '2px 8px',
-                              borderRadius: 4,
-                              background: statusColor.bg,
-                              color: statusColor.text,
-                              fontWeight: 500,
-                            }}
-                          >
-                            {statusLabel}
-                          </span>
-                        </td>
-                        <td className="!text-right"><span className="cell-muted tabular-nums">{formatTime(pkg.lastSeen)}</span></td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+        <div style={{ marginTop: 24 }}>
+          <PacketDetailsTable
+            packages={packages}
+            search={packetSearch}
+            onSearchChange={setPacketSearch}
+            filterState={packetFilters}
+            onFilterChange={setPacketFilters}
+            onRowClick={(pkg) => setTextFilter(pkg.ref)}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+interface PacketTableProps {
+  packages: PackageSummary[];
+  search: string;
+  onSearchChange: (v: string) => void;
+  filterState: FilterState;
+  onFilterChange: (v: FilterState) => void;
+  onRowClick: (pkg: PackageSummary) => void;
+}
+
+function PacketDetailsTable(props: PacketTableProps) {
+  const { t } = useTranslation();
+  const { packages, search, onSearchChange, filterState, onFilterChange, onRowClick } = props;
+
+  const stages = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of packages) if (p.lastStage) set.add(p.lastStage);
+    return Array.from(set).sort();
+  }, [packages]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return packages.filter((pkg) => {
+      if (q) {
+        const hay = `${pkg.ref} ${pkg.barcode ?? ''} ${pkg.machineId ?? ''} ${pkg.trackingNumber ?? ''} ${pkg.carrier ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      const stageSel = filterState.stage ?? [];
+      if (stageSel.length > 0 && (!pkg.lastStage || !stageSel.includes(pkg.lastStage))) return false;
+      const statusSel = filterState.status ?? [];
+      if (statusSel.length > 0) {
+        const completed = pkg.stages.has('END') && !pkg.rejected && pkg.endStatusOk !== false;
+        const failed = pkg.rejected || pkg.endStatusOk === false;
+        const key = failed ? 'notok' : completed ? 'ok' : 'inprogress';
+        if (!statusSel.includes(key)) return false;
+      }
+      return true;
+    });
+  }, [packages, search, filterState]);
+
+  const columns: Column<PackageSummary>[] = [
+    {
+      key: 'ref',
+      header: t('simulator.col.ref'),
+      width: 130,
+      render: (pkg) => <span className="cell-mono cell-primary">{pkg.ref}</span>,
+    },
+    {
+      key: 'barcode',
+      header: t('simulator.col.barcode'),
+      width: 150,
+      render: (pkg) => pkg.barcode ? <span className="cell-mono">{pkg.barcode}</span> : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'machine',
+      header: t('simulator.col.machine'),
+      width: 120,
+      render: (pkg) => pkg.machineId ? <span className="cell-mono">{pkg.machineId}</span> : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'weight',
+      header: t('simulator.col.weight'),
+      width: 100,
+      align: 'right',
+      render: (pkg) => pkg.weightG != null
+        ? <span className="tabular-nums">{pkg.weightG} g</span>
+        : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'dimensions',
+      header: t('simulator.col.dimensions'),
+      width: 140,
+      render: (pkg) => {
+        if (pkg.heightMm == null && pkg.lengthMm == null && pkg.widthMm == null) {
+          return <span className="cell-empty">—</span>;
+        }
+        return <span className="cell-mono">{pkg.heightMm ?? '?'}×{pkg.lengthMm ?? '?'}×{pkg.widthMm ?? '?'} mm</span>;
+      },
+    },
+    {
+      key: 'label',
+      header: t('simulator.col.label'),
+      width: 100,
+      render: (pkg) => {
+        if (pkg.labelUrl) {
+          return (
+            <a
+              href={pkg.labelUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              onClick={(e) => e.stopPropagation()}
+              style={{ color: 'var(--clr-info)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            >
+              {t('simulator.labelOpen')} <ExternalLink size={11} />
+            </a>
+          );
+        }
+        if (pkg.matchBarcode) return <span className="cell-mono">{pkg.matchBarcode}</span>;
+        return <span className="cell-empty">—</span>;
+      },
+    },
+    {
+      key: 'carrier',
+      header: t('simulator.col.carrier'),
+      width: 100,
+      render: (pkg) => pkg.carrier ? <span>{pkg.carrier}</span> : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'tracking',
+      header: t('simulator.col.tracking'),
+      width: 150,
+      render: (pkg) => pkg.trackingNumber ? <span className="cell-mono">{pkg.trackingNumber}</span> : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'stage',
+      header: t('simulator.col.stage'),
+      width: 100,
+      render: (pkg) => pkg.lastStage ? <span className="cell-mono" style={{ fontSize: 11 }}>{pkg.lastStage}</span> : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'status',
+      header: t('simulator.col.status'),
+      width: 120,
+      render: (pkg) => {
+        const completed = pkg.stages.has('END') && !pkg.rejected && pkg.endStatusOk !== false;
+        const failed = pkg.rejected || pkg.endStatusOk === false;
+        const cls = failed ? 'badge badge--danger' : completed ? 'badge badge--success' : 'badge badge--info';
+        const label = failed ? t('simulator.statusNotOk') : completed ? t('simulator.statusOk') : t('simulator.statusInProgress');
+        return <span className={cls}>{label}</span>;
+      },
+    },
+    {
+      key: 'lastSeen',
+      header: t('simulator.col.lastSeen'),
+      width: 110,
+      align: 'right',
+      render: (pkg) => <span className="cell-muted tabular-nums">{formatTime(pkg.lastSeen)}</span>,
+    },
+  ];
+
+  return (
+    <DataTable
+      title={t('simulator.packetDetails')}
+      subtitle={t('simulator.packetDetailsDesc')}
+      totalCount={packages.length}
+      data={filtered}
+      columns={columns}
+      rowKey={(pkg) => pkg.ref}
+      searchValue={search}
+      onSearchChange={onSearchChange}
+      filterGroups={[
+        {
+          key: 'status',
+          label: t('simulator.col.status'),
+          options: [
+            { value: 'ok', label: t('simulator.statusOk') },
+            { value: 'notok', label: t('simulator.statusNotOk') },
+            { value: 'inprogress', label: t('simulator.statusInProgress') },
+          ],
+        },
+        ...(stages.length > 0
+          ? [{ key: 'stage', label: t('simulator.col.stage'), options: stages.map((s) => ({ value: s })) }]
+          : []),
+      ]}
+      filterState={filterState}
+      onFilterChange={onFilterChange}
+      onRowClick={onRowClick}
+      emptyMessage={t('simulator.noPackages')}
+    />
   );
 }

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
 import StatusBadge from '../../components/ui/StatusBadge';
-import { Building2, Plus, Search, MoreVertical } from 'lucide-react';
+import DataTable, { type Column, type FilterState } from '../../components/ui/DataTable';
+import { Building2, Plus, MoreVertical } from 'lucide-react';
 import { api, type TenantRead } from '../../services/api';
 
 const planBadge: Record<string, string> = {
@@ -18,6 +19,7 @@ export default function ControlTenantsPage() {
   const [tenants, setTenants] = useState<TenantRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterState, setFilterState] = useState<FilterState>({ plan: [], active: [] });
 
   useEffect(() => {
     let cancelled = false;
@@ -27,11 +29,75 @@ export default function ControlTenantsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const filtered = tenants.filter((ten) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return ten.name.toLowerCase().includes(q) || ten.slug.toLowerCase().includes(q);
-  });
+  const plans = useMemo(() => Array.from(new Set(tenants.map((t) => t.plan))).sort(), [tenants]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return tenants.filter((ten) => {
+      if (q && !`${ten.name} ${ten.slug}`.toLowerCase().includes(q)) return false;
+      const planSel = filterState.plan ?? [];
+      if (planSel.length > 0 && !planSel.includes(ten.plan)) return false;
+      const activeSel = filterState.active ?? [];
+      if (activeSel.length > 0) {
+        const wantActive = activeSel.includes('active');
+        const wantInactive = activeSel.includes('inactive');
+        if (ten.is_active && !wantActive) return false;
+        if (!ten.is_active && !wantInactive) return false;
+      }
+      return true;
+    });
+  }, [tenants, search, filterState]);
+
+  const columns: Column<TenantRead>[] = [
+    {
+      key: 'icon',
+      header: '',
+      width: 56,
+      render: (ten) => (
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${ten.is_active ? 'bg-emerald-50' : 'bg-gray-100'}`}>
+          <Building2 size={16} className={ten.is_active ? 'text-emerald-600' : 'text-gray-400'} />
+        </div>
+      ),
+    },
+    {
+      key: 'company',
+      header: t('control.tenants.company'),
+      render: (ten) => (
+        <div>
+          <span className="cell-primary block">{ten.name}</span>
+          <span className="cell-muted block mt-0.5">{ten.slug}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'plan',
+      header: t('common.plan'),
+      width: 110,
+      render: (ten) => <span className={planBadge[ten.plan] ?? 'badge badge--neutral'}>{ten.plan}</span>,
+    },
+    {
+      key: 'status',
+      header: t('common.status'),
+      width: 110,
+      render: (ten) => <StatusBadge status={ten.is_active ? 'RUNNING' : 'STOP'} />,
+    },
+    {
+      key: 'created',
+      header: t('common.created'),
+      width: 120,
+      render: (ten) => <span className="cell-muted">{formatDate(ten.created_at)}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: 48,
+      render: () => (
+        <button type="button" className="btn-icon" onClick={(e) => e.stopPropagation()}>
+          <MoreVertical size={14} />
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -60,58 +126,34 @@ export default function ControlTenantsPage() {
           ))}
         </div>
 
-        {/* Search */}
-        <div style={{ position: 'relative', width: 280 }}>
-          <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('control.tenants.searchPlaceholder')}
-            className="input input--with-icon"
-          />
-        </div>
-
-        {/* Table */}
-        <div className="panel">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: 44 }}></th>
-                <th>{t('control.tenants.company')}</th>
-                <th style={{ width: 100 }}>{t('common.plan')}</th>
-                <th style={{ width: 80 }}>{t('common.status')}</th>
-                <th style={{ width: 100 }}>{t('common.created')}</th>
-                <th style={{ width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">{t('common.noData')}</td></tr>
-              ) : (
-                filtered.map(ten => (
-                  <tr key={ten.id}>
-                    <td>
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${ten.is_active ? 'bg-emerald-50' : 'bg-gray-100'}`}>
-                        <Building2 size={16} className={ten.is_active ? 'text-emerald-600' : 'text-gray-400'} />
-                      </div>
-                    </td>
-                    <td>
-                      <span className="cell-primary block">{ten.name}</span>
-                      <span className="cell-muted block mt-0.5">{ten.slug}</span>
-                    </td>
-                    <td><span className={planBadge[ten.plan] ?? 'badge badge--neutral'}>{ten.plan}</span></td>
-                    <td><StatusBadge status={ten.is_active ? 'RUNNING' : 'STOP'} /></td>
-                    <td><span className="cell-muted">{formatDate(ten.created_at)}</span></td>
-                    <td><button className="btn-icon"><MoreVertical size={14} /></button></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          title={t('control.tenants.title')}
+          totalCount={tenants.length}
+          data={loading ? [] : filtered}
+          columns={columns}
+          rowKey={(ten) => String(ten.id)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t('control.tenants.searchPlaceholder')}
+          filterGroups={[
+            {
+              key: 'plan',
+              label: t('common.plan'),
+              options: plans.map((p) => ({ value: p, label: t(`plans.${p}`, p) })),
+            },
+            {
+              key: 'active',
+              label: t('common.status'),
+              options: [
+                { value: 'active', label: t('common.active') },
+                { value: 'inactive', label: t('common.inactive') },
+              ],
+            },
+          ]}
+          filterState={filterState}
+          onFilterChange={setFilterState}
+          emptyMessage={loading ? t('common.loading') : tenants.length === 0 ? t('common.noData') : t('common.noMatch')}
+        />
       </div>
     </div>
   );

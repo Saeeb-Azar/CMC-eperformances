@@ -1,45 +1,100 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
-import { Search } from 'lucide-react';
+import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
 import { api, type OrderStateListItem } from '../services/api';
 
-const stateFilters = ['ALL', 'ASSIGNED', 'INDUCTED', 'SCANNED', 'LABELED', 'COMPLETED', 'FAILED', 'EJECTED', 'DELETED'];
+const STATE_OPTIONS = ['ASSIGNED', 'INDUCTED', 'SCANNED', 'LABELED', 'COMPLETED', 'FAILED', 'EJECTED', 'DELETED'];
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export default function OrdersPage() {
   const { t } = useTranslation();
-  const [activeFilter, setActiveFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [orders, setOrders] = useState<OrderStateListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterState, setFilterState] = useState<FilterState>({ state: [], carrier: [] });
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      const params: Record<string, string> = { limit: '200' };
-      if (activeFilter !== 'ALL') params.state = activeFilter;
-      api.listOrders(params)
+      api.listOrders({ limit: '200' })
         .then((o) => { if (!cancelled) { setOrders(o); setLoading(false); } })
         .catch(() => { if (!cancelled) { setOrders([]); setLoading(false); } });
     };
     load();
     const interval = setInterval(load, 5000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [activeFilter]);
+  }, []);
 
-  const filtered = orders.filter((o) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      o.reference_id.toLowerCase().includes(q) ||
-      o.barcode.toLowerCase().includes(q) ||
-      (o.tracking_number || '').toLowerCase().includes(q)
-    );
-  });
+  const carriers = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of orders) if (o.carrier) set.add(o.carrier);
+    return Array.from(set).sort();
+  }, [orders]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return orders.filter((o) => {
+      if (q) {
+        const hay = `${o.reference_id} ${o.barcode} ${o.tracking_number ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      const states = filterState.state ?? [];
+      if (states.length > 0 && !states.includes(o.state)) return false;
+      const carrierFilter = filterState.carrier ?? [];
+      if (carrierFilter.length > 0 && !carrierFilter.includes(o.carrier ?? '')) return false;
+      return true;
+    });
+  }, [orders, search, filterState]);
+
+  const columns: Column<OrderStateListItem>[] = [
+    {
+      key: 'reference',
+      header: t('orders.reference'),
+      render: (o) => <span className="cell-mono cell-primary">{o.reference_id}</span>,
+    },
+    {
+      key: 'barcode',
+      header: t('orders.barcode'),
+      render: (o) => <span className="cell-mono">{o.barcode}</span>,
+    },
+    {
+      key: 'state',
+      header: t('orders.state'),
+      render: (o) => <StatusBadge status={o.state} />,
+    },
+    {
+      key: 'carrier',
+      header: t('orders.carrier'),
+      render: (o) => o.carrier || <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'tracking',
+      header: t('orders.tracking'),
+      render: (o) =>
+        o.tracking_number ? <span className="cell-mono">{o.tracking_number}</span> : <span className="cell-empty">—</span>,
+    },
+    {
+      key: 'weight',
+      header: t('orders.weight'),
+      align: 'right',
+      render: (o) =>
+        o.final_weight_g ? (
+          <span className="tabular-nums">{(o.final_weight_g / 1000).toFixed(2)} kg</span>
+        ) : (
+          <span className="cell-empty">—</span>
+        ),
+    },
+    {
+      key: 'time',
+      header: t('orders.time'),
+      align: 'right',
+      render: (o) => <span className="cell-muted tabular-nums">{formatTime(o.created_at)}</span>,
+    },
+  ];
 
   return (
     <div>
@@ -53,66 +108,29 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Search + Filter */}
-        <div className="flex flex-col gap-4">
-          <div className="relative" style={{ maxWidth: 420 }}>
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder={t('orders.searchPlaceholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input input--with-icon"
-            />
-          </div>
-          <div className="filter-tabs">
-            {stateFilters.map((f) => (
-              <button
-                key={f}
-                onClick={() => setActiveFilter(f)}
-                className={`filter-tab ${activeFilter === f ? 'filter-tab--active' : ''}`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="panel">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t('orders.reference')}</th>
-                <th>{t('orders.barcode')}</th>
-                <th>{t('orders.state')}</th>
-                <th>{t('orders.carrier')}</th>
-                <th>{t('orders.tracking')}</th>
-                <th>{t('orders.weight')}</th>
-                <th>{t('orders.time')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('common.loading')}</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{orders.length === 0 ? t('common.noData') : t('orders.noMatch')}</td></tr>
-              ) : (
-                filtered.map((o) => (
-                  <tr key={o.id}>
-                    <td className="cell-primary"><span className="font-mono">{o.reference_id}</span></td>
-                    <td className="cell-mono">{o.barcode}</td>
-                    <td><StatusBadge status={o.state} /></td>
-                    <td>{o.carrier || <span className="cell-empty">—</span>}</td>
-                    <td>{o.tracking_number ? <span className="cell-mono">{o.tracking_number}</span> : <span className="cell-empty">—</span>}</td>
-                    <td className="tabular-nums">{o.final_weight_g ? `${(o.final_weight_g / 1000).toFixed(2)} kg` : <span className="cell-empty">—</span>}</td>
-                    <td className="cell-muted tabular-nums">{formatTime(o.created_at)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          title={t('orders.title')}
+          totalCount={orders.length}
+          data={loading ? [] : filtered}
+          columns={columns}
+          rowKey={(o) => String(o.id)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t('orders.searchPlaceholder')}
+          filterGroups={[
+            {
+              key: 'state',
+              label: t('orders.state'),
+              options: STATE_OPTIONS.map((s) => ({ value: s, label: t(`status.${s}`, s) })),
+            },
+            ...(carriers.length > 0
+              ? [{ key: 'carrier', label: t('orders.carrier'), options: carriers.map((c) => ({ value: c })) }]
+              : []),
+          ]}
+          filterState={filterState}
+          onFilterChange={setFilterState}
+          emptyMessage={loading ? t('common.loading') : (orders.length === 0 ? t('common.noData') : t('common.noMatch'))}
+        />
       </div>
     </div>
   );

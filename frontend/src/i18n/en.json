@@ -40,6 +40,7 @@
     "disconnected": "Disconnected",
     "loading": "Loading...",
     "noData": "No data",
+    "noMatch": "No matches",
     "created": "Created",
     "lastLogin": "Last Login",
     "member": "Member",
@@ -49,6 +50,16 @@
     "heartbeat": "Heartbeat",
     "today": "Today",
     "saveChanges": "Save Changes"
+  },
+  "table": {
+    "filters": "Filters",
+    "level": "Level",
+    "service": "Service",
+    "category": "Category",
+    "role": "Role",
+    "plan": "Plan",
+    "tenant": "Tenant",
+    "carrier": "Carrier"
   },
   "status": {
     "ASSIGNED": "Assigned",
