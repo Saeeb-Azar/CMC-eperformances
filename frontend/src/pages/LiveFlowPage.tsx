@@ -8,6 +8,13 @@ import LiveEventFeed, { type LiveEvent } from '../components/liveflow/LiveEventF
 import ErrorPanel, { type ErrorItem } from '../components/liveflow/ErrorPanel';
 import MachineHealthPanel from '../components/liveflow/MachineHealthPanel';
 import { api, type DashboardOverview } from '../services/api';
+import PackageStations, {
+  type StationId, type StationStatus, STATIONS,
+} from '../components/simulator/PackageStations';
+import {
+  type PackageState, STATE_COLORS,
+  applyEventToStations, deriveState, emptyStations,
+} from '../lib/packageLifecycle';
 
 interface RawEvent {
   id: number;
@@ -175,6 +182,54 @@ export default function LiveFlowPage() {
       ? Math.max(0, Math.round((new Date(lastTime).getTime() - new Date(firstTime).getTime()) / 1000))
       : 0;
 
+  // Per-package lifecycle aggregation — same logic as the simulator,
+  // but only the fields needed for the operator-facing list.
+  interface ActivePkg {
+    ref: string;
+    state: PackageState;
+    stations: Record<StationId, StationStatus>;
+    removed: boolean;
+    lastSeen: string;
+  }
+  const activePackages = useMemo<ActivePkg[]>(() => {
+    const map = new Map<string, ActivePkg & { rejected: boolean }>();
+    for (const ev of events) {
+      const ref = getRef(ev);
+      if (!ref) continue;
+      let pkg = map.get(ref);
+      if (!pkg) {
+        pkg = {
+          ref,
+          state: 'ASSIGNED',
+          stations: emptyStations(),
+          removed: false,
+          rejected: false,
+          lastSeen: ev.timestamp,
+        };
+        map.set(ref, pkg);
+      }
+      pkg.lastSeen = ev.timestamp;
+      const r = applyEventToStations(ev, pkg.stations);
+      if (r.rejected) pkg.rejected = true;
+      if (r.removed) pkg.removed = true;
+    }
+    for (const pkg of map.values()) {
+      pkg.state = deriveState(pkg.stations, pkg.removed);
+      const terminal = pkg.removed || pkg.rejected || pkg.stations.exit !== 'pending';
+      if (!terminal) {
+        for (const s of STATIONS) {
+          if (pkg.stations[s] === 'pending') {
+            pkg.stations[s] = 'active';
+            break;
+          }
+        }
+      }
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
+    );
+  }, [events]);
+
   const liveEvents: LiveEvent[] = useMemo(
     () =>
       events
@@ -278,6 +333,10 @@ export default function LiveFlowPage() {
         {/* Flow tracker */}
         <PackageFlowTracker steps={steps} showTechnical={viewMode === 'technical'} />
 
+        {/* Active packages — one row per scanned reference, with lifecycle
+            state badge and current station highlighted. */}
+        <ActivePackagesPanel packages={activePackages} formatTime={formatTime} t={t} />
+
         {/* Activity feed */}
         <LiveEventFeed events={liveEvents} />
 
@@ -295,6 +354,87 @@ export default function LiveFlowPage() {
           />
           <ErrorPanel errors={errors} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+interface ActivePackagesPanelProps {
+  packages: {
+    ref: string;
+    state: PackageState;
+    stations: Record<StationId, StationStatus>;
+    removed: boolean;
+    lastSeen: string;
+  }[];
+  formatTime: (iso: string) => string;
+  t: (k: string) => string;
+}
+
+function ActivePackagesPanel({ packages, formatTime, t }: ActivePackagesPanelProps) {
+  return (
+    <div className="panel">
+      <div className="panel__header">
+        <div>
+          <h3 className="panel__title">{t('liveFlow.activePackages')}</h3>
+          <p className="text-xs" style={{ color: 'var(--clr-text-muted)', marginTop: 2 }}>
+            {t('liveFlow.activePackagesDesc')}
+          </p>
+        </div>
+        {packages.length > 0 && (
+          <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
+            {packages.length}
+          </span>
+        )}
+      </div>
+      <div className="panel__body" style={{ maxHeight: 420, overflowY: 'auto', padding: 0 }}>
+        {packages.length === 0 ? (
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 12 }}>
+            {t('liveFlow.noActivePackages')}
+          </div>
+        ) : (
+          packages.slice(0, 20).map((pkg) => {
+            const c = STATE_COLORS[pkg.state];
+            return (
+              <div
+                key={pkg.ref}
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: '1px solid var(--clr-border)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
+                  <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)', flexShrink: 0 }}>
+                    {pkg.ref}
+                  </code>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      fontFamily: 'var(--font-mono)',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      background: c.bg,
+                      color: c.fg,
+                      border: `1px solid ${c.border}`,
+                      letterSpacing: 0.3,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {t(`status.${pkg.state}`)}
+                  </span>
+                  <span
+                    className="tabular-nums"
+                    style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto', flexShrink: 0 }}
+                  >
+                    {formatTime(pkg.lastSeen)}
+                  </span>
+                </div>
+                <PackageStations stations={pkg.stations} removed={pkg.removed} />
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
