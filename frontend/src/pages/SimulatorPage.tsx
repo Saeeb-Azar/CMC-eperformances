@@ -72,6 +72,10 @@ function getRef(ev: LiveEvent): string | null {
   return typeof ref === 'string' && ref.length > 0 ? ref : null;
 }
 
+type PackageState =
+  | 'ASSIGNED' | 'INDUCTED' | 'SCANNED' | 'LABELED'
+  | 'COMPLETED' | 'FAILED' | 'EJECTED' | 'DELETED';
+
 interface PackageSummary {
   ref: string;
   machineId?: string;
@@ -81,6 +85,36 @@ interface PackageSummary {
   removed: boolean;
   stations: Record<StationId, StationStatus>;
   currentStation: StationId | null;
+  state: PackageState;
+}
+
+// Colors mirror the lifecycle in the process documentation: blue for
+// in-flight, green for success, red/orange for terminal failures.
+const STATE_COLORS: Record<PackageState, { bg: string; fg: string; border: string }> = {
+  ASSIGNED:  { bg: '#dbeafe', fg: '#1d4ed8', border: '#93c5fd' },
+  INDUCTED:  { bg: '#e0e7ff', fg: '#4338ca', border: '#a5b4fc' },
+  SCANNED:   { bg: '#cffafe', fg: '#0e7490', border: '#67e8f9' },
+  LABELED:   { bg: '#fef3c7', fg: '#92400e', border: '#fcd34d' },
+  COMPLETED: { bg: '#d1fae5', fg: '#047857', border: '#6ee7b7' },
+  FAILED:    { bg: '#fee2e2', fg: '#991b1b', border: '#fca5a5' },
+  EJECTED:   { bg: '#ffedd5', fg: '#9a3412', border: '#fdba74' },
+  DELETED:   { bg: '#f1f5f9', fg: '#475569', border: '#cbd5e1' },
+};
+
+// Derive the package's lifecycle state from the events seen so far.
+// Mirrors the State Lifecycle table in the process documentation (Section 4):
+//  ENQ accepted → ASSIGNED, IND → INDUCTED, ACK result=1 → SCANNED,
+//  LAB1 → LABELED, END status=1 → COMPLETED, END status≠1 → EJECTED,
+//  ACK result=0 → EJECTED, REM → DELETED.
+function deriveState(stations: Record<StationId, StationStatus>, removed: boolean): PackageState {
+  if (removed) return 'DELETED';
+  if (stations.exit === 'failed') return 'EJECTED';
+  if (stations.exit === 'passed') return 'COMPLETED';
+  if (stations.sensor === 'failed') return 'EJECTED';
+  if (stations.labeler === 'passed') return 'LABELED';
+  if (stations.sensor === 'passed') return 'SCANNED';
+  if (stations.induction === 'passed') return 'INDUCTED';
+  return 'ASSIGNED';
 }
 
 // Apply a single event to the station map. Stations along the way are marked
@@ -211,6 +245,7 @@ export default function SimulatorPage() {
             wrapper: 'pending', labeler: 'pending', exit: 'pending',
           },
           currentStation: null,
+          state: 'ASSIGNED',
         };
         map.set(ref, pkg);
       }
@@ -223,6 +258,7 @@ export default function SimulatorPage() {
     // Derive current station: first pending after the latest passed station.
     // Terminal: removed, rejected, or exit reached.
     for (const pkg of map.values()) {
+      pkg.state = deriveState(pkg.stations, pkg.removed);
       const terminal = pkg.removed || pkg.rejected || pkg.stations.exit !== 'pending';
       if (terminal) {
         pkg.currentStation = null;
@@ -576,18 +612,7 @@ export default function SimulatorPage() {
                   </div>
                 ) : (
                   packages.slice(0, 15).map(pkg => {
-                    const statusLabel = pkg.removed
-                      ? { text: t('simulator.removedLabel'), color: '#991b1b' }
-                      : pkg.rejected
-                        ? { text: t('simulator.rejectedLabel'), color: '#991b1b' }
-                        : pkg.stations.exit === 'passed'
-                          ? { text: t('simulator.completedLabel'), color: '#047857' }
-                          : pkg.currentStation
-                            ? {
-                                text: `${t('simulator.currentLabel')}: ${t(`simulator.station.${pkg.currentStation}`)}`,
-                                color: '#1d4ed8',
-                              }
-                            : { text: '—', color: 'var(--clr-text-muted)' };
+                    const c = STATE_COLORS[pkg.state];
                     return (
                       <div
                         key={pkg.ref}
@@ -598,16 +623,29 @@ export default function SimulatorPage() {
                           cursor: 'pointer',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-                          <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
+                          <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)', flexShrink: 0 }}>
                             {pkg.ref}
                           </code>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: statusLabel.color, whiteSpace: 'nowrap' }}>
-                            {statusLabel.text}
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              fontFamily: 'var(--font-mono)',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              background: c.bg,
+                              color: c.fg,
+                              border: `1px solid ${c.border}`,
+                              letterSpacing: 0.3,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {t(`status.${pkg.state}`)}
                           </span>
                           <span
                             className="tabular-nums"
-                            style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto' }}
+                            style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto', flexShrink: 0 }}
                           >
                             {formatTime(pkg.lastSeen)}
                           </span>
