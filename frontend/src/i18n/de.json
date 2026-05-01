@@ -234,7 +234,19 @@
       "LAB2": "Etikett 2",
       "END": "Abgeschlossen",
       "REM": "Entfernt"
-    }
+    },
+    "station": {
+      "scanner": "Scanner",
+      "induction": "Einschleusung",
+      "sensor": "3D-Sensor",
+      "wrapper": "Verpacker",
+      "labeler": "Etikettierer",
+      "exit": "Ausgang"
+    },
+    "currentLabel": "Aktuell",
+    "completedLabel": "Abgeschlossen",
+    "rejectedLabel": "Abgewiesen",
+    "removedLabel": "Entfernt"
   },
   "control": {
     "tenants": {

@@ -17,3 +17,8 @@ code, .mono { font-family: var(--font-mono); }
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 
 :focus-visible { outline: none; box-shadow: var(--shadow-focus); border-radius: var(--radius-sm); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}

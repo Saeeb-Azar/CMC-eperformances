@@ -234,7 +234,19 @@
       "LAB2": "Label 2",
       "END": "Completed",
       "REM": "Removed"
-    }
+    },
+    "station": {
+      "scanner": "Scanner",
+      "induction": "Induction",
+      "sensor": "3D Sensor",
+      "wrapper": "Wrapper",
+      "labeler": "Labeler",
+      "exit": "Exit"
+    },
+    "currentLabel": "Current",
+    "completedLabel": "Completed",
+    "rejectedLabel": "Rejected",
+    "removedLabel": "Removed"
   },
   "control": {
     "tenants": {

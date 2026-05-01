@@ -7,6 +7,9 @@ import {
   CheckCircle, XCircle, Trash2, Activity,
   Info, Server, ChevronRight, ChevronDown, Search,
 } from 'lucide-react';
+import PackageStations, {
+  type StationId, type StationStatus, STATIONS,
+} from '../components/simulator/PackageStations';
 
 interface LiveEvent {
   id: number;
@@ -48,9 +51,6 @@ const severityColors: Record<string, { bg: string; text: string }> = {
   error: { bg: 'bg-red-50', text: 'text-red-600' },
 };
 
-// CMC package lifecycle stages (in order)
-const PACKAGE_STAGES = ['ENQ', 'IND', 'ACK', 'INV', 'LAB1', 'LAB2', 'END'] as const;
-
 // Type chips shown above the feed for quick filtering
 const FILTERABLE_TYPES = ['ENQ', 'IND', 'ACK', 'INV', 'LAB1', 'LAB2', 'END', 'REM', 'HBT', 'SYSTEM'];
 
@@ -75,10 +75,65 @@ function getRef(ev: LiveEvent): string | null {
 interface PackageSummary {
   ref: string;
   machineId?: string;
-  stages: Set<string>;
   firstSeen: string;
   lastSeen: string;
   rejected: boolean;
+  removed: boolean;
+  stations: Record<StationId, StationStatus>;
+  currentStation: StationId | null;
+}
+
+// Apply a single event to the station map. Stations along the way are marked
+// passed when a later event arrives, so out-of-order or skipped events still
+// produce a sensible position trail.
+function applyEventToStations(
+  ev: LiveEvent,
+  stations: Record<StationId, StationStatus>,
+): { rejected: boolean; removed: boolean } {
+  const d = ev.data as Record<string, unknown> | undefined;
+  let rejected = false;
+  let removed = false;
+
+  switch (ev.type) {
+    case 'ENQ':
+      stations.scanner = 'passed';
+      break;
+    case 'IND':
+      stations.scanner = 'passed';
+      stations.induction = 'passed';
+      break;
+    case 'ACK': {
+      stations.scanner = 'passed';
+      stations.induction = 'passed';
+      const bad = d?.result === '0' || d?.result === 0 || d?.good === false;
+      if (bad) {
+        stations.sensor = 'failed';
+        rejected = true;
+      } else {
+        stations.sensor = 'passed';
+      }
+      break;
+    }
+    case 'LAB1':
+    case 'LAB2':
+      stations.scanner = 'passed';
+      stations.induction = 'passed';
+      if (stations.sensor === 'pending') stations.sensor = 'passed';
+      stations.wrapper = 'passed';
+      stations.labeler = 'passed';
+      break;
+    case 'END': {
+      const status = d?.status;
+      const ok = status === '1' || status === 1 || d?.good === true;
+      if (ok) stations.exit = 'passed';
+      else { stations.exit = 'failed'; rejected = true; }
+      break;
+    }
+    case 'REM':
+      removed = true;
+      break;
+  }
+  return { rejected, removed };
 }
 
 export default function SimulatorPage() {
@@ -147,22 +202,41 @@ export default function SimulatorPage() {
         pkg = {
           ref,
           machineId: ev.machine_id,
-          stages: new Set<string>(),
           firstSeen: ev.timestamp,
           lastSeen: ev.timestamp,
           rejected: false,
+          removed: false,
+          stations: {
+            scanner: 'pending', induction: 'pending', sensor: 'pending',
+            wrapper: 'pending', labeler: 'pending', exit: 'pending',
+          },
+          currentStation: null,
         };
         map.set(ref, pkg);
       }
-      pkg.stages.add(ev.type);
       pkg.lastSeen = ev.timestamp;
-      if (ev.type === 'REM') pkg.rejected = true;
-      if (ev.type === 'END') {
-        const d = ev.data as Record<string, unknown> | undefined;
-        const status = d?.status;
-        if (status !== '1' && status !== 1 && !d?.good) pkg.rejected = true;
+      const result = applyEventToStations(ev, pkg.stations);
+      if (result.rejected) pkg.rejected = true;
+      if (result.removed) pkg.removed = true;
+    }
+
+    // Derive current station: first pending after the latest passed station.
+    // Terminal: removed, rejected, or exit reached.
+    for (const pkg of map.values()) {
+      const terminal = pkg.removed || pkg.rejected || pkg.stations.exit !== 'pending';
+      if (terminal) {
+        pkg.currentStation = null;
+        continue;
+      }
+      for (const s of STATIONS) {
+        if (pkg.stations[s] === 'pending') {
+          pkg.stations[s] = 'active';
+          pkg.currentStation = s;
+          break;
+        }
       }
     }
+
     // Most recent first
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()
@@ -501,79 +575,47 @@ export default function SimulatorPage() {
                     {t('simulator.noPackages')}
                   </div>
                 ) : (
-                  packages.slice(0, 15).map(pkg => (
-                    <div
-                      key={pkg.ref}
-                      onClick={() => setTextFilter(pkg.ref)}
-                      style={{
-                        padding: '10px 16px',
-                        borderBottom: '1px solid var(--clr-border)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <code
-                          className="cell-mono"
-                          style={{ fontSize: 12, color: 'var(--clr-text)' }}
-                        >
-                          {pkg.ref}
-                        </code>
-                        <span
-                          className="tabular-nums"
-                          style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}
-                        >
-                          {formatTime(pkg.lastSeen)}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {PACKAGE_STAGES.map(stage => {
-                          const done = pkg.stages.has(stage);
-                          const isEnd = stage === 'END';
-                          const endRejected = isEnd && done && pkg.rejected;
-                          return (
-                            <span
-                              key={stage}
-                              title={t(`simulator.stage.${stage}`)}
-                              style={{
-                                fontSize: 10,
-                                fontFamily: 'var(--font-mono)',
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: endRejected
-                                  ? 'var(--clr-error-soft, #fee2e2)'
-                                  : done
-                                    ? 'var(--clr-success-soft, #d1fae5)'
-                                    : 'var(--clr-surface-sunken)',
-                                color: endRejected
-                                  ? 'var(--clr-error-text, #991b1b)'
-                                  : done
-                                    ? 'var(--clr-success-text, #065f46)'
-                                    : 'var(--clr-text-muted)',
-                                opacity: done ? 1 : 0.55,
-                              }}
-                            >
-                              {stage}
-                            </span>
-                          );
-                        })}
-                        {pkg.stages.has('REM') && (
-                          <span
-                            title={t('simulator.stage.REM')}
-                            style={{
-                              fontSize: 10,
-                              fontFamily: 'var(--font-mono)',
-                              padding: '2px 6px',
-                              borderRadius: 4,
-                              background: 'var(--clr-error-soft, #fee2e2)',
-                              color: 'var(--clr-error-text, #991b1b)',
-                            }}
-                          >
-                            REM
+                  packages.slice(0, 15).map(pkg => {
+                    const statusLabel = pkg.removed
+                      ? { text: t('simulator.removedLabel'), color: '#991b1b' }
+                      : pkg.rejected
+                        ? { text: t('simulator.rejectedLabel'), color: '#991b1b' }
+                        : pkg.stations.exit === 'passed'
+                          ? { text: t('simulator.completedLabel'), color: '#047857' }
+                          : pkg.currentStation
+                            ? {
+                                text: `${t('simulator.currentLabel')}: ${t(`simulator.station.${pkg.currentStation}`)}`,
+                                color: '#1d4ed8',
+                              }
+                            : { text: '—', color: 'var(--clr-text-muted)' };
+                    return (
+                      <div
+                        key={pkg.ref}
+                        onClick={() => setTextFilter(pkg.ref)}
+                        style={{
+                          padding: '12px 16px',
+                          borderBottom: '1px solid var(--clr-border)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                          <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)' }}>
+                            {pkg.ref}
+                          </code>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: statusLabel.color, whiteSpace: 'nowrap' }}>
+                            {statusLabel.text}
                           </span>
-                        )}
+                          <span
+                            className="tabular-nums"
+                            style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto' }}
+                          >
+                            {formatTime(pkg.lastSeen)}
+                          </span>
+                        </div>
+                        <PackageStations stations={pkg.stations} removed={pkg.removed} />
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
