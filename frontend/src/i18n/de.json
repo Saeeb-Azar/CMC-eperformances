@@ -408,6 +408,14 @@
       "END": "Abgeschlossen",
       "REM": "Entfernt"
     },
+    "station": {
+      "scanner": "Scanner",
+      "induction": "Einschleusung",
+      "sensor": "3D-Sensor",
+      "wrapper": "Verpacker",
+      "labeler": "Etikettierer",
+      "exit": "Ausgang"
+    },
     "packetDetails": "Paket-Details",
     "packetDetailsDesc": "Eine Zeile pro Paket — alle Werte aus den Events zusammengeführt",
     "mergeByBarcode": "Per Barcode mergen",

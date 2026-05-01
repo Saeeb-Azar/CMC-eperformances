@@ -408,6 +408,14 @@
       "END": "Completed",
       "REM": "Removed"
     },
+    "station": {
+      "scanner": "Scanner",
+      "induction": "Induction",
+      "sensor": "3D Sensor",
+      "wrapper": "Wrapper",
+      "labeler": "Labeler",
+      "exit": "Exit"
+    },
     "packetDetails": "Packet Details",
     "packetDetailsDesc": "One row per packet — all values aggregated from events",
     "mergeByBarcode": "Merge by barcode",

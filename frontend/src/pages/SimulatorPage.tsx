@@ -9,6 +9,9 @@ import {
   Info, Server, ChevronRight, ChevronDown, Search,
   ExternalLink,
 } from 'lucide-react';
+import PackageStations, {
+  type StationId, type StationStatus, STATIONS,
+} from '../components/simulator/PackageStations';
 
 interface LiveEvent {
   id: number;
@@ -50,9 +53,6 @@ const severityColors: Record<string, { bg: string; text: string }> = {
   error: { bg: 'bg-red-50', text: 'text-red-600' },
 };
 
-// CMC package lifecycle stages (in order)
-const PACKAGE_STAGES = ['ENQ', 'IND', 'ACK', 'INV', 'LAB1', 'LAB2', 'END'] as const;
-
 // Type chips shown above the feed for quick filtering
 const FILTERABLE_TYPES = ['ENQ', 'IND', 'ACK', 'INV', 'LAB1', 'LAB2', 'END', 'REM', 'HBT', 'SYSTEM'];
 
@@ -74,6 +74,10 @@ function getRef(ev: LiveEvent): string | null {
   return typeof ref === 'string' && ref.length > 0 ? ref : null;
 }
 
+type PackageState =
+  | 'ASSIGNED' | 'INDUCTED' | 'SCANNED' | 'LABELED'
+  | 'COMPLETED' | 'FAILED' | 'EJECTED' | 'DELETED';
+
 interface PackageSummary {
   ref: string;
   machineId?: string;
@@ -81,6 +85,12 @@ interface PackageSummary {
   firstSeen: string;
   lastSeen: string;
   rejected: boolean;
+  removed: boolean;
+  // Physical station progression (process docs Section 2)
+  stations: Record<StationId, StationStatus>;
+  currentStation: StationId | null;
+  // Lifecycle state (process docs Section 4)
+  state: PackageState;
   // Aggregated packet details extracted from event payloads
   barcode?: string;
   heightMm?: number;
@@ -93,6 +103,90 @@ interface PackageSummary {
   trackingNumber?: string;
   endStatusOk?: boolean;
   lastStage?: string;
+}
+
+// Colors mirror the lifecycle in the process documentation: blue family
+// for in-flight, green for success, red/orange for terminal failures.
+const STATE_COLORS: Record<PackageState, { bg: string; fg: string; border: string }> = {
+  ASSIGNED:  { bg: '#dbeafe', fg: '#1d4ed8', border: '#93c5fd' },
+  INDUCTED:  { bg: '#e0e7ff', fg: '#4338ca', border: '#a5b4fc' },
+  SCANNED:   { bg: '#cffafe', fg: '#0e7490', border: '#67e8f9' },
+  LABELED:   { bg: '#fef3c7', fg: '#92400e', border: '#fcd34d' },
+  COMPLETED: { bg: '#d1fae5', fg: '#047857', border: '#6ee7b7' },
+  FAILED:    { bg: '#fee2e2', fg: '#991b1b', border: '#fca5a5' },
+  EJECTED:   { bg: '#ffedd5', fg: '#9a3412', border: '#fdba74' },
+  DELETED:   { bg: '#f1f5f9', fg: '#475569', border: '#cbd5e1' },
+};
+
+// Apply a single event to the station map. Later events also mark earlier
+// stations as passed, so missing or out-of-order events still produce a
+// sensible position trail.
+function applyEventToStations(
+  ev: LiveEvent,
+  stations: Record<StationId, StationStatus>,
+): { rejected: boolean; removed: boolean } {
+  const baseType = ev.type.replace(/_RESPONSE$/, '');
+  if (ev.type !== baseType) return { rejected: false, removed: false };
+
+  const d = ev.data as Record<string, unknown> | undefined;
+  let rejected = false;
+  let removed = false;
+
+  switch (baseType) {
+    case 'ENQ':
+      stations.scanner = 'passed';
+      break;
+    case 'IND':
+      stations.scanner = 'passed';
+      stations.induction = 'passed';
+      break;
+    case 'ACK': {
+      stations.scanner = 'passed';
+      stations.induction = 'passed';
+      const bad = d?.result === '0' || d?.result === 0 || d?.good === false;
+      if (bad) {
+        stations.sensor = 'failed';
+        rejected = true;
+      } else {
+        stations.sensor = 'passed';
+      }
+      break;
+    }
+    case 'LAB1':
+    case 'LAB2':
+      stations.scanner = 'passed';
+      stations.induction = 'passed';
+      if (stations.sensor === 'pending') stations.sensor = 'passed';
+      stations.wrapper = 'passed';
+      stations.labeler = 'passed';
+      break;
+    case 'END': {
+      const status = d?.status;
+      const ok = status === '1' || status === 1 || d?.good === true;
+      if (ok) stations.exit = 'passed';
+      else { stations.exit = 'failed'; rejected = true; }
+      break;
+    }
+    case 'REM':
+      removed = true;
+      break;
+  }
+  return { rejected, removed };
+}
+
+// Maps station progression to the documented lifecycle states (Section 4):
+//  ENQ accepted → ASSIGNED, IND → INDUCTED, ACK result=1 → SCANNED,
+//  LAB1 → LABELED, END status=1 → COMPLETED, END status≠1 → EJECTED,
+//  ACK result=0 → EJECTED, REM → DELETED.
+function deriveState(stations: Record<StationId, StationStatus>, removed: boolean): PackageState {
+  if (removed) return 'DELETED';
+  if (stations.exit === 'failed') return 'EJECTED';
+  if (stations.exit === 'passed') return 'COMPLETED';
+  if (stations.sensor === 'failed') return 'EJECTED';
+  if (stations.labeler === 'passed') return 'LABELED';
+  if (stations.sensor === 'passed') return 'SCANNED';
+  if (stations.induction === 'passed') return 'INDUCTED';
+  return 'ASSIGNED';
 }
 
 function pickStr(d: Record<string, unknown> | undefined, ...keys: string[]): string | undefined {
@@ -216,6 +310,13 @@ export default function SimulatorPage() {
           firstSeen: ev.timestamp,
           lastSeen: ev.timestamp,
           rejected: false,
+          removed: false,
+          stations: {
+            scanner: 'pending', induction: 'pending', sensor: 'pending',
+            wrapper: 'pending', labeler: 'pending', exit: 'pending',
+          },
+          currentStation: null,
+          state: 'ASSIGNED',
         };
         // If the group key is a barcode, prefer it on the row label
         if (mergeByBarcode && key.startsWith('bc:')) {
@@ -223,6 +324,9 @@ export default function SimulatorPage() {
         }
         map.set(key, pkg);
       }
+      const stRes = applyEventToStations(ev, pkg.stations);
+      if (stRes.rejected) pkg.rejected = true;
+      if (stRes.removed) pkg.removed = true;
       // Track only request types for the stage chips (strip _RESPONSE suffix)
       const baseType = ev.type.replace(/_RESPONSE$/, '');
       if (!ev.type.endsWith('_RESPONSE')) {
@@ -275,6 +379,23 @@ export default function SimulatorPage() {
         }
       }
     }
+    // Derive lifecycle state + active station from accumulated station map
+    for (const pkg of map.values()) {
+      pkg.state = deriveState(pkg.stations, pkg.removed);
+      const terminal = pkg.removed || pkg.rejected || pkg.stations.exit !== 'pending';
+      if (terminal) {
+        pkg.currentStation = null;
+        continue;
+      }
+      for (const s of STATIONS) {
+        if (pkg.stations[s] === 'pending') {
+          pkg.stations[s] = 'active';
+          pkg.currentStation = s;
+          break;
+        }
+      }
+    }
+
     // Most recent first
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()
@@ -645,79 +766,49 @@ export default function SimulatorPage() {
                     {t('simulator.noPackages')}
                   </div>
                 ) : (
-                  packages.slice(0, 15).map(pkg => (
-                    <div
-                      key={pkg.ref}
-                      onClick={() => setTextFilter(pkg.ref)}
-                      style={{
-                        padding: '10px 16px',
-                        borderBottom: '1px solid var(--clr-border)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <code
-                          className="cell-mono"
-                          style={{ fontSize: 12, color: 'var(--clr-text)' }}
-                        >
-                          {pkg.ref}
-                        </code>
-                        <span
-                          className="tabular-nums"
-                          style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}
-                        >
-                          {formatTime(pkg.lastSeen)}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {PACKAGE_STAGES.map(stage => {
-                          const done = pkg.stages.has(stage);
-                          const isEnd = stage === 'END';
-                          const endRejected = isEnd && done && pkg.rejected;
-                          return (
-                            <span
-                              key={stage}
-                              title={t(`simulator.stage.${stage}`)}
-                              style={{
-                                fontSize: 10,
-                                fontFamily: 'var(--font-mono)',
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: endRejected
-                                  ? 'var(--clr-error-soft, #fee2e2)'
-                                  : done
-                                    ? 'var(--clr-success-soft, #d1fae5)'
-                                    : 'var(--clr-surface-sunken)',
-                                color: endRejected
-                                  ? 'var(--clr-error-text, #991b1b)'
-                                  : done
-                                    ? 'var(--clr-success-text, #065f46)'
-                                    : 'var(--clr-text-muted)',
-                                opacity: done ? 1 : 0.55,
-                              }}
-                            >
-                              {stage}
-                            </span>
-                          );
-                        })}
-                        {pkg.stages.has('REM') && (
+                  packages.slice(0, 15).map(pkg => {
+                    const c = STATE_COLORS[pkg.state];
+                    return (
+                      <div
+                        key={pkg.ref}
+                        onClick={() => setTextFilter(pkg.ref)}
+                        style={{
+                          padding: '12px 16px',
+                          borderBottom: '1px solid var(--clr-border)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
+                          <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)', flexShrink: 0 }}>
+                            {pkg.ref}
+                          </code>
                           <span
-                            title={t('simulator.stage.REM')}
                             style={{
                               fontSize: 10,
+                              fontWeight: 600,
                               fontFamily: 'var(--font-mono)',
-                              padding: '2px 6px',
+                              padding: '2px 8px',
                               borderRadius: 4,
-                              background: 'var(--clr-error-soft, #fee2e2)',
-                              color: 'var(--clr-error-text, #991b1b)',
+                              background: c.bg,
+                              color: c.fg,
+                              border: `1px solid ${c.border}`,
+                              letterSpacing: 0.3,
+                              flexShrink: 0,
                             }}
                           >
-                            REM
+                            {t(`status.${pkg.state}`)}
                           </span>
-                        )}
+                          <span
+                            className="tabular-nums"
+                            style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto', flexShrink: 0 }}
+                          >
+                            {formatTime(pkg.lastSeen)}
+                          </span>
+                        </div>
+                        <PackageStations stations={pkg.stations} removed={pkg.removed} />
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -818,10 +909,7 @@ function PacketDetailsTable(props: PacketTableProps) {
       if (stageSel.length > 0 && (!pkg.lastStage || !stageSel.includes(pkg.lastStage))) return false;
       const statusSel = filterState.status ?? [];
       if (statusSel.length > 0) {
-        const completed = pkg.stages.has('END') && !pkg.rejected && pkg.endStatusOk !== false;
-        const failed = pkg.rejected || pkg.endStatusOk === false;
-        const key = failed ? 'notok' : completed ? 'ok' : 'inprogress';
-        if (!statusSel.includes(key)) return false;
+        if (!statusSel.includes(pkg.state)) return false;
       }
       return true;
     });
@@ -909,13 +997,27 @@ function PacketDetailsTable(props: PacketTableProps) {
     {
       key: 'status',
       header: t('simulator.col.status'),
-      width: 120,
+      width: 130,
       render: (pkg) => {
-        const completed = pkg.stages.has('END') && !pkg.rejected && pkg.endStatusOk !== false;
-        const failed = pkg.rejected || pkg.endStatusOk === false;
-        const cls = failed ? 'badge badge--danger' : completed ? 'badge badge--success' : 'badge badge--info';
-        const label = failed ? t('simulator.statusNotOk') : completed ? t('simulator.statusOk') : t('simulator.statusInProgress');
-        return <span className={cls}>{label}</span>;
+        const c = STATE_COLORS[pkg.state];
+        return (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: c.bg,
+              color: c.fg,
+              border: `1px solid ${c.border}`,
+              letterSpacing: 0.3,
+              display: 'inline-block',
+            }}
+          >
+            {t(`status.${pkg.state}`)}
+          </span>
+        );
       },
     },
     {
@@ -941,11 +1043,10 @@ function PacketDetailsTable(props: PacketTableProps) {
         {
           key: 'status',
           label: t('simulator.col.status'),
-          options: [
-            { value: 'ok', label: t('simulator.statusOk') },
-            { value: 'notok', label: t('simulator.statusNotOk') },
-            { value: 'inprogress', label: t('simulator.statusInProgress') },
-          ],
+          options: (Object.keys(STATE_COLORS) as PackageState[]).map((s) => ({
+            value: s,
+            label: t(`status.${s}`),
+          })),
         },
         ...(stages.length > 0
           ? [{ key: 'stage', label: t('simulator.col.stage'), options: stages.map((s) => ({ value: s })) }]
