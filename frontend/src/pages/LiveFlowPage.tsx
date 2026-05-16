@@ -1,15 +1,9 @@
-import { ScanBarcode, Printer, Wifi, AlertTriangle, Eye, Code } from 'lucide-react';
+import { ChevronDown, ChevronRight, Inbox } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
-import LiveActivityCard, { type ActivityState } from '../components/liveflow/LiveActivityCard';
-import PackageFlowTracker, { type FlowStep } from '../components/liveflow/PackageFlowTracker';
-import LiveEventFeed, { type LiveEvent } from '../components/liveflow/LiveEventFeed';
-import ErrorPanel, { type ErrorItem } from '../components/liveflow/ErrorPanel';
-import MachineHealthPanel from '../components/liveflow/MachineHealthPanel';
-import { api, type DashboardOverview } from '../services/api';
 import PackageStations, {
-  type StationId, type StationStatus, STATIONS,
+  type StationId, type StationStatus,
 } from '../components/simulator/PackageStations';
 import {
   type PackageState, STATE_COLORS,
@@ -35,36 +29,22 @@ let API_BASE = (_env?.VITE_API_URL || import.meta.env.VITE_API_URL || '')
   .trim();
 if (API_BASE && !API_BASE.startsWith('http')) API_BASE = `https://${API_BASE}`;
 
-const FLOW_ORDER = ['ENQ', 'IND', 'ACK', 'LAB1', 'END'] as const;
-
-const SEVERITY: Record<string, LiveEvent['severity']> = {
-  info: 'info',
-  success: 'success',
-  warning: 'warning',
-  error: 'error',
-};
-
-const TYPE_TO_ACTIVITY: Record<string, ActivityState> = {
-  ENQ: 'scanning',
-  IND: 'entering',
-  ACK: 'measuring',
-  INV: 'labeling',
-  LAB1: 'labeling',
-  LAB2: 'labeling',
-  END: 'completed',
-  REM: 'rejected',
-};
-
 const getRef = (ev: RawEvent): string | null => {
   const d = ev.data as Record<string, unknown> | undefined;
   const ref = d?.reference_id ?? d?.referenceId;
   return typeof ref === 'string' && ref.length > 0 ? ref : null;
 };
 
-const getBarcode = (ev: RawEvent): string | undefined => {
-  const d = ev.data as Record<string, unknown> | undefined;
-  const b = d?.barcode;
-  return typeof b === 'string' && b.length > 0 ? b : undefined;
+const getStr = (ev: RawEvent, key: string): string | undefined => {
+  const v = ev.data?.[key];
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+};
+
+const getNum = (ev: RawEvent, key: string): number | undefined => {
+  const v = ev.data?.[key];
+  if (v == null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 };
 
 const formatTime = (iso: string) => {
@@ -72,13 +52,27 @@ const formatTime = (iso: string) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 };
 
+interface PackageRow {
+  ref: string;
+  barcode?: string;
+  state: PackageState;
+  stations: Record<StationId, StationStatus>;
+  removed: boolean;
+  firstSeen: string;
+  lastSeen: string;
+  length_mm?: number;
+  width_mm?: number;
+  height_mm?: number;
+  weight_g?: number;
+  events: RawEvent[];
+}
+
 export default function LiveFlowPage() {
   const { t } = useTranslation();
-  const [viewMode, setViewMode] = useState<'operator' | 'technical'>('operator');
   const [events, setEvents] = useState<RawEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
-  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const sinceRef = useRef(0);
 
   useEffect(() => {
@@ -94,7 +88,7 @@ export default function LiveFlowPage() {
         setConnected(true);
         if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
         if (Array.isArray(data.events) && data.events.length > 0) {
-          setEvents((prev) => [...prev, ...data.events].slice(-500));
+          setEvents((prev) => [...prev, ...data.events].slice(-1000));
         }
         if (typeof data.latest_id === 'number') sinceRef.current = data.latest_id;
       } catch {
@@ -109,90 +103,9 @@ export default function LiveFlowPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      api.dashboard()
-        .then((d) => { if (!cancelled) setOverview(d); })
-        .catch(() => { /* ignore */ });
-    load();
-    const interval = setInterval(load, 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Derive per-reference lifecycle
-  const latestRef = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const r = getRef(events[i]);
-      if (r) return r;
-    }
-    return null;
-  }, [events]);
-
-  const eventsForLatest = useMemo(
-    () => (latestRef ? events.filter((e) => getRef(e) === latestRef) : []),
-    [events, latestRef]
-  );
-
-  const steps = useMemo<FlowStep[]>(() => {
-    const stages = new Set(eventsForLatest.map((e) => e.type));
-    const latestType = eventsForLatest[eventsForLatest.length - 1]?.type;
-    const labels: Record<(typeof FLOW_ORDER)[number], string> = {
-      ENQ: t('liveFlow.scanned'),
-      IND: t('liveFlow.entered'),
-      ACK: t('liveFlow.measured'),
-      LAB1: t('liveFlow.labeled'),
-      END: t('liveFlow.completedStation'),
-    };
-    return FLOW_ORDER.map((code) => {
-      const done = stages.has(code);
-      const active = latestType === code;
-      const ts = eventsForLatest.find((e) => e.type === code)?.timestamp;
-      return {
-        id: code.toLowerCase(),
-        label: labels[code],
-        technicalCode: code,
-        icon: <ScanBarcode size={15} />,
-        status: done ? (active ? 'active' : 'completed') : 'pending',
-        timestamp: ts ? formatTime(ts) : undefined,
-      } as FlowStep;
-    });
-  }, [eventsForLatest, t]);
-
-  const latestType = eventsForLatest[eventsForLatest.length - 1]?.type;
-  const activityState: ActivityState = latestType
-    ? TYPE_TO_ACTIVITY[latestType] ?? 'idle'
-    : 'idle';
-
-  const latestBarcode = useMemo(() => {
-    for (let i = eventsForLatest.length - 1; i >= 0; i--) {
-      const b = getBarcode(eventsForLatest[i]);
-      if (b) return b;
-    }
-    return undefined;
-  }, [eventsForLatest]);
-
-  const firstTime = eventsForLatest[0]?.timestamp;
-  const lastTime = eventsForLatest[eventsForLatest.length - 1]?.timestamp;
-  const elapsedSeconds =
-    firstTime && lastTime
-      ? Math.max(0, Math.round((new Date(lastTime).getTime() - new Date(firstTime).getTime()) / 1000))
-      : 0;
-
-  // Per-package lifecycle aggregation — same logic as the simulator,
-  // but only the fields needed for the operator-facing list.
-  interface ActivePkg {
-    ref: string;
-    state: PackageState;
-    stations: Record<StationId, StationStatus>;
-    removed: boolean;
-    lastSeen: string;
-  }
-  const activePackages = useMemo<ActivePkg[]>(() => {
-    const map = new Map<string, ActivePkg & { rejected: boolean }>();
+  // Aggregate events into one row per reference_id. Most recent first.
+  const packages = useMemo<PackageRow[]>(() => {
+    const map = new Map<string, PackageRow>();
     for (const ev of events) {
       const ref = getRef(ev);
       if (!ref) continue;
@@ -203,239 +116,230 @@ export default function LiveFlowPage() {
           state: 'ASSIGNED',
           stations: emptyStations(),
           removed: false,
-          rejected: false,
+          firstSeen: ev.timestamp,
           lastSeen: ev.timestamp,
+          events: [],
         };
         map.set(ref, pkg);
       }
       pkg.lastSeen = ev.timestamp;
+      pkg.events.push(ev);
+      pkg.barcode ??= getStr(ev, 'barcode');
+
+      if (ev.type === 'ACK') {
+        pkg.length_mm ??= getNum(ev, 'length_mm');
+        pkg.width_mm  ??= getNum(ev, 'width_mm');
+        pkg.height_mm ??= getNum(ev, 'height_mm');
+      }
+      if (ev.type === 'LAB1' || ev.type === 'LAB2') {
+        pkg.weight_g ??= getNum(ev, 'weight_scale');
+      }
+      if (ev.type === 'END') {
+        pkg.length_mm = getNum(ev, 'sizes_length') ?? pkg.length_mm;
+        pkg.width_mm  = getNum(ev, 'sizes_width')  ?? pkg.width_mm;
+        pkg.height_mm = getNum(ev, 'sizes_height') ?? pkg.height_mm;
+        pkg.weight_g  = getNum(ev, 'weight')       ?? pkg.weight_g;
+      }
+
       const r = applyEventToStations(ev, pkg.stations);
-      if (r.rejected) pkg.rejected = true;
       if (r.removed) pkg.removed = true;
     }
     for (const pkg of map.values()) {
       pkg.state = deriveState(pkg.stations, pkg.removed);
-      const terminal = pkg.removed || pkg.rejected || pkg.stations.exit !== 'pending';
-      if (!terminal) {
-        for (const s of STATIONS) {
-          if (pkg.stations[s] === 'pending') {
-            pkg.stations[s] = 'active';
-            break;
-          }
-        }
-      }
     }
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
     );
   }, [events]);
 
-  const liveEvents: LiveEvent[] = useMemo(
-    () =>
-      events
-        .slice()
-        .reverse()
-        // SYSTEM is only connection chatter, and *_RESPONSE is just the
-        // backend echoing that it replied — neither is meaningful for an
-        // operator. Keep the feed focused on real CMC messages.
-        .filter((e) => e.type !== 'SYSTEM' && !e.type.endsWith('_RESPONSE'))
-        .slice(0, 40)
-        .map((e) => ({
-          id: String(e.id),
-          message: t(`liveFlow.eventDict.${e.type}.short`, { defaultValue: e.message }),
-          technicalCode: e.type,
-          severity: SEVERITY[e.severity] ?? 'info',
-          timestamp: formatTime(e.timestamp),
-          barcode: getBarcode(e),
-          referenceId: getRef(e) ?? undefined,
-        })),
-    [events, t]
-  );
-
-  const errors: ErrorItem[] = useMemo(
-    () =>
-      events
-        .slice()
-        .reverse()
-        .filter((e) => e.severity === 'error' || e.severity === 'warning' || e.type === 'REM')
-        .slice(0, 10)
-        .map((e) => ({
-          id: String(e.id),
-          title: e.message,
-          description: e.raw ?? '',
-          barcode: getBarcode(e),
-          referenceId: getRef(e) ?? undefined,
-          timestamp: formatTime(e.timestamp),
-          severity: e.severity === 'error' || e.type === 'REM' ? 'error' : 'warning',
-        })),
-    [events]
-  );
-
   const hasSimulator = connectedMachines.length > 0;
-  const machineState: MachineState = hasSimulator
-    ? activityState === 'rejected' || activityState === 'error'
-      ? 'error'
-      : 'running'
-    : connected
-      ? 'idle'
-      : 'offline';
+  const machineState: MachineState = hasSimulator ? 'running' : connected ? 'idle' : 'offline';
+  const latestType = events[events.length - 1]?.type ?? null;
+  const latestBarcode = packages[0]?.barcode ?? null;
 
-  type HealthStatus = 'healthy' | 'warning' | 'error' | 'offline';
-  const healthIndicators: { label: string; status: HealthStatus; icon: React.ReactNode }[] = [
-    { label: t('liveFlow.healthConnection'), status: connected ? 'healthy' : 'error', icon: <Wifi size={16} /> },
-    { label: t('liveFlow.healthScanner'), status: hasSimulator ? 'healthy' : 'offline', icon: <ScanBarcode size={16} /> },
-    { label: t('liveFlow.healthPrinter'), status: hasSimulator ? 'healthy' : 'offline', icon: <Printer size={16} /> },
-    { label: t('liveFlow.healthErrors'), status: (overview?.failed_today ?? 0) > 0 ? 'warning' : 'healthy', icon: <AlertTriangle size={16} /> },
-  ];
-
-  const primaryMachine = connectedMachines[0] ?? 'CW-—';
+  const toggle = (ref: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
+      return next;
+    });
 
   return (
     <div>
       <TopStatusBar
         machineState={machineState}
         connectionActive={connected}
-        activeBarcode={latestBarcode ?? null}
-        currentStep={latestType ?? null}
-        statusMessage={hasSimulator ? t('liveFlow.streamActive') : connected ? t('liveFlow.noSimulator') : t('liveFlow.backendDisconnected')}
+        activeBarcode={latestBarcode}
+        currentStep={latestType}
+        statusMessage={
+          hasSimulator
+            ? t('liveFlow.streamActive')
+            : connected
+              ? t('liveFlow.noSimulator')
+              : t('liveFlow.backendDisconnected')
+        }
       />
 
       <div className="page-content">
-        {/* Page header */}
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">{t('liveFlow.pageTitle')}</h1>
-            <p className="page-header__desc">{t('liveFlow.pageDesc')}</p>
+            <h1 className="page-header__title">Pakete (Live)</h1>
+            <p className="page-header__desc">
+              Eine Zeile pro Paket. Zeile aufklappen, um alle Maschinen-Nachrichten zu sehen.
+            </p>
           </div>
-          <div className="segmented">
-            <button
-              onClick={() => setViewMode('operator')}
-              className={`segmented__item ${viewMode === 'operator' ? 'segmented__item--active' : ''}`}
-            >
-              <Eye size={14} /> {t('liveFlow.operator')}
-            </button>
-            <button
-              onClick={() => setViewMode('technical')}
-              className={`segmented__item ${viewMode === 'technical' ? 'segmented__item--active' : ''}`}
-            >
-              <Code size={14} /> {t('liveFlow.technical')}
-            </button>
+          <div className="text-xs tabular-nums" style={{ color: 'var(--clr-text-muted)' }}>
+            {packages.length} {packages.length === 1 ? 'Paket' : 'Pakete'}
+            {connectedMachines.length > 0 && (
+              <> · Maschine <code className="cell-mono">{connectedMachines.join(', ')}</code></>
+            )}
           </div>
         </div>
 
-        {/* Hero: current status */}
-        <LiveActivityCard
-          state={activityState}
-          barcode={latestBarcode}
-          elapsedSeconds={elapsedSeconds}
-        />
-
-        {/* Flow tracker */}
-        <PackageFlowTracker steps={steps} showTechnical={viewMode === 'technical'} />
-
-        {/* Active packages — one row per scanned reference, with lifecycle
-            state badge and current station highlighted. */}
-        <ActivePackagesPanel packages={activePackages} formatTime={formatTime} t={t} />
-
-        {/* Activity feed */}
-        <LiveEventFeed events={liveEvents} />
-
-        {/* Machine Health + Issues */}
-        <div className="grid-2 gap-5">
-          <MachineHealthPanel
-            machineName={primaryMachine}
-            indicators={healthIndicators}
-            packagesTotal={overview?.total_orders_today ?? 0}
-            packagesSuccess={overview?.completed_today ?? 0}
-            packagesRejected={overview?.ejected_today ?? 0}
-            uptimePercent={overview && overview.machines_total > 0
-              ? Math.round((overview.machines_online / overview.machines_total) * 1000) / 10
-              : 0}
-          />
-          <ErrorPanel errors={errors} />
+        <div className="panel">
+          <div className="panel__body" style={{ padding: 0 }}>
+            {packages.length === 0 ? (
+              <EmptyState connected={connected} hasSimulator={hasSimulator} />
+            ) : (
+              <table className="data-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 28 }} />
+                    <th>Zeit</th>
+                    <th>Referenz</th>
+                    <th>Barcode</th>
+                    <th>Status</th>
+                    <th style={{ minWidth: 360 }}>Stationen</th>
+                    <th>Maße (L×B×H mm)</th>
+                    <th>Gewicht</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {packages.map((pkg) => {
+                    const open = expanded.has(pkg.ref);
+                    const c = STATE_COLORS[pkg.state];
+                    return (
+                      <PackageRowView
+                        key={pkg.ref}
+                        pkg={pkg}
+                        open={open}
+                        onToggle={() => toggle(pkg.ref)}
+                        stateColor={c}
+                        stateLabel={t(`status.${pkg.state}`)}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-interface ActivePackagesPanelProps {
-  packages: {
-    ref: string;
-    state: PackageState;
-    stations: Record<StationId, StationStatus>;
-    removed: boolean;
-    lastSeen: string;
-  }[];
-  formatTime: (iso: string) => string;
-  t: (k: string) => string;
+interface PackageRowProps {
+  pkg: PackageRow;
+  open: boolean;
+  onToggle: () => void;
+  stateColor: { bg: string; fg: string; border: string };
+  stateLabel: string;
 }
 
-function ActivePackagesPanel({ packages, formatTime, t }: ActivePackagesPanelProps) {
+function PackageRowView({ pkg, open, onToggle, stateColor, stateLabel }: PackageRowProps) {
+  const dims = pkg.length_mm || pkg.width_mm || pkg.height_mm
+    ? `${pkg.length_mm ?? '?'}×${pkg.width_mm ?? '?'}×${pkg.height_mm ?? '?'}`
+    : '—';
+  const weight = pkg.weight_g != null ? `${pkg.weight_g} g` : '—';
+
   return (
-    <div className="panel">
-      <div className="panel__header">
-        <div>
-          <h3 className="panel__title">{t('liveFlow.activePackages')}</h3>
-          <p className="text-xs" style={{ color: 'var(--clr-text-muted)', marginTop: 2 }}>
-            {t('liveFlow.activePackagesDesc')}
-          </p>
-        </div>
-        {packages.length > 0 && (
-          <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-            {packages.length}
+    <>
+      <tr onClick={onToggle} style={{ cursor: 'pointer' }}>
+        <td>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </td>
+        <td className="tabular-nums" style={{ color: 'var(--clr-text-muted)' }}>
+          {formatTime(pkg.lastSeen)}
+        </td>
+        <td><code className="cell-mono">{pkg.ref}</code></td>
+        <td><code className="cell-mono">{pkg.barcode ?? '—'}</code></td>
+        <td>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: stateColor.bg,
+              color: stateColor.fg,
+              border: `1px solid ${stateColor.border}`,
+              letterSpacing: 0.3,
+            }}
+          >
+            {stateLabel}
           </span>
-        )}
-      </div>
-      <div className="panel__body" style={{ maxHeight: 420, overflowY: 'auto', padding: 0 }}>
-        {packages.length === 0 ? (
-          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 12 }}>
-            {t('liveFlow.noActivePackages')}
-          </div>
-        ) : (
-          packages.slice(0, 20).map((pkg) => {
-            const c = STATE_COLORS[pkg.state];
-            return (
-              <div
-                key={pkg.ref}
-                style={{
-                  padding: '12px 16px',
-                  borderBottom: '1px solid var(--clr-border)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
-                  <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)', flexShrink: 0 }}>
-                    {pkg.ref}
-                  </code>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      fontFamily: 'var(--font-mono)',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      background: c.bg,
-                      color: c.fg,
-                      border: `1px solid ${c.border}`,
-                      letterSpacing: 0.3,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {t(`status.${pkg.state}`)}
-                  </span>
-                  <span
-                    className="tabular-nums"
-                    style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto', flexShrink: 0 }}
-                  >
-                    {formatTime(pkg.lastSeen)}
-                  </span>
-                </div>
-                <PackageStations stations={pkg.stations} removed={pkg.removed} />
-              </div>
-            );
-          })
-        )}
-      </div>
+        </td>
+        <td style={{ padding: '8px 12px' }}>
+          <PackageStations stations={pkg.stations} removed={pkg.removed} />
+        </td>
+        <td className="tabular-nums">{dims}</td>
+        <td className="tabular-nums">{weight}</td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={8} style={{ background: 'var(--clr-bg-subtle, #fafafa)', padding: 0 }}>
+            <RawMessageList events={pkg.events} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function RawMessageList({ events }: { events: RawEvent[] }) {
+  // Hide the *_RESPONSE echoes by default — they're our own outbound replies,
+  // not messages *from* the machine, and clutter the package detail view.
+  const incoming = events.filter((e) => !e.type.endsWith('_RESPONSE'));
+  return (
+    <div style={{ padding: '8px 12px 12px 40px', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+      {incoming.map((ev) => (
+        <div
+          key={ev.id}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '90px 60px 1fr',
+            gap: 12,
+            padding: '4px 0',
+            borderBottom: '1px dashed var(--clr-border)',
+            color: 'var(--clr-text)',
+          }}
+        >
+          <span className="tabular-nums" style={{ color: 'var(--clr-text-muted)' }}>
+            {formatTime(ev.timestamp)}
+          </span>
+          <span style={{ fontWeight: 600 }}>{ev.type}</span>
+          <span style={{ wordBreak: 'break-all', color: 'var(--clr-text-muted)' }}>
+            {ev.raw ?? JSON.stringify(ev.data ?? {})}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ connected, hasSimulator }: { connected: boolean; hasSimulator: boolean }) {
+  const msg = !connected
+    ? 'Keine Verbindung zum Backend. Läuft uvicorn auf :8000?'
+    : !hasSimulator
+      ? 'Backend verbunden — aber noch keine Maschine. Simulator unter „Simulator" anschließen (TCP :15001).'
+      : 'Maschine verbunden — warte auf das erste ENQ.';
+  return (
+    <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--clr-text-muted)' }}>
+      <Inbox size={28} style={{ opacity: 0.4, marginBottom: 12 }} />
+      <p style={{ fontSize: 13 }}>{msg}</p>
     </div>
   );
 }
