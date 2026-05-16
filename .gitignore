@@ -9,6 +9,10 @@ venv/
 frontend/dist/
 backend/*.egg-info/
 
+# Local dev SQLite database (replaced by Supabase later)
+backend/local.db
+backend/local.db-journal
+
 # Environment
 .env
 .env.local

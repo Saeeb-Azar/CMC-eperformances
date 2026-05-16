@@ -7,10 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
+from app.core.database import Base, engine
 from app.core.logging import logger
 from app.gateway.websocket import ws_manager
 from app.gateway.connection import connection_manager
 from app.gateway.persistence import bootstrap_defaults
+
+# Importing the model modules registers them on Base.metadata so create_all
+# below knows about every table when running on SQLite (local dev).
+from app.modules.auth import models as _auth_models  # noqa: F401
+from app.modules.tenants import models as _tenant_models  # noqa: F401
+from app.modules.machines import models as _machine_models  # noqa: F401
+from app.modules.orders import models as _order_models  # noqa: F401
+from app.modules.audit import models as _audit_models  # noqa: F401
 
 # Import routers from all modules
 from app.modules.auth.router import router as auth_router
@@ -29,6 +38,15 @@ async def lifespan(app: FastAPI):
     http_port = os.environ.get("PORT", "not set")
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"PORT env = {http_port}")
+
+    # On SQLite (local dev) auto-create the schema. Postgres/Supabase uses Alembic.
+    if settings.database_url.startswith("sqlite"):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("SQLite schema ensured via create_all")
+        except Exception as e:
+            logger.warning(f"create_all failed: {e} — app still starting")
 
     # Seed default tenant + admin user so the UI is usable immediately.
     try:

@@ -8,8 +8,10 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
 
-    # Database — Railway provides postgresql://, SQLAlchemy async needs postgresql+asyncpg://
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/cmc_eperformances"
+    # Database — defaults to a local SQLite file so the backend starts without
+    # any external DB install. Override with DATABASE_URL for Supabase/Postgres:
+    #   postgresql://...  (auto-rewritten to postgresql+asyncpg://...)
+    database_url: str = "sqlite+aiosqlite:///./local.db"
 
     @field_validator("database_url", mode="before")
     @classmethod
