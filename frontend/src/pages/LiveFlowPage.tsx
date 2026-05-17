@@ -1,4 +1,4 @@
-import { ChevronRight, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
@@ -68,6 +68,15 @@ const fmtSeit = (iso: string, now: number) => {
 type PackageType = 'S' | 'M';
 const detectType = (barcode: string | undefined): PackageType =>
   barcode && /[A-Za-z]/.test(barcode) ? 'M' : 'S';
+
+// Connection-keys come from the gateway as `machine_<ip>_<port>` (the
+// machine never identified itself with a short id). Trim the prefix and
+// switch the port separator to a colon so the sidebar shows e.g.
+// "100.64.0.5:36762" instead of "machine_100.64.0.5_36762".
+function displayMachineId(raw: string): string {
+  const m = /^machine_(.+)_(\d+)$/.exec(raw);
+  return m ? `${m[1]}:${m[2]}` : raw;
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // State buckets shown in the top counters and as the row's Status badge
@@ -268,6 +277,7 @@ export default function LiveFlowPage() {
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const sinceRef = useRef(0);
 
   // Event polling
@@ -401,7 +411,7 @@ export default function LiveFlowPage() {
       <div style={{
         flex: 1,
         display: 'grid',
-        gridTemplateColumns: selectedPackage ? '220px 1fr 340px' : '220px 1fr 0',
+        gridTemplateColumns: `${sidebarOpen ? '220px' : '44px'} 1fr ${selectedPackage ? '340px' : '0'}`,
         minHeight: 0,
       }}>
         <MachineSidebar
@@ -410,6 +420,8 @@ export default function LiveFlowPage() {
           selected={selectedMachine}
           onSelect={setSelectedMachine}
           connectedIds={connectedMachines}
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen((v) => !v)}
         />
         <MainPane
           machine={selectedMachine}
@@ -444,61 +456,95 @@ interface MachineSidebarProps {
   selected: string | null;
   onSelect: (m: string) => void;
   connectedIds: string[];
+  open: boolean;
+  onToggle: () => void;
 }
 
-function MachineSidebar({ machines, stats, selected, onSelect, connectedIds }: MachineSidebarProps) {
+function MachineSidebar({ machines, stats, selected, onSelect, connectedIds, open, onToggle }: MachineSidebarProps) {
   return (
     <aside style={{
       borderRight: '1px solid var(--clr-border)',
       background: 'var(--clr-bg-elevated, #fff)',
       overflowY: 'auto',
-      padding: 16,
+      padding: open ? '10px 10px' : '10px 6px',
+      display: 'flex', flexDirection: 'column', gap: 6,
     }}>
-      <h2 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>CW Listen</h2>
-      <p style={{ fontSize: 11, color: 'var(--clr-text-muted)', marginBottom: 14 }}>
-        Maschinen-Auswahl
-      </p>
+      <button
+        onClick={onToggle}
+        title={open ? 'Sidebar einklappen' : 'Sidebar ausklappen'}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: open ? 'space-between' : 'center',
+          padding: '6px 8px', marginBottom: 4,
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          color: 'var(--clr-text)',
+        }}
+      >
+        {open && <strong style={{ fontSize: 13 }}>CW Listen</strong>}
+        {open ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+      </button>
+
       {machines.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', padding: '24px 8px', textAlign: 'center' }}>
-          Noch keine Maschine verbunden
-        </div>
+        open ? (
+          <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', padding: '12px 8px', textAlign: 'center' }}>
+            Noch keine Maschine
+          </div>
+        ) : null
       ) : (
         machines.map((m) => {
           const isActive = m === selected;
           const isOnline = connectedIds.includes(m);
           const s = stats.get(m) ?? { total: 0, singles: 0, multi: 0 };
+          const dotColor = isOnline ? '#10b981' : '#94a3b8';
+
+          if (!open) {
+            return (
+              <button
+                key={m}
+                onClick={() => onSelect(m)}
+                title={`${displayMachineId(m)} · ${s.total} Pakete`}
+                style={{
+                  position: 'relative',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32, margin: '0 auto',
+                  background: isActive ? 'var(--clr-bg-subtle, #f4f6fa)' : 'transparent',
+                  border: `1px solid ${isActive ? '#3b82f6' : 'var(--clr-border)'}`,
+                  borderRadius: 6, cursor: 'pointer',
+                }}
+              >
+                <Server size={14} />
+                <span style={{
+                  position: 'absolute', top: -3, right: -3,
+                  width: 8, height: 8, borderRadius: 99,
+                  background: dotColor, border: '2px solid var(--clr-bg-elevated, #fff)',
+                }} />
+              </button>
+            );
+          }
+
           return (
             <button
               key={m}
               onClick={() => onSelect(m)}
               style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '12px 14px',
-                marginBottom: 8,
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '8px 10px',
                 background: isActive ? 'var(--clr-bg-subtle, #f4f6fa)' : 'transparent',
-                border: `1px solid ${isActive ? 'var(--clr-primary, #3b82f6)' : 'var(--clr-border)'}`,
-                borderRadius: 8,
-                cursor: 'pointer',
+                border: `1px solid ${isActive ? '#3b82f6' : 'var(--clr-border)'}`,
+                borderRadius: 6, cursor: 'pointer',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <strong style={{ fontSize: 13 }}>{m}</strong>
-                <span style={{
-                  fontSize: 9, padding: '1px 6px', borderRadius: 99,
-                  background: isOnline ? '#ecfdf5' : '#f1f5f9',
-                  color: isOnline ? '#047857' : '#64748b',
-                  fontWeight: 600, letterSpacing: 0.3,
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: dotColor, flexShrink: 0 }} />
+                <code style={{
+                  fontSize: 11, fontFamily: 'var(--font-mono)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  minWidth: 0, flex: 1,
                 }}>
-                  {isOnline ? 'AKTIV' : 'OFFLINE'}
-                </span>
+                  {displayMachineId(m)}
+                </code>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-                {s.total} {s.total === 1 ? 'Paket' : 'Pakete'}
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginTop: 2 }}>
-                Singles: {s.singles} · Multi: {s.multi}
+              <div style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>
+                {s.total} · S {s.singles} · M {s.multi}
               </div>
             </button>
           );
@@ -534,7 +580,9 @@ function MainPane(p: MainPaneProps) {
       <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 700 }}>{p.machine ?? 'Keine Maschine ausgewählt'}</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700 }}>
+              {p.machine ? displayMachineId(p.machine) : 'Keine Maschine ausgewählt'}
+            </h1>
             {p.machine && (
               <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#ecfdf5', color: '#047857', fontWeight: 600, letterSpacing: 0.3 }}>
                 AKTIV
@@ -798,7 +846,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
 
         <dl style={{ marginTop: 16, fontSize: 12, display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 6, columnGap: 12 }}>
           <dt style={{ color: 'var(--clr-text-muted)' }}>Maschine</dt>
-          <dd><code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.machine_id ?? '—'}</code></dd>
+          <dd><code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.machine_id ? displayMachineId(pkg.machine_id) : '—'}</code></dd>
           <dt style={{ color: 'var(--clr-text-muted)' }}>Barcode / ID</dt>
           <dd><code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.barcode ?? '—'}</code></dd>
           <dt style={{ color: 'var(--clr-text-muted)' }}>Maße (L×B×H)</dt>
