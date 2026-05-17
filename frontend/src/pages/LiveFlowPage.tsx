@@ -69,11 +69,17 @@ type PackageType = 'S' | 'M';
 const detectType = (barcode: string | undefined): PackageType =>
   barcode && /[A-Za-z]/.test(barcode) ? 'M' : 'S';
 
-// Connection-keys come from the gateway as `machine_<ip>_<port>` (the
-// machine never identified itself with a short id). Trim the prefix and
-// switch the port separator to a colon so the sidebar shows e.g.
-// "100.64.0.5:36762" instead of "machine_100.64.0.5_36762".
+// We carry two identifiers per event:
+//   - connection-key like `machine_100.64.0.5_36762` (which TCP socket)
+//   - protocol-id like `0001` (what the machine declares about itself)
+// Prefer the protocol-id for user-facing labels — that's what's printed
+// on the physical CartonWrap unit. Fall back to the connection key
+// shortened to `<ip>:<port>` when the protocol id is unknown.
 function displayMachineId(raw: string): string {
+  // Protocol IDs are short numeric/alphanumeric tokens. Render as CW####
+  // if pure digits — matches how the process doc + mockups refer to
+  // physical CartonWrap units (CW0001, CW0002, ...).
+  if (/^\d+$/.test(raw)) return `CW${raw.padStart(4, '0')}`;
   const m = /^machine_(.+)_(\d+)$/.exec(raw);
   return m ? `${m[1]}:${m[2]}` : raw;
 }
@@ -201,7 +207,9 @@ function aggregatePackages(events: RawEvent[]): PackageRow[] {
     pkg.lastSeen = ev.timestamp;
     pkg.events.push(ev);
     pkg.barcode ??= getStr(ev, 'barcode');
-    pkg.machine_id ??= ev.machine_id;
+    // Prefer the protocol id ("0001") the machine declares about itself
+    // over the gateway's per-socket connection key.
+    pkg.machine_id ??= getStr(ev, 'machine_id') ?? ev.machine_id;
 
     if (ev.type === 'ACK') {
       pkg.length_mm ??= getNum(ev, 'length_mm');
@@ -479,7 +487,7 @@ function MachineSidebar({ machines, stats, selected, onSelect, connectedIds, ope
           color: 'var(--clr-text)',
         }}
       >
-        {open && <strong style={{ fontSize: 13 }}>CW Listen</strong>}
+        {open && <strong style={{ fontSize: 13 }}>Maschinen</strong>}
         {open ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
       </button>
 
