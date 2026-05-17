@@ -193,34 +193,57 @@ def _parse_pipe(text: str) -> list[dict]:
     return events
 
 
-def build_response(msg_type: str, data: dict) -> dict:
+def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> dict:
     """Build a default CIS response for a CMC message type.
 
     Echoes back `event` and `reference_id` so the simulator recognises the
     correlation; without them it reports "reference is wrong".
+
+    ENQ-specific handling per cmc-process-doc Section 7:
+      - empty / "NOREAD" barcode  → ref `NOREAD-<event>`, result=0
+      - is_duplicate flag set     → ref `DUPLICATE-<event>`, result=0
+      Both flag the scan as rejected without ever creating an active state
+      downstream.
     """
     ref = data.get("reference_id", data.get("referenceId", ""))
     event = data.get("event", "")
     barcode = data.get("barcode", "")
 
+    # ENQ classification
+    rejection_reason: str | None = None
+    is_noread = False
+    if msg_type == "ENQ":
+        barcode_str = str(barcode or "").strip().upper()
+        if not barcode_str or barcode_str == "NOREAD":
+            is_noread = True
+            rejection_reason = "no_read"
+        elif is_duplicate:
+            rejection_reason = "already_active"
+
     if msg_type == "ENQ" and not ref:
-        # Derive a reference id matching the CW1000 simulator's own default
-        # ("ref0001") — "ref" + zero-padded event counter. Keeps the string
-        # short and uniform with what the operator types into subsequent
-        # IND/ACK/LAB1/END fields.
         event_num = str(event or "").strip().lstrip("0")
         try:
-            ref = f"ref{int(event_num):04d}" if event_num else "ref0001"
+            event_digits = f"{int(event_num):04d}" if event_num else "0001"
         except ValueError:
-            ref = "ref0001"
+            event_digits = "0001"
+        if is_noread:
+            ref = f"NOREAD-{event_digits}"
+        elif is_duplicate:
+            ref = f"DUPLICATE-{event_digits}"
+        else:
+            ref = f"ref{event_digits}"
+
+    accept_enq = msg_type != "ENQ" or (not is_noread and not is_duplicate)
 
     responses = {
         "ENQ": {
             "event": event,
             "reference_id": ref,
-            "result": 1,
-            "item_validated": True,
-            "description": "",
+            "result": 1 if accept_enq else 0,
+            "item_validated": accept_enq,
+            "description": "" if accept_enq else (
+                "NOREAD" if is_noread else "DUPLICATE_SCAN"
+            ),
             "label_match": barcode,
             "lab1_enabled": True,
             "lab2_enabled": False,
@@ -230,6 +253,9 @@ def build_response(msg_type: str, data: dict) -> dict:
             # Feeders bitmask (8 chars, one per carton-forming feeder).
             # "01000000" = use feeder #2, the default on the simulator.
             "feeders": "01000000",
+            # Internal hint — stripped before wire serialisation, used by
+            # connection.py to annotate the broadcast event for the dashboard.
+            "rejection_reason": rejection_reason,
         },
         "IND": {"event": event, "reference_id": ref, "result": 1},
         "ACK": {"event": event, "reference_id": ref, "result": 1, "item_validated": True, "flag": "PROCESSABLE"},

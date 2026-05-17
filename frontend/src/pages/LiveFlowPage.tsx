@@ -66,6 +66,17 @@ function derivePackageReason(events: RawEvent[], state: PackageState): {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
     const d = ev.data ?? {};
+    if (ev.type === 'ENQ' && typeof d.rejection_reason === 'string') {
+      if (d.rejection_reason === 'no_read') {
+        return { text: 'NOREAD — Scanner konnte den Barcode nicht lesen', tone: 'warning' };
+      }
+      if (d.rejection_reason === 'already_active') {
+        return {
+          text: 'Doppel-Scan — Paket ist bereits auf dem Förderband (Order-Reservation greift)',
+          tone: 'warning',
+        };
+      }
+    }
     if (ev.type === 'REM') {
       return { text: 'Manuell vom Förderband entfernt (REM)', tone: 'warning' };
     }

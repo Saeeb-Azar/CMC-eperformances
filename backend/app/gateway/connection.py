@@ -15,6 +15,68 @@ from app.gateway.persistence import persist_event
 from app.gateway.websocket import ws_manager
 
 
+# Active states per cmc-process-doc Section 4 / Section 7 "Order Reservation
+# at ENQ". A barcode whose package is in any of these is considered already
+# being processed and must not be re-accepted at the scanner.
+ACTIVE_STATES = frozenset({"ASSIGNED", "INDUCTED", "SCANNED", "LABELED"})
+
+
+class ActivePackageTracker:
+    """In-memory mirror of active packages per machine.
+
+    Lives alongside the DB persistence layer so the latency-critical ENQ
+    response path can synchronously decide "is this barcode already on the
+    belt?" without awaiting a DB query (the simulator times out after ~2s).
+    """
+
+    def __init__(self) -> None:
+        # machine_id -> ref -> {"barcode": str, "state": str}
+        self._packages: dict[str, dict[str, dict[str, str]]] = {}
+
+    def is_active_barcode(self, machine_id: str, barcode: str) -> bool:
+        if not barcode:
+            return False
+        for pkg in self._packages.get(machine_id, {}).values():
+            if pkg["barcode"] == barcode and pkg["state"] in ACTIVE_STATES:
+                return True
+        return False
+
+    def apply(self, machine_id: str, msg_type: str, data: dict, response_ref: str) -> None:
+        ref = response_ref or data.get("reference_id", "") or ""
+        if not ref:
+            return
+        per_machine = self._packages.setdefault(machine_id, {})
+
+        if msg_type == "ENQ":
+            barcode = str(data.get("barcode", "")).strip()
+            per_machine[ref] = {"barcode": barcode, "state": "ASSIGNED"}
+            return
+
+        pkg = per_machine.get(ref)
+        if pkg is None:
+            return
+
+        if msg_type == "IND":
+            pkg["state"] = "INDUCTED"
+        elif msg_type == "ACK":
+            good = data.get("good") in (1, "1", True, "true")
+            pkg["state"] = "SCANNED" if good else "DELETED"
+        elif msg_type in ("LAB1", "LAB2"):
+            good = data.get("good") in (1, "1", True, "true")
+            if good:
+                pkg["state"] = "LABELED"
+        elif msg_type == "END":
+            status = data.get("status")
+            ok = status in (1, "1")
+            pkg["state"] = "COMPLETED" if ok else "EJECTED"
+        elif msg_type == "REM":
+            pkg["state"] = "DELETED"
+
+        # Drop terminal entries so the dict doesn't grow unboundedly.
+        if pkg["state"] not in ACTIVE_STATES:
+            per_machine.pop(ref, None)
+
+
 class MachineConnection:
     """Represents a single TCP connection to a CMC machine."""
 
@@ -46,6 +108,7 @@ class ConnectionManager:
         self._connections: dict[str, MachineConnection] = {}
         self._server: asyncio.Server | None = None
         self._bound_port: int | None = None
+        self._tracker = ActivePackageTracker()
 
     @property
     def connected_machines(self) -> list[str]:
@@ -130,8 +193,18 @@ class ConnectionManager:
                     # then fan out to browsers and persistence after.
                     response: dict | None = None
                     if msg_type != "UNKNOWN":
+                        # Order-Reservation guard (process doc Section 7
+                        # "Order Reservation at ENQ"): if the barcode is
+                        # already on the belt, reject the scan up front so
+                        # we never create a duplicate state.
+                        is_duplicate = False
+                        if msg_type == "ENQ":
+                            barcode = str(msg_data.get("barcode", "") or "").strip()
+                            if barcode:
+                                is_duplicate = self._tracker.is_active_barcode(machine_id, barcode)
+
                         try:
-                            response = build_response(msg_type, msg_data)
+                            response = build_response(msg_type, msg_data, is_duplicate=is_duplicate)
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         except Exception as e:
@@ -164,6 +237,23 @@ class ConnectionManager:
                             assigned_ref = response.get("reference_id")
                             if assigned_ref:
                                 msg_data["reference_id"] = assigned_ref
+
+                        # Annotate the broadcast payload with the rejection
+                        # cause (NOREAD / duplicate scan) so the dashboard
+                        # banner can render a human reason without having to
+                        # re-derive the rule.
+                        if response and isinstance(msg_data, dict):
+                            rejection = response.get("rejection_reason")
+                            if rejection:
+                                msg_data["rejection_reason"] = rejection
+
+                        # Keep the in-memory tracker in sync with the latest
+                        # event so future ENQ duplicate-checks see the truth.
+                        if response and isinstance(msg_data, dict):
+                            self._tracker.apply(
+                                machine_id, msg_type, msg_data,
+                                response.get("reference_id", ""),
+                            )
 
                     # STEP 2: fan out to dashboard clients and persistence.
                     # Both are fire-and-forget so a slow browser cannot back
