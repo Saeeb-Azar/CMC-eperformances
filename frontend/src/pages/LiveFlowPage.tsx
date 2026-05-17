@@ -54,9 +54,11 @@ const fmtTime = (iso: string) => {
 };
 const fmtSeit = (iso: string, now: number) => {
   const sec = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
-  if (sec < 60) return `${sec} s`;
-  if (sec < 3600) return `${Math.floor(sec / 60)} min ${sec % 60} s`;
-  return `${Math.floor(sec / 3600)} h ${Math.floor((sec % 3600) / 60)} min`;
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 
 // Multi vs Single per cmc-process-doc Section 3: alphabetic / M-prefix
@@ -381,7 +383,12 @@ export default function LiveFlowPage() {
             : connected ? t('liveFlow.noSimulator') : t('liveFlow.backendDisconnected')
         }
       />
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '260px 1fr 360px', minHeight: 0 }}>
+      <div style={{
+        flex: 1,
+        display: 'grid',
+        gridTemplateColumns: selectedPackage ? '220px 1fr 340px' : '220px 1fr 0',
+        minHeight: 0,
+      }}>
         <MachineSidebar
           machines={machineList}
           stats={machineStats}
@@ -580,7 +587,8 @@ function MainPane(p: MainPaneProps) {
         {p.packages.length === 0 ? (
           <EmptyState connected={p.connected} hasSimulator={p.hasSimulator} />
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
             <thead>
               <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
                 <Th>Position</Th>
@@ -607,6 +615,7 @@ function MainPane(p: MainPaneProps) {
               ))}
             </tbody>
           </table>
+        </div>
         )}
       </div>
     </section>
@@ -619,6 +628,7 @@ function Th({ children }: { children: React.ReactNode }) {
       textAlign: 'left', padding: '10px 12px',
       fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
       letterSpacing: 0.5, color: 'var(--clr-text-muted)',
+      whiteSpace: 'nowrap',
     }}>
       {children}
     </th>
@@ -690,7 +700,11 @@ function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
 }
 
 function Td({ children }: { children: React.ReactNode }) {
-  return <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>{children}</td>;
+  return (
+    <td style={{ padding: '10px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+      {children}
+    </td>
+  );
 }
 
 function EmptyState({ connected, hasSimulator }: { connected: boolean; hasSimulator: boolean }) {
@@ -720,18 +734,9 @@ interface FocusPanelProps {
 
 function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
   if (!pkg) {
-    return (
-      <aside style={{
-        borderLeft: '1px solid var(--clr-border)',
-        background: 'var(--clr-bg-elevated, #fff)',
-        padding: 24,
-        overflowY: 'auto',
-        color: 'var(--clr-text-muted)',
-        fontSize: 12,
-      }}>
-        <p>Wähle eine Bestellung in der Tabelle, um Details zu sehen.</p>
-      </aside>
-    );
+    // Grid column is 0px wide in this state — render nothing instead of an
+    // overflowing empty aside.
+    return null;
   }
 
   const type = detectType(pkg.barcode);
