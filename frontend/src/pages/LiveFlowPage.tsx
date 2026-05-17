@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
 import {
   type PackageState,
+  STATE_COLORS,
   applyEventToStations, deriveState, emptyStations,
 } from '../lib/packageLifecycle';
 import type { StationId, StationStatus } from '../components/simulator/PackageStations';
@@ -83,6 +84,20 @@ const BUCKET_OF: Record<PackageState, Bucket> = {
   FAILED:    'PROBLEM',
   EJECTED:   'PROBLEM',
   DELETED:   'PROBLEM',
+};
+
+// Per cmc-process-doc Section 4 — the 8 lifecycle states each get their
+// own label and color in the table, so the operator sees exactly *which*
+// state the package is in, not just the broad bucket.
+const STATE_LABEL: Record<PackageState, string> = {
+  ASSIGNED:  'Zugewiesen',
+  INDUCTED:  'Eingeschleust',
+  SCANNED:   'Vermessen',
+  LABELED:   'Etikettiert',
+  COMPLETED: 'Abgeschlossen',
+  FAILED:    'Fehlgeschlagen',
+  EJECTED:   'Ausgeworfen',
+  DELETED:   'Gelöscht',
 };
 
 const BUCKET_LABEL: Record<Bucket, string> = {
@@ -644,8 +659,7 @@ interface TableRowProps {
 }
 
 function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
-  const bucket = BUCKET_OF[pkg.state];
-  const c = BUCKET_COLORS[bucket];
+  const sc = STATE_COLORS[pkg.state];
   const station = currentStation(pkg.state);
   const StationIcon = STATION_ICONS[station];
   const type = detectType(pkg.barcode);
@@ -680,10 +694,10 @@ function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
           display: 'inline-flex', alignItems: 'center', gap: 5,
           padding: '3px 8px', borderRadius: 4,
           fontSize: 10, fontWeight: 600, letterSpacing: 0.3,
-          background: c.bg, color: c.fg, border: `1px solid ${c.border}`,
+          background: sc.bg, color: sc.fg, border: `1px solid ${sc.border}`,
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: 99, background: c.dot }} />
-          {BUCKET_LABEL[bucket]}
+          <span style={{ width: 6, height: 6, borderRadius: 99, background: sc.fg }} />
+          {STATE_LABEL[pkg.state]}
         </span>
       </Td>
       <Td>
@@ -740,7 +754,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
   }
 
   const type = detectType(pkg.barcode);
-  const bucket = BUCKET_OF[pkg.state];
+  const sc = STATE_COLORS[pkg.state];
   const station = currentStation(pkg.state);
   const StationIcon = STATION_ICONS[station];
   const dims = (pkg.length_mm || pkg.width_mm || pkg.height_mm)
@@ -802,15 +816,15 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
           <span style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 32, height: 32, borderRadius: 6,
-            background: BUCKET_COLORS[bucket].bg,
-            color: BUCKET_COLORS[bucket].fg,
+            background: sc.bg,
+            color: sc.fg,
           }}>
             <StationIcon size={16} />
           </span>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600 }}>{STATION_LABELS[station]}</div>
             <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-              {BUCKET_LABEL[bucket]} · seit {fmtSeit(pkg.lastSeen, nowTs)}
+              State <strong style={{ color: sc.fg }}>{STATE_LABEL[pkg.state]}</strong> · seit {fmtSeit(pkg.lastSeen, nowTs)}
             </div>
           </div>
         </div>
