@@ -52,6 +52,68 @@ const formatTime = (iso: string) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 };
 
+const isBad = (v: unknown): boolean =>
+  v === 0 || v === '0' || v === false || v === 'false';
+
+// Derive a human-readable reason for the package's current state from the
+// raw event stream. Maps to the triggers documented in cmc-process-doc
+// Section 7 (error handling) + Section 4 (state lifecycle).
+function derivePackageReason(events: RawEvent[], state: PackageState): {
+  text: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+} {
+  // Walk events newest → oldest, the most recent terminal event wins.
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i];
+    const d = ev.data ?? {};
+    if (ev.type === 'REM') {
+      return { text: 'Manuell vom Förderband entfernt (REM)', tone: 'warning' };
+    }
+    if (ev.type === 'END') {
+      const status = d.status;
+      if (status === 1 || status === '1') {
+        return { text: 'Etikett verifiziert — Paket erfolgreich ausgegeben', tone: 'success' };
+      }
+      return {
+        text: 'Etiketten-Verifikation fehlgeschlagen — Paket ausgeworfen (END status≠1)',
+        tone: 'error',
+      };
+    }
+    if (ev.type === 'ACK' && (isBad(d.good) || isBad(d.result))) {
+      const flag = typeof d.flag === 'string' && d.flag ? ` (${d.flag})` : '';
+      return {
+        text: `Vom 3D-Sensor abgewiesen — Maße außerhalb Toleranz${flag}`,
+        tone: 'error',
+      };
+    }
+    if ((ev.type === 'LAB1' || ev.type === 'LAB2') && isBad(d.good)) {
+      return {
+        text: `Etiketten-Druck fehlgeschlagen am ${ev.type}`,
+        tone: 'error',
+      };
+    }
+  }
+
+  // No terminal event yet — describe the in-flight state.
+  switch (state) {
+    case 'ASSIGNED':  return { text: 'Barcode gescannt, wartet auf Einschleusung', tone: 'info' };
+    case 'INDUCTED':  return { text: 'Paket auf Förderband, wartet auf 3D-Vermessung', tone: 'info' };
+    case 'SCANNED':   return { text: 'Vermessen, OK — wartet auf Verpackung & Etikett', tone: 'info' };
+    case 'LABELED':   return { text: 'Etikett gedruckt, wartet auf Ausgangs-Scanner', tone: 'info' };
+    case 'COMPLETED': return { text: 'Paket abgeschlossen', tone: 'success' };
+    case 'FAILED':    return { text: 'Fehler nach Etikettierung — manuelle Auflösung nötig', tone: 'error' };
+    case 'EJECTED':   return { text: 'Paket ausgeworfen', tone: 'error' };
+    case 'DELETED':   return { text: 'Paket entfernt / Auftrag gelöscht', tone: 'warning' };
+  }
+}
+
+const TONE_COLORS: Record<'info' | 'success' | 'warning' | 'error', { bg: string; fg: string; border: string }> = {
+  info:    { bg: '#eff6ff', fg: '#1e40af', border: '#bfdbfe' },
+  success: { bg: '#ecfdf5', fg: '#065f46', border: '#a7f3d0' },
+  warning: { bg: '#fffbeb', fg: '#92400e', border: '#fde68a' },
+  error:   { bg: '#fef2f2', fg: '#991b1b', border: '#fecaca' },
+};
+
 interface PackageRow {
   ref: string;
   barcode?: string;
@@ -291,11 +353,33 @@ function PackageRowView({ pkg, open, onToggle, stateColor, stateLabel }: Package
       {open && (
         <tr>
           <td colSpan={8} style={{ background: 'var(--clr-bg-subtle, #fafafa)', padding: 0 }}>
+            <ReasonBanner events={pkg.events} state={pkg.state} />
             <RawMessageList events={pkg.events} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+function ReasonBanner({ events, state }: { events: RawEvent[]; state: PackageState }) {
+  const { text, tone } = derivePackageReason(events, state);
+  const c = TONE_COLORS[tone];
+  return (
+    <div
+      style={{
+        margin: '12px 12px 0 40px',
+        padding: '8px 12px',
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.border}`,
+        borderRadius: 4,
+        fontSize: 12,
+        fontWeight: 500,
+      }}
+    >
+      {text}
+    </div>
   );
 }
 
