@@ -29,6 +29,7 @@ from app.modules.orders.router import router as orders_router
 from app.modules.audit.router import router as audit_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.simulator.router import router as simulator_router
+from app.modules.cmc_actions.router import router as cmc_actions_router
 
 settings = get_settings()
 
@@ -97,6 +98,7 @@ app.include_router(orders_router, prefix=API_PREFIX)
 app.include_router(audit_router, prefix=API_PREFIX)
 app.include_router(analytics_router, prefix=API_PREFIX)
 app.include_router(simulator_router, prefix=API_PREFIX)
+app.include_router(cmc_actions_router, prefix=API_PREFIX)
 
 
 @app.websocket("/ws/simulator")

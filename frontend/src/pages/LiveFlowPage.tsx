@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Inbox } from 'lucide-react';
+import { ChevronDown, ChevronRight, Inbox, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
@@ -66,6 +66,20 @@ function derivePackageReason(events: RawEvent[], state: PackageState): {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
     const d = ev.data ?? {};
+    if (ev.type === 'RESOLVE') {
+      const who = typeof d.resolved_by === 'string' ? d.resolved_by : 'admin';
+      const reason = typeof d.reason === 'string' ? d.reason : '';
+      return { text: `Manuell gelöst durch ${who}${reason ? ` — ${reason}` : ''}`, tone: 'success' };
+    }
+    if (ev.type === 'DELETE') {
+      const who = typeof d.resolved_by === 'string' ? d.resolved_by : 'admin';
+      const reason = typeof d.reason === 'string' ? d.reason : '';
+      return { text: `Gelöscht durch ${who}${reason ? ` — ${reason}` : ''}`, tone: 'warning' };
+    }
+    if (ev.type === 'RETRY') {
+      const who = typeof d.resolved_by === 'string' ? d.resolved_by : 'admin';
+      return { text: `Wiederholung gestartet durch ${who}`, tone: 'info' };
+    }
     if (ev.type === 'ENQ' && typeof d.rejection_reason === 'string') {
       if (d.rejection_reason === 'no_read') {
         return { text: 'NOREAD — Scanner konnte den Barcode nicht lesen', tone: 'warning' };
@@ -127,6 +141,7 @@ const TONE_COLORS: Record<'info' | 'success' | 'warning' | 'error', { bg: string
 
 interface PackageRow {
   ref: string;
+  machine_id?: string;
   barcode?: string;
   state: PackageState;
   stations: Record<StationId, StationStatus>;
@@ -137,6 +152,9 @@ interface PackageRow {
   width_mm?: number;
   height_mm?: number;
   weight_g?: number;
+  manualState?: PackageState;
+  manualReason?: string;
+  manualBy?: string;
   events: RawEvent[];
 }
 
@@ -198,6 +216,7 @@ export default function LiveFlowPage() {
       pkg.lastSeen = ev.timestamp;
       pkg.events.push(ev);
       pkg.barcode ??= getStr(ev, 'barcode');
+      pkg.machine_id ??= ev.machine_id;
 
       if (ev.type === 'ACK') {
         pkg.length_mm ??= getNum(ev, 'length_mm');
@@ -214,11 +233,24 @@ export default function LiveFlowPage() {
         pkg.weight_g  = getNum(ev, 'weight')       ?? pkg.weight_g;
       }
 
+      // Manual-action events override the derived state below.
+      if (ev.type === 'RESOLVE') {
+        pkg.manualState = 'COMPLETED';
+        pkg.manualReason = getStr(ev, 'reason');
+        pkg.manualBy = getStr(ev, 'resolved_by');
+      } else if (ev.type === 'DELETE') {
+        pkg.manualState = 'DELETED';
+        pkg.manualReason = getStr(ev, 'reason');
+        pkg.manualBy = getStr(ev, 'resolved_by');
+      }
+      // RETRY does not change state — admin merely re-attempts the
+      // downstream completion. The reason banner mentions it though.
+
       const r = applyEventToStations(ev, pkg.stations);
       if (r.removed) pkg.removed = true;
     }
     for (const pkg of map.values()) {
-      pkg.state = deriveState(pkg.stations, pkg.removed);
+      pkg.state = pkg.manualState ?? deriveState(pkg.stations, pkg.removed);
     }
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
@@ -237,6 +269,40 @@ export default function LiveFlowPage() {
       else next.add(ref);
       return next;
     });
+
+  const runAction = async (
+    action: 'resolve' | 'retry' | 'delete',
+    pkg: PackageRow,
+  ) => {
+    const promptText = {
+      resolve: 'Auflösungs-Grund (z.B. „Etikett korrekt, Paket kann versandt werden"):',
+      retry:   'Grund für Wiederholung:',
+      delete:  'Lösch-Grund:',
+    }[action];
+    const reason = window.prompt(promptText);
+    if (!reason || !reason.trim()) return;
+    const machine_id = pkg.machine_id ?? '';
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(
+        `${API_BASE}/api/v1/packages/${encodeURIComponent(pkg.ref)}/${action}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ machine_id, reason: reason.trim() }),
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        window.alert(`Aktion fehlgeschlagen: ${res.status} ${text}`);
+      }
+    } catch (e) {
+      window.alert(`Aktion fehlgeschlagen: ${String(e)}`);
+    }
+  };
 
   return (
     <div>
@@ -286,6 +352,7 @@ export default function LiveFlowPage() {
                     <th style={{ minWidth: 360 }}>Stationen</th>
                     <th>Maße (L×B×H mm)</th>
                     <th>Gewicht</th>
+                    <th style={{ width: 130 }}>Aktionen</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -300,6 +367,7 @@ export default function LiveFlowPage() {
                         onToggle={() => toggle(pkg.ref)}
                         stateColor={c}
                         stateLabel={t(`status.${pkg.state}`)}
+                        onAction={runAction}
                       />
                     );
                   })}
@@ -319,13 +387,22 @@ interface PackageRowProps {
   onToggle: () => void;
   stateColor: { bg: string; fg: string; border: string };
   stateLabel: string;
+  onAction: (action: 'resolve' | 'retry' | 'delete', pkg: PackageRow) => void;
 }
 
-function PackageRowView({ pkg, open, onToggle, stateColor, stateLabel }: PackageRowProps) {
+function PackageRowView({ pkg, open, onToggle, stateColor, stateLabel, onAction }: PackageRowProps) {
   const dims = pkg.length_mm || pkg.width_mm || pkg.height_mm
     ? `${pkg.length_mm ?? '?'}×${pkg.width_mm ?? '?'}×${pkg.height_mm ?? '?'}`
     : '—';
   const weight = pkg.weight_g != null ? `${pkg.weight_g} g` : '—';
+
+  // Actions per process doc Section 9: Resolve / Retry only make sense
+  // for terminal-with-issues states. Delete is always available unless
+  // the package has already been deleted.
+  const canResolve = pkg.state === 'EJECTED' || pkg.state === 'FAILED';
+  const canRetry   = pkg.state === 'FAILED';
+  const canDelete  = pkg.state !== 'DELETED';
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   return (
     <>
@@ -360,16 +437,69 @@ function PackageRowView({ pkg, open, onToggle, stateColor, stateLabel }: Package
         </td>
         <td className="tabular-nums">{dims}</td>
         <td className="tabular-nums">{weight}</td>
+        <td onClick={stop} style={{ whiteSpace: 'nowrap' }}>
+          {canResolve && (
+            <ActionBtn title="Als gelöst markieren" tone="success" onClick={() => onAction('resolve', pkg)}>
+              <CheckCircle2 size={13} />
+            </ActionBtn>
+          )}
+          {canRetry && (
+            <ActionBtn title="Wiederholen" tone="info" onClick={() => onAction('retry', pkg)}>
+              <RefreshCw size={13} />
+            </ActionBtn>
+          )}
+          {canDelete && (
+            <ActionBtn title="Löschen (Soft-Delete)" tone="danger" onClick={() => onAction('delete', pkg)}>
+              <Trash2 size={13} />
+            </ActionBtn>
+          )}
+        </td>
       </tr>
       {open && (
         <tr>
-          <td colSpan={8} style={{ background: 'var(--clr-bg-subtle, #fafafa)', padding: 0 }}>
+          <td colSpan={9} style={{ background: 'var(--clr-bg-subtle, #fafafa)', padding: 0 }}>
             <ReasonBanner events={pkg.events} state={pkg.state} />
             <RawMessageList events={pkg.events} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+function ActionBtn({
+  children, onClick, title, tone,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  tone: 'success' | 'info' | 'danger';
+}) {
+  const colors: Record<typeof tone, { bg: string; fg: string; border: string }> = {
+    success: { bg: '#ecfdf5', fg: '#065f46', border: '#a7f3d0' },
+    info:    { bg: '#eff6ff', fg: '#1e40af', border: '#bfdbfe' },
+    danger:  { bg: '#fef2f2', fg: '#991b1b', border: '#fecaca' },
+  };
+  const c = colors[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 6px',
+        marginRight: 4,
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.border}`,
+        borderRadius: 4,
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
