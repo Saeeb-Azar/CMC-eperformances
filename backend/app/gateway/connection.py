@@ -87,6 +87,11 @@ class MachineConnection:
         self.connected_at = datetime.now(timezone.utc)
         self.last_heartbeat = datetime.now(timezone.utc)
         self.is_alive = True
+        # Protocol id the machine declares about itself ("0001"). Stays None
+        # until the first frame is parsed — until then the connection is not
+        # surfaced to the dashboard, so the sidebar never shows a transient
+        # `<ip>:<port>` entry.
+        self.protocol_id: str | None = None
 
     async def send(self, data: bytes) -> None:
         self.writer.write(data)
@@ -112,7 +117,22 @@ class ConnectionManager:
 
     @property
     def connected_machines(self) -> list[str]:
-        return [mid for mid, conn in self._connections.items() if conn.is_alive]
+        """Protocol ids of currently-connected machines.
+
+        We deliberately do NOT expose the per-socket connection key
+        (`machine_<ip>_<port>`) — that's an internal handle. Until a machine
+        declares its protocol id in its first frame, it is not listed.
+        """
+        seen: set[str] = set()
+        out: list[str] = []
+        for conn in self._connections.values():
+            if not conn.is_alive or not conn.protocol_id:
+                continue
+            if conn.protocol_id in seen:
+                continue
+            seen.add(conn.protocol_id)
+            out.append(conn.protocol_id)
+        return out
 
     @property
     def bound_port(self) -> int | None:
@@ -120,9 +140,16 @@ class ConnectionManager:
         return self._bound_port
 
     def get_connection(self, machine_id: str) -> MachineConnection | None:
+        """Look up a live connection by either its socket key or its
+        protocol id (CIS id like "0001"). Callers from the HTTP layer pass
+        the protocol id; internal callers use the socket key.
+        """
         conn = self._connections.get(machine_id)
         if conn and conn.is_alive:
             return conn
+        for c in self._connections.values():
+            if c.is_alive and c.protocol_id == machine_id:
+                return c
         return None
 
     # ── Server mode: machines connect to us ───────────────────────────────
@@ -185,6 +212,14 @@ class ConnectionManager:
                 for event in events:
                     msg_type = event["type"]
                     msg_data = event["data"]
+
+                    # Capture the protocol id ("0001") from the first frame
+                    # that carries one, so the sidebar shows the CW#### label
+                    # instead of the socket address.
+                    if conn.protocol_id is None and isinstance(msg_data, dict):
+                        declared = msg_data.get("machine_id")
+                        if isinstance(declared, str) and declared.strip():
+                            conn.protocol_id = declared.strip()
 
                     # STEP 1 (latency-critical): answer the machine as fast
                     # as possible. The CMC simulator times out after ~2s, so

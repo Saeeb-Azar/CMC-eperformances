@@ -624,6 +624,21 @@ function MainPane(p: MainPaneProps) {
                 AKTIV
               </span>
             )}
+            <button
+              onClick={() => p.onMultiOnlyChange(!p.multiOnly)}
+              aria-pressed={p.multiOnly}
+              title={p.multiOnly ? 'Multi-Filter aktiv — klicken zum Ausschalten' : 'Nur Multi-Bestellungen anzeigen'}
+              style={{
+                padding: '2px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
+                border: `1px solid ${p.multiOnly ? '#3b82f6' : 'var(--clr-border)'}`,
+                borderRadius: 4,
+                background: p.multiOnly ? '#eff6ff' : 'transparent',
+                color: p.multiOnly ? '#1d4ed8' : 'var(--clr-text-muted)',
+                cursor: 'pointer',
+              }}
+            >
+              Multi
+            </button>
           </div>
           <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', marginTop: 4 }}>
             {p.packages.length} {p.packages.length === 1 ? 'Bestellung' : 'Bestellungen'}
@@ -649,22 +664,6 @@ function MainPane(p: MainPaneProps) {
               }}
             />
           </div>
-          <button
-            onClick={() => p.onMultiOnlyChange(!p.multiOnly)}
-            aria-pressed={p.multiOnly}
-            title={p.multiOnly ? 'Multi-Filter aktiv — klicken zum Ausschalten' : 'Nur Multi-Bestellungen anzeigen'}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              padding: '6px 10px', fontSize: 12, fontWeight: 600,
-              border: `1px solid ${p.multiOnly ? '#3b82f6' : 'var(--clr-border)'}`,
-              borderRadius: 6,
-              background: p.multiOnly ? '#eff6ff' : 'var(--clr-bg-elevated, #fff)',
-              color: p.multiOnly ? '#1d4ed8' : 'var(--clr-text)',
-              cursor: 'pointer',
-            }}
-          >
-            Multi
-          </button>
           <button style={{
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px', fontSize: 12,
