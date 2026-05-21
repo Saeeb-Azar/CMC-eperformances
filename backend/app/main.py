@@ -170,6 +170,7 @@ def events_recent(since: int = 0, limit: int = 200):
         "latest_id": latest_id,
         "events": events,
         "connected_machines": connection_manager.connected_machines,
+        "pending_connections": connection_manager.pending_connections,
     }
 
 

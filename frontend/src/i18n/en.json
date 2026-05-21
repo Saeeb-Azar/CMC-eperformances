@@ -237,6 +237,7 @@
     "time": "Time",
     "streamActive": "Live stream active",
     "noSimulator": "No simulator connected",
+    "simulatorIdentifying": "Simulator connected, waiting for first message…",
     "backendDisconnected": "Backend disconnected",
     "activeBarcode": "Active barcode",
     "currentStep": "Current step",

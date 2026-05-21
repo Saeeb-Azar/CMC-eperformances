@@ -281,6 +281,7 @@ export default function LiveFlowPage() {
   const [events, setEvents] = useState<RawEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
+  const [pendingConnections, setPendingConnections] = useState(0);
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -300,6 +301,7 @@ export default function LiveFlowPage() {
         if (cancelled) return;
         setConnected(true);
         if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
+        if (typeof data.pending_connections === 'number') setPendingConnections(data.pending_connections);
         if (Array.isArray(data.events) && data.events.length > 0) {
           setEvents((prev) => [...prev, ...data.events].slice(-2000));
         }
@@ -415,7 +417,11 @@ export default function LiveFlowPage() {
         statusMessage={
           hasSimulator
             ? t('liveFlow.streamActive')
-            : connected ? t('liveFlow.noSimulator') : t('liveFlow.backendDisconnected')
+            : !connected
+              ? t('liveFlow.backendDisconnected')
+              : pendingConnections > 0
+                ? t('liveFlow.simulatorIdentifying')
+                : t('liveFlow.noSimulator')
         }
       />
       <div style={{

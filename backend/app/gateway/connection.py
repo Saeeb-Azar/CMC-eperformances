@@ -135,6 +135,17 @@ class ConnectionManager:
         return out
 
     @property
+    def pending_connections(self) -> int:
+        """Number of TCP sockets currently open but not yet identified
+        (no protocol id seen yet). Used to distinguish "no simulator" from
+        "simulator connected, waiting for first frame".
+        """
+        return sum(
+            1 for c in self._connections.values()
+            if c.is_alive and not c.protocol_id
+        )
+
+    @property
     def bound_port(self) -> int | None:
         """Port the TCP gateway actually bound to (may differ from config due to PORT conflicts)."""
         return self._bound_port
