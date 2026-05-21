@@ -1,7 +1,7 @@
 import { ChevronRight, ChevronLeft, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import TopStatusBar, { type MachineState, type OrderTypeFilter } from '../components/liveflow/TopStatusBar';
+import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
 import {
   type PackageState,
   STATE_COLORS,
@@ -286,7 +286,7 @@ export default function LiveFlowPage() {
   const [search, setSearch] = useState('');
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [orderTypeFilter, setOrderTypeFilter] = useState<OrderTypeFilter>('all');
+  const [multiOnly, setMultiOnly] = useState(false);
   const sinceRef = useRef(0);
 
   // Event polling
@@ -336,22 +336,19 @@ export default function LiveFlowPage() {
     if (!selectedMachine && machineList.length > 0) setSelectedMachine(machineList[0]);
   }, [machineList, selectedMachine]);
 
-  // Packages for the focused machine, filtered by search and order type.
+  // Packages for the focused machine, filtered by search and multi-only.
   const packages = useMemo(() => {
     let list = selectedMachine
       ? allPackages.filter((p) => p.machine_id === selectedMachine)
       : allPackages;
-    if (orderTypeFilter !== 'all') {
-      const want: PackageType = orderTypeFilter === 'multi' ? 'M' : 'S';
-      list = list.filter((p) => detectType(p.barcode) === want);
-    }
+    if (multiOnly) list = list.filter((p) => detectType(p.barcode) === 'M');
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) =>
       p.ref.toLowerCase().includes(q) ||
       (p.barcode ?? '').toLowerCase().includes(q),
     );
-  }, [allPackages, selectedMachine, search, orderTypeFilter]);
+  }, [allPackages, selectedMachine, search, multiOnly]);
 
   // Bucket counts for the cards
   const counts = useMemo(() => {
@@ -420,8 +417,6 @@ export default function LiveFlowPage() {
             ? t('liveFlow.streamActive')
             : connected ? t('liveFlow.noSimulator') : t('liveFlow.backendDisconnected')
         }
-        orderTypeFilter={orderTypeFilter}
-        onOrderTypeFilterChange={setOrderTypeFilter}
       />
       <div style={{
         flex: 1,
@@ -449,6 +444,8 @@ export default function LiveFlowPage() {
           connected={connected}
           hasSimulator={hasSimulator}
           nowTs={nowTs}
+          multiOnly={multiOnly}
+          onMultiOnlyChange={setMultiOnly}
         />
         <FocusPanel
           pkg={selectedPackage}
@@ -606,6 +603,8 @@ interface MainPaneProps {
   connected: boolean;
   hasSimulator: boolean;
   nowTs: number;
+  multiOnly: boolean;
+  onMultiOnlyChange: (v: boolean) => void;
 }
 
 function MainPane(p: MainPaneProps) {
@@ -650,6 +649,22 @@ function MainPane(p: MainPaneProps) {
               }}
             />
           </div>
+          <button
+            onClick={() => p.onMultiOnlyChange(!p.multiOnly)}
+            aria-pressed={p.multiOnly}
+            title={p.multiOnly ? 'Multi-Filter aktiv — klicken zum Ausschalten' : 'Nur Multi-Bestellungen anzeigen'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '6px 10px', fontSize: 12, fontWeight: 600,
+              border: `1px solid ${p.multiOnly ? '#3b82f6' : 'var(--clr-border)'}`,
+              borderRadius: 6,
+              background: p.multiOnly ? '#eff6ff' : 'var(--clr-bg-elevated, #fff)',
+              color: p.multiOnly ? '#1d4ed8' : 'var(--clr-text)',
+              cursor: 'pointer',
+            }}
+          >
+            Multi
+          </button>
           <button style={{
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px', fontSize: 12,

@@ -238,11 +238,6 @@
     "streamActive": "Live-Stream aktiv",
     "noSimulator": "Kein Simulator verbunden",
     "backendDisconnected": "Backend getrennt",
-    "orderType": {
-      "all": "Alle",
-      "single": "Single",
-      "multi": "Multi"
-    },
     "activeBarcode": "Aktiver Barcode",
     "currentStep": "Aktueller Schritt",
     "machineHealth": "Maschinen-Status",

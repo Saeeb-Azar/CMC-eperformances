@@ -2,7 +2,6 @@ import { Wifi, WifiOff, Activity, AlertCircle, Pause, Square } from 'lucide-reac
 import { useTranslation } from 'react-i18next';
 
 export type MachineState = 'running' | 'idle' | 'error' | 'paused' | 'offline';
-export type OrderTypeFilter = 'all' | 'single' | 'multi';
 
 interface TopStatusBarProps {
   machineState: MachineState;
@@ -10,8 +9,6 @@ interface TopStatusBarProps {
   activeBarcode: string | null;
   currentStep: string | null;
   statusMessage: string;
-  orderTypeFilter?: OrderTypeFilter;
-  onOrderTypeFilterChange?: (v: OrderTypeFilter) => void;
 }
 
 export default function TopStatusBar({
@@ -20,8 +17,6 @@ export default function TopStatusBar({
   activeBarcode,
   currentStep,
   statusMessage,
-  orderTypeFilter,
-  onOrderTypeFilterChange,
 }: TopStatusBarProps) {
   const { t } = useTranslation();
 
@@ -45,20 +40,6 @@ export default function TopStatusBar({
       </div>
       <span className="text-gray-400">{statusMessage}</span>
       <div className="flex items-center gap-4 text-gray-500">
-        {orderTypeFilter && onOrderTypeFilterChange && (
-          <div className="segmented" style={{ height: 22 }}>
-            {(['all', 'single', 'multi'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => onOrderTypeFilterChange(v)}
-                className={`segmented__item ${orderTypeFilter === v ? 'segmented__item--active' : ''}`}
-                style={{ padding: '2px 8px', fontSize: 11 }}
-              >
-                {t(`liveFlow.orderType.${v}`)}
-              </button>
-            ))}
-          </div>
-        )}
         {currentStep && <span>{currentStep}</span>}
         {activeBarcode && <code className="font-mono text-gray-300">{activeBarcode}</code>}
       </div>
