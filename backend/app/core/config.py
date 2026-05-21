@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     cmc_tcp_port: int = 15001
     cmc_tcp_role: str = "server"  # "server" or "client"
 
+    # Event persistence: when False, incoming machine events are only kept in
+    # the in-memory ring buffer for the live dashboard. order_states and
+    # audit_logs receive no writes. Flip to True once long-term storage is
+    # actually wanted.
+    events_persist_enabled: bool = False
+
     # CORS
     cors_origins: list[str] = ["http://localhost:5173"]
 

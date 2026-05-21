@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.core.database import async_session
+from app.core.config import get_settings
 from app.core.logging import logger
 from app.core.security import hash_password
 from app.modules.audit.models import AuditLog
@@ -80,6 +81,8 @@ AUDIT_SKIP_TYPES: frozenset[str] = frozenset({"HBT", "STS"})
 
 async def persist_event(event_type: str, payload: dict) -> None:
     """Upsert OrderState + append AuditLog for a single CMC event."""
+    if not get_settings().events_persist_enabled:
+        return
     machine_id = payload.get("machine_id") or ""
     if not machine_id:
         return
