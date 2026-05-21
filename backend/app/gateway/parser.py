@@ -193,7 +193,13 @@ def _parse_pipe(text: str) -> list[dict]:
     return events
 
 
-def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> dict:
+def build_response(
+    msg_type: str,
+    data: dict,
+    *,
+    is_duplicate: bool = False,
+    multi_only: bool = False,
+) -> dict:
     """Build a default CIS response for a CMC message type.
 
     Echoes back `event` and `reference_id` so the simulator recognises the
@@ -202,7 +208,13 @@ def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> 
     ENQ-specific handling per cmc-process-doc Section 7:
       - empty / "NOREAD" barcode  → ref `NOREAD-<event>`, result=0
       - is_duplicate flag set     → ref `DUPLICATE-<event>`, result=0
-      Both flag the scan as rejected without ever creating an active state
+      - multi_only mode + pure-numeric barcode (single-order route) →
+        ref `SINGLE-REJECT-<event>`, result=0. Per cmc-process-doc § 3:
+        alphabetic / M-prefixed barcodes take the Multi-Order Path, pure-
+        numeric take the Single-Order Path. When the operator has flipped
+        a machine into multi-only mode, single-order scans must not be
+        accepted.
+      All flag the scan as rejected without ever creating an active state
       downstream.
     """
     ref = data.get("reference_id", data.get("referenceId", ""))
@@ -212,6 +224,7 @@ def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> 
     # ENQ classification
     rejection_reason: str | None = None
     is_noread = False
+    is_single_reject = False
     if msg_type == "ENQ":
         barcode_str = str(barcode or "").strip().upper()
         if not barcode_str or barcode_str == "NOREAD":
@@ -219,6 +232,9 @@ def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> 
             rejection_reason = "no_read"
         elif is_duplicate:
             rejection_reason = "already_active"
+        elif multi_only and barcode_str.isdigit():
+            is_single_reject = True
+            rejection_reason = "multi_only_mode"
 
     if msg_type == "ENQ" and not ref:
         event_num = str(event or "").strip().lstrip("0")
@@ -230,10 +246,14 @@ def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> 
             ref = f"NOREAD-{event_digits}"
         elif is_duplicate:
             ref = f"DUPLICATE-{event_digits}"
+        elif is_single_reject:
+            ref = f"SINGLE-REJECT-{event_digits}"
         else:
             ref = f"ref{event_digits}"
 
-    accept_enq = msg_type != "ENQ" or (not is_noread and not is_duplicate)
+    accept_enq = msg_type != "ENQ" or (
+        not is_noread and not is_duplicate and not is_single_reject
+    )
 
     responses = {
         "ENQ": {
@@ -242,7 +262,9 @@ def build_response(msg_type: str, data: dict, *, is_duplicate: bool = False) -> 
             "result": 1 if accept_enq else 0,
             "item_validated": accept_enq,
             "description": "" if accept_enq else (
-                "NOREAD" if is_noread else "DUPLICATE_SCAN"
+                "NOREAD" if is_noread
+                else "SINGLE_REJECTED" if is_single_reject
+                else "DUPLICATE_SCAN"
             ),
             "label_match": barcode,
             "lab1_enabled": True,

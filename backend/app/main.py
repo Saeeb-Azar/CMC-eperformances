@@ -171,7 +171,25 @@ def events_recent(since: int = 0, limit: int = 200):
         "events": events,
         "connected_machines": connection_manager.connected_machines,
         "pending_connections": connection_manager.pending_connections,
+        "machine_modes": connection_manager.machine_modes,
     }
+
+
+@app.post("/api/v1/machines/{machine_id}/mode")
+def set_machine_mode(machine_id: str, body: dict):
+    """Set or clear a per-machine runtime mode (e.g. multi_only).
+
+    Body: {"mode": "multi_only"}  → enable
+          {"mode": null}          → disable / clear
+
+    In-memory only; resets when the gateway restarts. Operator action,
+    not a config change — kept off DB so persistence stays optional.
+    """
+    mode = body.get("mode") if isinstance(body, dict) else None
+    if mode not in (None, "multi_only"):
+        return {"ok": False, "error": "unknown mode"}
+    connection_manager.set_mode(machine_id, mode)
+    return {"ok": True, "machine_id": machine_id, "mode": mode}
 
 
 @app.get("/")

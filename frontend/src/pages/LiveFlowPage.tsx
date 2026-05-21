@@ -282,12 +282,12 @@ export default function LiveFlowPage() {
   const [connected, setConnected] = useState(false);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
   const [pendingConnections, setPendingConnections] = useState(0);
+  const [machineModes, setMachineModes] = useState<Record<string, string>>({});
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [multiOnly, setMultiOnly] = useState(false);
   const sinceRef = useRef(0);
 
   // Event polling
@@ -302,6 +302,7 @@ export default function LiveFlowPage() {
         setConnected(true);
         if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
         if (typeof data.pending_connections === 'number') setPendingConnections(data.pending_connections);
+        if (data.machine_modes && typeof data.machine_modes === 'object') setMachineModes(data.machine_modes);
         if (Array.isArray(data.events) && data.events.length > 0) {
           setEvents((prev) => [...prev, ...data.events].slice(-2000));
         }
@@ -338,19 +339,18 @@ export default function LiveFlowPage() {
     if (!selectedMachine && machineList.length > 0) setSelectedMachine(machineList[0]);
   }, [machineList, selectedMachine]);
 
-  // Packages for the focused machine, filtered by search and multi-only.
+  // Packages for the focused machine, filtered by search.
   const packages = useMemo(() => {
-    let list = selectedMachine
+    const list = selectedMachine
       ? allPackages.filter((p) => p.machine_id === selectedMachine)
       : allPackages;
-    if (multiOnly) list = list.filter((p) => detectType(p.barcode) === 'M');
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) =>
       p.ref.toLowerCase().includes(q) ||
       (p.barcode ?? '').toLowerCase().includes(q),
     );
-  }, [allPackages, selectedMachine, search, multiOnly]);
+  }, [allPackages, selectedMachine, search]);
 
   // Bucket counts for the cards
   const counts = useMemo(() => {
@@ -382,6 +382,25 @@ export default function LiveFlowPage() {
   const machineState: MachineState = hasSimulator ? 'running' : connected ? 'idle' : 'offline';
   const latestType = events[events.length - 1]?.type ?? null;
   const latestBarcode = allPackages.length > 0 ? (allPackages[allPackages.length - 1].barcode ?? null) : null;
+
+  const setMachineMode = async (machineId: string, mode: 'multi_only' | null) => {
+    // Optimistic local update so the toggle feels instant.
+    setMachineModes((prev) => {
+      const next = { ...prev };
+      if (mode) next[machineId] = mode;
+      else delete next[machineId];
+      return next;
+    });
+    try {
+      await fetch(`${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+    } catch (e) {
+      console.error('setMachineMode failed', e);
+    }
+  };
 
   const runAction = async (action: 'resolve' | 'retry' | 'delete', pkg: PackageRow) => {
     const prompts = {
@@ -450,8 +469,10 @@ export default function LiveFlowPage() {
           connected={connected}
           hasSimulator={hasSimulator}
           nowTs={nowTs}
-          multiOnly={multiOnly}
-          onMultiOnlyChange={setMultiOnly}
+          multiOnly={selectedMachine ? machineModes[selectedMachine] === 'multi_only' : false}
+          onMultiOnlyChange={(v) => {
+            if (selectedMachine) setMachineMode(selectedMachine, v ? 'multi_only' : null);
+          }}
         />
         <FocusPanel
           pkg={selectedPackage}
@@ -633,14 +654,20 @@ function MainPane(p: MainPaneProps) {
             <button
               onClick={() => p.onMultiOnlyChange(!p.multiOnly)}
               aria-pressed={p.multiOnly}
-              title={p.multiOnly ? 'Multi-Filter aktiv — klicken zum Ausschalten' : 'Nur Multi-Bestellungen anzeigen'}
+              disabled={!p.machine}
+              title={
+                !p.machine ? 'Maschine wählen, um den Modus zu setzen'
+                : p.multiOnly ? 'Multi-Only Modus aktiv — numerische Barcodes werden am Scanner abgelehnt. Klicken zum Ausschalten.'
+                : 'Maschine in Multi-Only-Modus schalten (akzeptiert nur Multi-Order-Barcodes)'
+              }
               style={{
                 padding: '2px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
                 border: `1px solid ${p.multiOnly ? '#3b82f6' : 'var(--clr-border)'}`,
                 borderRadius: 4,
                 background: p.multiOnly ? '#eff6ff' : 'transparent',
                 color: p.multiOnly ? '#1d4ed8' : 'var(--clr-text-muted)',
-                cursor: 'pointer',
+                cursor: p.machine ? 'pointer' : 'not-allowed',
+                opacity: p.machine ? 1 : 0.5,
               }}
             >
               Multi

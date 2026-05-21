@@ -114,6 +114,24 @@ class ConnectionManager:
         self._server: asyncio.Server | None = None
         self._bound_port: int | None = None
         self._tracker = ActivePackageTracker()
+        # Per-machine runtime modes keyed by protocol id ("0001" → "multi_only").
+        # In-memory only — persistence is intentionally off (see config). When
+        # a machine is in multi_only mode, ENQ rejects pure-numeric (single-
+        # order) barcodes at the scanner. See cmc-process-doc § 3.
+        self._machine_modes: dict[str, str] = {}
+
+    def get_mode(self, protocol_id: str) -> str | None:
+        return self._machine_modes.get(protocol_id)
+
+    def set_mode(self, protocol_id: str, mode: str | None) -> None:
+        if mode:
+            self._machine_modes[protocol_id] = mode
+        else:
+            self._machine_modes.pop(protocol_id, None)
+
+    @property
+    def machine_modes(self) -> dict[str, str]:
+        return dict(self._machine_modes)
 
     @property
     def connected_machines(self) -> list[str]:
@@ -250,7 +268,15 @@ class ConnectionManager:
                                 is_duplicate = self._tracker.is_active_barcode(machine_id, barcode)
 
                         try:
-                            response = build_response(msg_type, msg_data, is_duplicate=is_duplicate)
+                            multi_only = (
+                                conn.protocol_id is not None
+                                and self._machine_modes.get(conn.protocol_id) == "multi_only"
+                            )
+                            response = build_response(
+                                msg_type, msg_data,
+                                is_duplicate=is_duplicate,
+                                multi_only=multi_only,
+                            )
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         except Exception as e:
