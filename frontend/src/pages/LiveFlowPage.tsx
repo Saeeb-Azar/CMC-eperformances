@@ -1,7 +1,7 @@
 import { ChevronRight, ChevronLeft, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
+import TopStatusBar, { type MachineState, type OrderTypeFilter } from '../components/liveflow/TopStatusBar';
 import {
   type PackageState,
   STATE_COLORS,
@@ -286,6 +286,7 @@ export default function LiveFlowPage() {
   const [search, setSearch] = useState('');
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [orderTypeFilter, setOrderTypeFilter] = useState<OrderTypeFilter>('all');
   const sinceRef = useRef(0);
 
   // Event polling
@@ -335,18 +336,22 @@ export default function LiveFlowPage() {
     if (!selectedMachine && machineList.length > 0) setSelectedMachine(machineList[0]);
   }, [machineList, selectedMachine]);
 
-  // Packages for the focused machine, filtered by search.
+  // Packages for the focused machine, filtered by search and order type.
   const packages = useMemo(() => {
-    const list = selectedMachine
+    let list = selectedMachine
       ? allPackages.filter((p) => p.machine_id === selectedMachine)
       : allPackages;
+    if (orderTypeFilter !== 'all') {
+      const want: PackageType = orderTypeFilter === 'multi' ? 'M' : 'S';
+      list = list.filter((p) => detectType(p.barcode) === want);
+    }
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) =>
       p.ref.toLowerCase().includes(q) ||
       (p.barcode ?? '').toLowerCase().includes(q),
     );
-  }, [allPackages, selectedMachine, search]);
+  }, [allPackages, selectedMachine, search, orderTypeFilter]);
 
   // Bucket counts for the cards
   const counts = useMemo(() => {
@@ -415,6 +420,8 @@ export default function LiveFlowPage() {
             ? t('liveFlow.streamActive')
             : connected ? t('liveFlow.noSimulator') : t('liveFlow.backendDisconnected')
         }
+        orderTypeFilter={orderTypeFilter}
+        onOrderTypeFilterChange={setOrderTypeFilter}
       />
       <div style={{
         flex: 1,
@@ -557,6 +564,28 @@ function MachineSidebar({ machines, stats, selected, onSelect, connectedIds, ope
             </button>
           );
         })
+      )}
+
+      {open && (
+        <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px dashed var(--clr-border)' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '0 8px 6px', color: 'var(--clr-text-muted)',
+          }}>
+            <Box size={12} />
+            <strong style={{ fontSize: 11, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+              CW-Liste
+            </strong>
+          </div>
+          <div style={{
+            fontSize: 11, color: 'var(--clr-text-muted)',
+            padding: '10px', textAlign: 'center',
+            border: '1px dashed var(--clr-border)', borderRadius: 6,
+            background: 'var(--clr-bg-subtle, #f8fafc)',
+          }}>
+            Bald verfügbar
+          </div>
+        </div>
       )}
     </aside>
   );
