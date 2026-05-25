@@ -183,8 +183,20 @@ interface PackageRow {
   manualState?: PackageState;
   manualReason?: string;
   manualBy?: string;
+  rejectionReason?: string;
+  rejectionStation?: 'scanner' | 'sensor' | 'labeler' | 'exit';
   events: RawEvent[];
 }
+
+const REJECTION_LABEL: Record<string, string> = {
+  no_read:         'Barcode nicht lesbar',
+  already_active:  'Doppel-Scan',
+  unknown_barcode: 'Nicht in CW-Liste',
+  multi_only_mode: 'Multi-Modus: Single abgewiesen',
+  skipped_by_subsequent_end: 'Übersprungen (späteres END)',
+  dimensions_rejected: '3D-Maße abgewiesen',
+  label_verification_failed: 'Etikett-Verifikation fehlgeschlagen',
+};
 
 function aggregatePackages(events: RawEvent[]): PackageRow[] {
   const map = new Map<string, PackageRow>();
@@ -236,6 +248,19 @@ function aggregatePackages(events: RawEvent[]): PackageRow[] {
       pkg.manualBy = getStr(ev, 'resolved_by');
     }
 
+    // Pick up rejection reasons emitted by the gateway, so the row can
+    // show *why* the order ended up in EJECTED (not just that it did).
+    const reason = getStr(ev, 'rejection_reason') ?? getStr(ev, 'ejection_reason');
+    if (reason) {
+      pkg.rejectionReason = reason;
+      pkg.rejectionStation =
+        ev.type === 'ENQ'  ? 'scanner' :
+        ev.type === 'ACK'  ? 'sensor' :
+        ev.type === 'LAB1' || ev.type === 'LAB2' ? 'labeler' :
+        ev.type === 'END' || ev.type === 'EJECT' ? 'exit' :
+        pkg.rejectionStation;
+    }
+
     const r = applyEventToStations(ev, pkg.stations);
     if (r.removed) pkg.removed = true;
   }
@@ -253,8 +278,10 @@ function eventLabel(ev: RawEvent): string {
   const d = ev.data ?? {};
   switch (ev.type) {
     case 'ENQ':
-      if (d.rejection_reason === 'no_read') return 'NOREAD — Barcode nicht lesbar';
-      if (d.rejection_reason === 'already_active') return 'Doppel-Scan abgewiesen';
+      if (d.rejection_reason === 'no_read')         return 'NOREAD — Barcode nicht lesbar';
+      if (d.rejection_reason === 'already_active')  return 'Doppel-Scan abgewiesen';
+      if (d.rejection_reason === 'unknown_barcode') return 'Abgewiesen — nicht in CW-Liste';
+      if (d.rejection_reason === 'multi_only_mode') return 'Abgewiesen — Multi-Modus, Single-Barcode';
       return 'Barcode gelesen';
     case 'IND':  return 'Eingeschleust';
     case 'ACK':  return isBad(d.good) ? 'Vermessung abgewiesen' : '3D Vermessung OK';
@@ -263,6 +290,7 @@ function eventLabel(ev: RawEvent): string {
     case 'LAB2': return 'Zweites Label angefordert';
     case 'END':  return (d.status === 1 || d.status === '1') ? 'Erfolgreich ausgegeben' : 'Ausgangs-Verifikation fehlgeschlagen';
     case 'REM':  return 'Manuell entfernt';
+    case 'EJECT': return `Auto-Auswurf (übersprungen durch END ${getNum(ev, 'trigger_sequence') ?? '?'})`;
     case 'HBT':  return 'Heartbeat';
     case 'RESOLVE': return `Manuell gelöst (${getStr(ev, 'resolved_by') ?? 'admin'})`;
     case 'DELETE':  return `Gelöscht (${getStr(ev, 'resolved_by') ?? 'admin'})`;
@@ -912,13 +940,20 @@ function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
     ? `${pkg.length_mm ?? '?'}×${pkg.width_mm ?? '?'}×${pkg.height_mm ?? '?'}`
     : '—';
   const weight = pkg.weight_g != null ? `${pkg.weight_g} g` : '—';
+  const isProblem = pkg.state === 'EJECTED' || pkg.state === 'FAILED';
+  const rejectLabel = pkg.rejectionReason
+    ? REJECTION_LABEL[pkg.rejectionReason] ?? pkg.rejectionReason
+    : null;
 
   return (
     <tr
       onClick={onClick}
       style={{
-        background: selected ? 'var(--clr-bg-subtle, #f4f6fa)' : 'transparent',
+        background: selected
+          ? 'var(--clr-bg-subtle, #f4f6fa)'
+          : isProblem ? '#fef2f2' : 'transparent',
         borderBottom: '1px solid var(--clr-border)',
+        borderLeft: isProblem ? '3px solid #ef4444' : '3px solid transparent',
         cursor: 'pointer',
       }}
     >
@@ -944,6 +979,11 @@ function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
           <span style={{ width: 6, height: 6, borderRadius: 99, background: sc.fg }} />
           {STATE_LABEL[pkg.state]}
         </span>
+        {rejectLabel && (
+          <div style={{ fontSize: 10, color: '#991b1b', marginTop: 3 }}>
+            {rejectLabel}
+          </div>
+        )}
       </Td>
       <Td>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--clr-text)' }}>
@@ -1075,6 +1115,24 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
         </div>
 
         <StationProgress stations={pkg.stations} current={station} removed={pkg.removed} />
+
+        {pkg.rejectionReason && (
+          <div style={{
+            marginTop: 12,
+            padding: '8px 10px',
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 6,
+            display: 'flex', flexDirection: 'column', gap: 2,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#991b1b', letterSpacing: 0.4 }}>
+              ABGEWIESEN{pkg.rejectionStation && ` AM ${STATION_LABELS[pkg.rejectionStation].toUpperCase()}`}
+            </div>
+            <div style={{ fontSize: 12, color: '#7f1d1d' }}>
+              {REJECTION_LABEL[pkg.rejectionReason] ?? pkg.rejectionReason}
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: 20, borderBottom: '1px solid var(--clr-border)' }}>

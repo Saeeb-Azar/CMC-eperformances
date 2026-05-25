@@ -50,9 +50,19 @@ export function applyEventToStations(
   let removed = false;
 
   switch (baseType) {
-    case 'ENQ':
-      stations.scanner = 'passed';
+    case 'ENQ': {
+      // Rejection at the scanner station: the cloud answered result=0 for
+      // this scan (NOREAD, duplicate, not in CW-Liste, multi-only block).
+      // The package never made it onto the belt — surface it as a failed
+      // scanner step so deriveState() can map it to EJECTED.
+      if (d?.rejection_reason) {
+        stations.scanner = 'failed';
+        rejected = true;
+      } else {
+        stations.scanner = 'passed';
+      }
       break;
+    }
     case 'IND':
       stations.scanner = 'passed';
       stations.induction = 'passed';
@@ -84,6 +94,14 @@ export function applyEventToStations(
       else { stations.exit = 'failed'; rejected = true; }
       break;
     }
+    case 'EJECT': {
+      // Synthetic event the gateway emits when sequence-based cleanup at
+      // END catches an older active package that never reached END (lost
+      // on belt / removed without REM). Drop the package into EJECTED.
+      stations.exit = 'failed';
+      rejected = true;
+      break;
+    }
     case 'REM':
       removed = true;
       break;
@@ -97,6 +115,7 @@ export function deriveState(
   removed: boolean,
 ): PackageState {
   if (removed) return 'DELETED';
+  if (stations.scanner === 'failed') return 'EJECTED';
   if (stations.exit === 'failed') return 'EJECTED';
   if (stations.exit === 'passed') return 'COMPLETED';
   if (stations.sensor === 'failed') return 'EJECTED';
