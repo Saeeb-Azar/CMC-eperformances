@@ -27,11 +27,16 @@ class ActivePackageTracker:
     Lives alongside the DB persistence layer so the latency-critical ENQ
     response path can synchronously decide "is this barcode already on the
     belt?" without awaiting a DB query (the simulator times out after ~2s).
+
+    Also implements the sequence-based ejection from cmc-process-doc § 7,
+    Recovery Mechanism #1: every ENQ carries a monotonic event counter from
+    the machine, and when a later END arrives we eject any still-active
+    predecessor — that's the lost-on-belt cleanup the doc describes.
     """
 
     def __init__(self) -> None:
-        # machine_id -> ref -> {"barcode": str, "state": str}
-        self._packages: dict[str, dict[str, dict[str, str]]] = {}
+        # machine_id -> ref -> {"barcode": str, "state": str, "seq": int}
+        self._packages: dict[str, dict[str, dict[str, object]]] = {}
 
     def is_active_barcode(self, machine_id: str, barcode: str) -> bool:
         if not barcode:
@@ -49,7 +54,11 @@ class ActivePackageTracker:
 
         if msg_type == "ENQ":
             barcode = str(data.get("barcode", "")).strip()
-            per_machine[ref] = {"barcode": barcode, "state": "ASSIGNED"}
+            try:
+                seq = int(str(data.get("event", "")).strip() or "0")
+            except ValueError:
+                seq = 0
+            per_machine[ref] = {"barcode": barcode, "state": "ASSIGNED", "seq": seq}
             return
 
         pkg = per_machine.get(ref)
@@ -75,6 +84,28 @@ class ActivePackageTracker:
         # Drop terminal entries so the dict doesn't grow unboundedly.
         if pkg["state"] not in ACTIVE_STATES:
             per_machine.pop(ref, None)
+
+    def eject_stale_predecessors(self, machine_id: str, current_seq: int) -> list[dict[str, object]]:
+        """When END fires for sequence N, all older active states (< N) on
+        the same machine were silently lost (jam, manual removal without
+        REM). Transition them to EJECTED and return the cleanup list so the
+        caller can broadcast synthetic events for the dashboard.
+        """
+        per_machine = self._packages.get(machine_id, {})
+        ejected: list[dict[str, object]] = []
+        stale_refs = [
+            ref for ref, pkg in per_machine.items()
+            if pkg["state"] in ACTIVE_STATES and int(pkg.get("seq") or 0) < current_seq
+        ]
+        for ref in stale_refs:
+            pkg = per_machine.pop(ref)
+            ejected.append({
+                "reference_id": ref,
+                "barcode": pkg.get("barcode", ""),
+                "previous_state": pkg["state"],
+                "ejection_reason": "skipped_by_subsequent_end",
+            })
+        return ejected
 
 
 class MachineConnection:
@@ -119,6 +150,11 @@ class ConnectionManager:
         # a machine is in multi_only mode, ENQ rejects pure-numeric (single-
         # order) barcodes at the scanner. See cmc-process-doc § 3.
         self._machine_modes: dict[str, str] = {}
+        # CW-Liste: barcodes the cloud has reserved for this machine.
+        # Any ENQ barcode NOT in the set is rejected with UNKNOWN-<event>
+        # per cmc-process-doc § 7, error case #2. Empty set = no filter
+        # (accept everything). None entry = same as empty (no filter).
+        self._expected_barcodes: dict[str, set[str]] = {}
 
     def get_mode(self, protocol_id: str) -> str | None:
         return self._machine_modes.get(protocol_id)
@@ -132,6 +168,19 @@ class ConnectionManager:
     @property
     def machine_modes(self) -> dict[str, str]:
         return dict(self._machine_modes)
+
+    def get_expected_barcodes(self, protocol_id: str) -> set[str] | None:
+        return self._expected_barcodes.get(protocol_id)
+
+    def set_expected_barcodes(self, protocol_id: str, barcodes: list[str] | None) -> None:
+        if barcodes is None:
+            self._expected_barcodes.pop(protocol_id, None)
+        else:
+            self._expected_barcodes[protocol_id] = {b.strip() for b in barcodes if b and b.strip()}
+
+    @property
+    def expected_barcodes(self) -> dict[str, list[str]]:
+        return {mid: sorted(s) for mid, s in self._expected_barcodes.items()}
 
     @property
     def connected_machines(self) -> list[str]:
@@ -272,10 +321,15 @@ class ConnectionManager:
                                 conn.protocol_id is not None
                                 and self._machine_modes.get(conn.protocol_id) == "multi_only"
                             )
+                            expected = (
+                                self._expected_barcodes.get(conn.protocol_id)
+                                if conn.protocol_id else None
+                            ) or None
                             response = build_response(
                                 msg_type, msg_data,
                                 is_duplicate=is_duplicate,
                                 multi_only=multi_only,
+                                expected_barcodes=expected,
                             )
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
@@ -326,6 +380,32 @@ class ConnectionManager:
                                 machine_id, msg_type, msg_data,
                                 response.get("reference_id", ""),
                             )
+
+                        # Sequence-based ejection (cmc-process-doc § 7 #1):
+                        # when END fires, any older active state on the same
+                        # machine that never reached END was silently lost —
+                        # transition them to EJECTED and broadcast synthetic
+                        # events so the dashboard updates.
+                        if msg_type == "END" and isinstance(msg_data, dict):
+                            try:
+                                current_seq = int(str(msg_data.get("event", "")).strip() or "0")
+                            except ValueError:
+                                current_seq = 0
+                            if current_seq > 0:
+                                ejected = self._tracker.eject_stale_predecessors(machine_id, current_seq)
+                                for stale in ejected:
+                                    asyncio.create_task(ws_manager.broadcast({
+                                        "type": "EJECT",
+                                        "severity": "warning",
+                                        "message": f"Älterer Auftrag {stale['reference_id']} automatisch ausgeworfen (übersprungen durch END {current_seq})",
+                                        "machine_id": machine_id,
+                                        "data": {
+                                            **stale,
+                                            "machine_id": conn.protocol_id or machine_id,
+                                            "new_state": "EJECTED",
+                                            "trigger_sequence": current_seq,
+                                        },
+                                    }))
 
                     # STEP 2: fan out to dashboard clients and persistence.
                     # Both are fire-and-forget so a slow browser cannot back

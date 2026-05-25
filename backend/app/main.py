@@ -172,6 +172,7 @@ def events_recent(since: int = 0, limit: int = 200):
         "connected_machines": connection_manager.connected_machines,
         "pending_connections": connection_manager.pending_connections,
         "machine_modes": connection_manager.machine_modes,
+        "expected_barcodes": connection_manager.expected_barcodes,
     }
 
 
@@ -190,6 +191,30 @@ def set_machine_mode(machine_id: str, body: dict):
         return {"ok": False, "error": "unknown mode"}
     connection_manager.set_mode(machine_id, mode)
     return {"ok": True, "machine_id": machine_id, "mode": mode}
+
+
+@app.post("/api/v1/machines/{machine_id}/expected-barcodes")
+def set_expected_barcodes(machine_id: str, body: dict):
+    """Push the CW-Liste for a machine — the set of barcodes the cloud has
+    reserved for processing. ENQ scans for anything outside this set get
+    UNKNOWN-<event> (cmc-process-doc § 7 error case #2).
+
+    Body: {"barcodes": ["M001234", "M001235", ...]}  → set / replace
+          {"barcodes": null} or {}                    → clear (accept all)
+
+    In-memory only.
+    """
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "expected JSON object"}
+    barcodes = body.get("barcodes")
+    if barcodes is None:
+        connection_manager.set_expected_barcodes(machine_id, None)
+        return {"ok": True, "machine_id": machine_id, "count": 0}
+    if not isinstance(barcodes, list):
+        return {"ok": False, "error": "barcodes must be a list of strings"}
+    connection_manager.set_expected_barcodes(machine_id, [str(b) for b in barcodes])
+    stored = connection_manager.get_expected_barcodes(machine_id) or set()
+    return {"ok": True, "machine_id": machine_id, "count": len(stored)}
 
 
 @app.get("/")

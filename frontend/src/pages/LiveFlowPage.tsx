@@ -283,6 +283,7 @@ export default function LiveFlowPage() {
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
   const [pendingConnections, setPendingConnections] = useState(0);
   const [machineModes, setMachineModes] = useState<Record<string, string>>({});
+  const [expectedBarcodes, setExpectedBarcodes] = useState<Record<string, string[]>>({});
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -303,6 +304,7 @@ export default function LiveFlowPage() {
         if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
         if (typeof data.pending_connections === 'number') setPendingConnections(data.pending_connections);
         if (data.machine_modes && typeof data.machine_modes === 'object') setMachineModes(data.machine_modes);
+        if (data.expected_barcodes && typeof data.expected_barcodes === 'object') setExpectedBarcodes(data.expected_barcodes);
         if (Array.isArray(data.events) && data.events.length > 0) {
           setEvents((prev) => [...prev, ...data.events].slice(-2000));
         }
@@ -383,6 +385,24 @@ export default function LiveFlowPage() {
   const latestType = events[events.length - 1]?.type ?? null;
   const latestBarcode = allPackages.length > 0 ? (allPackages[allPackages.length - 1].barcode ?? null) : null;
 
+  const setMachineExpectedBarcodes = async (machineId: string, next: string[] | null) => {
+    setExpectedBarcodes((prev) => {
+      const copy = { ...prev };
+      if (next === null || next.length === 0) delete copy[machineId];
+      else copy[machineId] = next;
+      return copy;
+    });
+    try {
+      await fetch(`${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/expected-barcodes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barcodes: next }),
+      });
+    } catch (e) {
+      console.error('setMachineExpectedBarcodes failed', e);
+    }
+  };
+
   const setMachineMode = async (machineId: string, mode: 'multi_only' | null) => {
     // Optimistic local update so the toggle feels instant.
     setMachineModes((prev) => {
@@ -457,6 +477,10 @@ export default function LiveFlowPage() {
           connectedIds={connectedMachines}
           open={sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}
+          expectedBarcodes={selectedMachine ? (expectedBarcodes[selectedMachine] ?? []) : []}
+          onExpectedBarcodesChange={(next) => {
+            if (selectedMachine) setMachineExpectedBarcodes(selectedMachine, next);
+          }}
         />
         <MainPane
           machine={selectedMachine}
@@ -497,9 +521,28 @@ interface MachineSidebarProps {
   connectedIds: string[];
   open: boolean;
   onToggle: () => void;
+  expectedBarcodes: string[];
+  onExpectedBarcodesChange: (next: string[] | null) => void;
 }
 
-function MachineSidebar({ machines, stats, selected, onSelect, connectedIds, open, onToggle }: MachineSidebarProps) {
+function MachineSidebar({
+  machines, stats, selected, onSelect, connectedIds, open, onToggle,
+  expectedBarcodes, onExpectedBarcodesChange,
+}: MachineSidebarProps) {
+  const [draft, setDraft] = useState('');
+  const addBarcode = () => {
+    const v = draft.trim();
+    if (!v) return;
+    if (expectedBarcodes.includes(v)) {
+      setDraft('');
+      return;
+    }
+    onExpectedBarcodesChange([...expectedBarcodes, v]);
+    setDraft('');
+  };
+  const removeBarcode = (b: string) => {
+    onExpectedBarcodesChange(expectedBarcodes.filter((x) => x !== b));
+  };
   return (
     <aside style={{
       borderRight: '1px solid var(--clr-border)',
@@ -593,22 +636,92 @@ function MachineSidebar({ machines, stats, selected, onSelect, connectedIds, ope
       {open && (
         <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px dashed var(--clr-border)' }}>
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0 8px 6px', color: 'var(--clr-text-muted)',
           }}>
-            <Box size={12} />
-            <strong style={{ fontSize: 11, letterSpacing: 0.3, textTransform: 'uppercase' }}>
-              CW-Liste
-            </strong>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Box size={12} />
+              <strong style={{ fontSize: 11, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                CW-Liste
+              </strong>
+            </span>
+            <span style={{ fontSize: 10 }}>{expectedBarcodes.length}</span>
           </div>
-          <div style={{
-            fontSize: 11, color: 'var(--clr-text-muted)',
-            padding: '10px', textAlign: 'center',
-            border: '1px dashed var(--clr-border)', borderRadius: 6,
-            background: 'var(--clr-bg-subtle, #f8fafc)',
-          }}>
-            Bald verfügbar
-          </div>
+
+          {!selected ? (
+            <div style={{
+              fontSize: 11, color: 'var(--clr-text-muted)',
+              padding: '10px', textAlign: 'center',
+              border: '1px dashed var(--clr-border)', borderRadius: 6,
+              background: 'var(--clr-bg-subtle, #f8fafc)',
+            }}>
+              Maschine wählen
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addBarcode(); }}
+                  placeholder="Barcode + Enter"
+                  style={{
+                    flex: 1, minWidth: 0, padding: '4px 6px', fontSize: 11,
+                    fontFamily: 'var(--font-mono)',
+                    border: '1px solid var(--clr-border)', borderRadius: 4,
+                  }}
+                />
+                <button
+                  onClick={addBarcode}
+                  disabled={!draft.trim()}
+                  style={{
+                    padding: '4px 8px', fontSize: 11, fontWeight: 600,
+                    border: '1px solid var(--clr-border)', borderRadius: 4,
+                    background: 'var(--clr-bg-elevated, #fff)',
+                    cursor: draft.trim() ? 'pointer' : 'not-allowed',
+                    opacity: draft.trim() ? 1 : 0.5,
+                  }}
+                >+</button>
+              </div>
+              {expectedBarcodes.length === 0 ? (
+                <div style={{
+                  fontSize: 10, color: 'var(--clr-text-muted)',
+                  padding: '8px', textAlign: 'center',
+                  border: '1px dashed var(--clr-border)', borderRadius: 4,
+                }}>
+                  Leer — alle Barcodes werden angenommen
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 240, overflowY: 'auto' }}>
+                  {expectedBarcodes.map((b) => (
+                    <div key={b} style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '3px 6px', fontSize: 11,
+                      background: 'var(--clr-bg-subtle, #f8fafc)',
+                      borderRadius: 3,
+                    }}>
+                      <code style={{
+                        flex: 1, minWidth: 0,
+                        fontFamily: 'var(--font-mono)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{b}</code>
+                      <button
+                        onClick={() => removeBarcode(b)}
+                        title="Entfernen"
+                        style={{
+                          padding: 0, width: 18, height: 18,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: 'none', background: 'transparent',
+                          color: 'var(--clr-text-muted)', cursor: 'pointer',
+                        }}
+                      ><X size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </aside>

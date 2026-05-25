@@ -199,23 +199,29 @@ def build_response(
     *,
     is_duplicate: bool = False,
     multi_only: bool = False,
+    expected_barcodes: set[str] | None = None,
 ) -> dict:
     """Build a default CIS response for a CMC message type.
 
     Echoes back `event` and `reference_id` so the simulator recognises the
     correlation; without them it reports "reference is wrong".
 
-    ENQ-specific handling per cmc-process-doc Section 7:
-      - empty / "NOREAD" barcode  → ref `NOREAD-<event>`, result=0
-      - is_duplicate flag set     → ref `DUPLICATE-<event>`, result=0
-      - multi_only mode + pure-numeric barcode (single-order route) →
-        ref `SINGLE-REJECT-<event>`, result=0. Per cmc-process-doc § 3:
-        alphabetic / M-prefixed barcodes take the Multi-Order Path, pure-
-        numeric take the Single-Order Path. When the operator has flipped
-        a machine into multi-only mode, single-order scans must not be
-        accepted.
+    ENQ-specific handling per cmc-process-doc § 7:
+      - empty / "NOREAD" barcode             → ref `NOREAD-<event>`, result=0
+      - is_duplicate flag set                → ref `DUPLICATE-<event>`, result=0
+      - barcode not in CW-Liste (when set)   → ref `UNKNOWN-<event>`, result=0
+      - multi_only mode + pure-numeric       → ref `SINGLE-REJECT-<event>`, result=0
+      Per cmc-process-doc § 3: alphabetic / M-prefixed barcodes take the
+      Multi-Order Path, pure-numeric take the Single-Order Path. When the
+      operator has flipped a machine into multi-only mode, single-order
+      scans must not be accepted.
       All flag the scan as rejected without ever creating an active state
       downstream.
+
+    If `expected_barcodes` is None or empty, no CW-Liste check is performed
+    (every otherwise-valid barcode is accepted). Once a CW-Liste is pushed
+    in, every scan must match an entry — anything else gets the UNKNOWN
+    treatment per § 7 error case #2.
     """
     ref = data.get("reference_id", data.get("referenceId", ""))
     event = data.get("event", "")
@@ -224,14 +230,21 @@ def build_response(
     # ENQ classification
     rejection_reason: str | None = None
     is_noread = False
+    is_unknown = False
     is_single_reject = False
     if msg_type == "ENQ":
         barcode_str = str(barcode or "").strip().upper()
+        expected_upper = (
+            {b.upper() for b in expected_barcodes} if expected_barcodes else None
+        )
         if not barcode_str or barcode_str == "NOREAD":
             is_noread = True
             rejection_reason = "no_read"
         elif is_duplicate:
             rejection_reason = "already_active"
+        elif expected_upper is not None and barcode_str not in expected_upper:
+            is_unknown = True
+            rejection_reason = "unknown_barcode"
         elif multi_only and barcode_str.isdigit():
             is_single_reject = True
             rejection_reason = "multi_only_mode"
@@ -246,13 +259,15 @@ def build_response(
             ref = f"NOREAD-{event_digits}"
         elif is_duplicate:
             ref = f"DUPLICATE-{event_digits}"
+        elif is_unknown:
+            ref = f"UNKNOWN-{event_digits}"
         elif is_single_reject:
             ref = f"SINGLE-REJECT-{event_digits}"
         else:
             ref = f"ref{event_digits}"
 
     accept_enq = msg_type != "ENQ" or (
-        not is_noread and not is_duplicate and not is_single_reject
+        not is_noread and not is_duplicate and not is_unknown and not is_single_reject
     )
 
     responses = {
@@ -263,6 +278,7 @@ def build_response(
             "item_validated": accept_enq,
             "description": "" if accept_enq else (
                 "NOREAD" if is_noread
+                else "UNKNOWN_BARCODE" if is_unknown
                 else "SINGLE_REJECTED" if is_single_reject
                 else "DUPLICATE_SCAN"
             ),
