@@ -34,32 +34,29 @@ Der Preis: Railway ist **nicht** primär für Echtzeit-TCP-Workloads optimiert. 
 
 ---
 
-## 2. Warum ein einziger Backend-Prozess statt Cloud + lokaler Agent?
+## 2. Warum ein einziger Backend-Prozess?
 
-Die „saubere" Architektur, die in der CMC-Doku beschrieben wird, hat zwei Komponenten:
+Walspros Architektur hat ein Python-Skript auf einem lokalen PC, das zwischen Maschine und Cloud vermittelt:
 
 ```
 Maschine ↔ Lokaler Agent (PC neben der Maschine) ↔ Cloud ↔ Browser
 ```
 
-Wir machen stattdessen:
+Wir machen stattdessen alles in einem Backend:
 
 ```
-Maschine (Simulator) ↔ Railway-Backend (alles in einem) ↔ Browser
+Maschine (Simulator) ↔ Railway-Backend (HTTP + TCP in einem Prozess) ↔ Browser
 ```
 
-Drei Gründe für die Vereinfachung:
+Der „Agent" ist bei uns also kein separates Programm — das ist `backend/app/gateway/` (`connection.py` + `parser.py` + `websocket.py`), und das läuft im selben FastAPI-Prozess wie die HTTP-Endpoints. Die beiden Welten teilen sich denselben Speicher (Singleton `connection_manager`), tauschen Daten über In-Memory-Dicts.
 
-1. **Wir testen mit dem Simulator, nicht einer echten Maschine.** Der Simulator läuft auf einem normalen Windows-PC und kann ausgehend per TCP gegen jede Internet-Adresse wählen. Eine echte CMC in einer Fabrik-LAN könnte das wegen Firewalls oft nicht — da bräuchte sie einen LAN-lokalen TCP-Partner. Für unseren Use-Case fällt das Problem weg.
-2. **Ein Prozess heißt ein Deployment.** Kein Code-Sync zwischen Cloud und Agent, keine Versionsdiskrepanzen, kein Installer für den Operator. Push auf `main`, fertig.
-3. **Latenz spielt für Demo keine Rolle.** Der Simulator gibt uns 2 Sekunden Zeit für die ENQ-Antwort. Internet → Railway → Antwort braucht 50–200ms. Genug Puffer. In einer Produktions-Linie mit unstabilem Uplink wäre das anders.
+Warum geht das bei uns?
 
-Was uns die Vereinfachung kostet:
-- Wir können **keine echte CMC auf einer Fabrik-LAN** direkt anbinden ohne Workaround.
-- Bei Internet-Ausfall ist die ganze Linie tot, statt nur „kein Sync zur Cloud".
-- Customer-IT wird argwöhnisch, wenn Maschinen Outbound-TCP zu unbekannten Hosts machen sollen.
+1. **Der Simulator dialed raus**: er ist als TCP-Client konfiguriert (`CW1000 is Client`) und wählt aktiv ein Internet-Ziel — die Railway-Proxy-Adresse. Ein lokaler TCP-Partner ist nicht nötig.
+2. **Ein Prozess heißt ein Deployment**: keine Sync zwischen zwei Codebases, keine Versionsdiskrepanzen, kein Installer für den Operator. Push auf `main`, fertig.
+3. **Latenz reicht für Demos**: der Simulator gibt 2 Sekunden Toleranz für ENQ-Antworten. Internet → Railway → Antwort braucht 50–200ms. Genug Puffer.
 
-**Wenn der Demo zur Produktion wird, sollten wir den Agent rausziehen** — `app/gateway/connection.py` + `parser.py` + `websocket.py` lassen sich als eigenständiges Python-Programm verpacken (PyInstaller → `.exe`), das auf einem Mini-PC neben der Maschine läuft. Das Cloud-Backend bleibt im Wesentlichen wie es ist, nur ohne TCP-Listener.
+Was uns das im Vergleich zur Walspro-Architektur kostet: eine echte CMC auf einer abgeschotteten Fabrik-LAN könnte nicht ohne Weiteres rauswählen — Customer-Firewalls blockieren oft Outbound-TCP an unbekannte Hosts. Falls das je ein Thema wird, müsste man den Gateway-Teil als eigenständiges Programm rausziehen. Aber das ist eine theoretische Option, kein geplanter nächster Schritt — für unser Setup mit dem CMC-Simulator passt der integrierte Ansatz.
 
 ---
 
@@ -195,9 +192,9 @@ Für eine echte Pilot-Installation: Env-Var auf `true` setzen, Backend redeploye
 Wenn diese Demo zur ernsthaften Anwendung weiterwachsen soll, ist die Reihenfolge:
 
 1. **Persistenz an + Reset-Workflow definieren** (relativ einfach, ein Env-Var).
-2. **Lokalen Agent rausziehen** für den Fall, dass eine echte CMC ohne Internet-Outbound angebunden werden muss.
-3. **CW-Liste an ein WMS koppeln** (Pulpo, SAP, Weclapp — je nach Kunde) per Webhook oder Polling-Sync.
-4. **Operator-Aktionen** (Resolve/Retry/Delete) aus der UI vollständig auf den In-Memory-Tracker durchschalten, damit sie auch ohne Persistenz funktionieren.
-5. **Multi-Maschinen-Dashboard** — heute zeigt die LiveFlowPage immer nur eine Maschine. Eine Übersichtsseite mit allen wäre der nächste UX-Schritt.
+2. **CW-Liste an ein WMS koppeln** (Pulpo, SAP, Weclapp — je nach Kunde) per Webhook oder Polling-Sync.
+3. **Operator-Aktionen** (Resolve/Retry/Delete) aus der UI vollständig auf den In-Memory-Tracker durchschalten, damit sie auch ohne Persistenz funktionieren.
+4. **Multi-Maschinen-Dashboard** — heute zeigt die LiveFlowPage immer nur eine Maschine. Eine Übersichtsseite mit allen wäre der nächste UX-Schritt.
+5. **ACK-Mid-Flight-Reject** — Pakete am 3D-Sensor ausschleusen, wenn der Operator nachträglich Multi-Only einschaltet während Single-Order schon auf Band ist.
 
-Punkte 1–3 sind die Voraussetzung für eine Pilot-Installation bei einem echten Kunden. 4 und 5 sind UX-Politur.
+Punkte 1 und 2 sind die Voraussetzung für eine Pilot-Installation bei einem echten Kunden. 3, 4 und 5 sind UX-Politur.

@@ -621,33 +621,23 @@ Simulator (Windows-Anwendung von CMC) verbindet sich gegen `localhost:15001`.
 
 ## 9. Bekannte Einschränkungen
 
-### 9.1 Architektur (für echte Maschine)
+### 9.1 Persistenz aktuell aus
 
-Aktuell macht ein FastAPI-Prozess auf Railway sowohl HTTP als auch TCP. Das funktioniert für den Demo-Simulator, der ausgehend ins Internet wählt. Für eine echte CMC in einer Fabrikhalle wäre der saubere Weg ein **lokaler Agent**, der den TCP-Teil übernimmt und mit dem Cloud-Backend per HTTPS kommuniziert. Gründe:
+`EVENTS_PERSIST_ENABLED=false` ist der Default. Damit fehlen historische Daten in `OrdersPage`, `AuditPage`, `AnalyticsPage` — die zeigen nur leere Tabellen. Solange wir mit dem Simulator testen ist das egal, für eine erste echte Pilot-Installation müsste der Schalter umgelegt werden.
 
-- Customer-Firewalls erlauben oft kein Outbound-TCP an Railway-Proxy-IPs.
-- TCP-Latenz Internet ↔ Maschine kann bei schlechtem Uplink über die 2-Sekunden-Toleranz des Simulators rutschen.
-- Resilienz: bei Internet-Ausfall steht die Maschine — ein lokaler Agent kann puffern.
-
-Der TCP-Code (`gateway/connection.py` + `parser.py` + `websocket.py`) ist so geschrieben, dass er als eigenständiges Python-Programm rausgezogen werden kann.
-
-### 9.2 Persistenz aktuell aus
-
-`EVENTS_PERSIST_ENABLED=false` ist der Default. Damit fehlen historische Daten in `OrdersPage`, `AuditPage`, `AnalyticsPage` — die zeigen nur leere Tabellen.
-
-### 9.3 Multi-Maschinen-UX
+### 9.2 Multi-Maschinen-UX
 
 Wenn mehrere Maschinen gleichzeitig verbunden sind, zeigt die Sidebar alle. Es gibt aber noch keine Maschinen-übergreifenden KPIs auf der LiveFlowPage — die Stats sind immer pro selektierter Maschine.
 
-### 9.4 ACK-Mid-Flight-Reject
+### 9.3 ACK-Mid-Flight-Reject
 
 Aktuell ist nur ENQ-Reject implementiert. Wenn ein Operator nachträglich Multi-Only einschaltet, während ein Single-Order-Paket schon auf dem Band ist, könnten wir dieses am ACK ausschleusen (`good=0, bad=1` in der ACK-Antwort). Das ist noch nicht gebaut.
 
-### 9.5 CW-Liste pflegt sich nicht selbst
+### 9.4 CW-Liste pflegt sich nicht selbst
 
 Die CW-Liste wird manuell vom Operator gepflegt. Eine Anbindung an ein WMS-System (Pulpo, SAP, Weclapp etc.), das die Liste automatisch synchronisiert, fehlt noch.
 
-### 9.6 Resolve/Retry/Delete schreiben in DB
+### 9.5 Resolve/Retry/Delete schreiben in DB
 
 Die operator-seitigen Aktionen (`POST /packages/{ref}/resolve` etc.) greifen auf die `OrderState`-Tabelle zu. Mit Persistenz aus laufen sie ins Leere. Sie müssen entweder die In-Memory-Datenstruktur des Trackers manipulieren oder Persistenz erfordern.
 
@@ -680,16 +670,6 @@ Die operator-seitigen Aktionen (`POST /packages/{ref}/resolve` etc.) greifen auf
 2. Router in `main.py` einhängen: `app.include_router(reports_router, prefix="/api/v1")`.
 3. Optional: DB-Migration via Alembic.
 4. Frontend: `services/api.ts` aufrufen, neue Page oder Komponente in `pages/`.
-
-### 10.4 Lokalen Agent rausziehen (Produktions-Reife)
-
-Plan, kurz skizziert:
-
-1. Kopie von `gateway/connection.py` + `parser.py` + `websocket.py` in einen neuen Ordner `agent/`.
-2. Statt `ws_manager.broadcast` lokal → HTTPS-POST an `<cloud>/api/v1/agent/events`.
-3. Statt In-Memory-Settings → Long-Polling/Subscribe auf `<cloud>/api/v1/agent/config?machine_id=...`, die liefert Modus + CW-Liste.
-4. PyInstaller-Build → `agent.exe` für Windows-PCs.
-5. Backend-Endpoints im Cloud-Service ergänzen.
 
 ---
 
