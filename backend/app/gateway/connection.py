@@ -150,11 +150,15 @@ class ConnectionManager:
         # a machine is in multi_only mode, ENQ rejects pure-numeric (single-
         # order) barcodes at the scanner. See cmc-process-doc § 3.
         self._machine_modes: dict[str, str] = {}
-        # CW-Liste: barcodes the cloud has reserved for this machine.
-        # Any ENQ barcode NOT in the set is rejected with UNKNOWN-<event>
-        # per cmc-process-doc § 7, error case #2. Empty set = no filter
-        # (accept everything). None entry = same as empty (no filter).
-        self._expected_barcodes: dict[str, set[str]] = {}
+        # CW-Listen: pro Maschine mehrere benannte Listen (z.B. CW1..CW14),
+        # jede mit eigenem Aktiv-Flag und einer Barcode-Menge. Aus Pulpo
+        # gefütterte „Wellen". Eine Bestellung wird angenommen, sobald ihr
+        # Barcode in mindestens einer AKTIVEN Liste auftaucht. Die erste
+        # matchende Liste wird der Bestellung als Herkunft zugeordnet und
+        # an die Broadcasts gehängt, damit die UI sie spaltenweise filtern
+        # und anzeigen kann. Wenn KEINE Liste aktiv ist → kein Filter
+        # (jeder Scan kommt durch, abgesehen von NOREAD/Dup/Multi-Only).
+        self._cw_lists: dict[str, dict[str, dict]] = {}
 
     def get_mode(self, protocol_id: str) -> str | None:
         return self._machine_modes.get(protocol_id)
@@ -169,18 +173,68 @@ class ConnectionManager:
     def machine_modes(self) -> dict[str, str]:
         return dict(self._machine_modes)
 
-    def get_expected_barcodes(self, protocol_id: str) -> set[str] | None:
-        return self._expected_barcodes.get(protocol_id)
+    # ── CW-Listen ─────────────────────────────────────────────────────────
 
-    def set_expected_barcodes(self, protocol_id: str, barcodes: list[str] | None) -> None:
-        if barcodes is None:
-            self._expected_barcodes.pop(protocol_id, None)
-        else:
-            self._expected_barcodes[protocol_id] = {b.strip() for b in barcodes if b and b.strip()}
+    def get_cw_lists(self, protocol_id: str) -> dict[str, dict]:
+        return self._cw_lists.get(protocol_id, {})
+
+    def get_active_cw_lists(self, protocol_id: str) -> list[tuple[str, set[str]]]:
+        """Returns aktive Listen als [(name, {barcodes...}), ...] in
+        insertion order. Erste Liste in der Reihenfolge gewinnt bei
+        Mehrfach-Matches.
+        """
+        out: list[tuple[str, set[str]]] = []
+        for name, lst in self._cw_lists.get(protocol_id, {}).items():
+            if lst.get("active"):
+                out.append((name, lst.get("barcodes", set())))
+        return out
+
+    def find_cw_list_for_barcode(self, protocol_id: str, barcode: str) -> str | None:
+        """Welche aktive Liste enthält diesen Barcode? Erste Match gewinnt.
+        Returns None wenn keine Liste matched oder keine aktiv ist.
+        """
+        if not barcode:
+            return None
+        for name, barcodes in self.get_active_cw_lists(protocol_id):
+            if barcode in barcodes:
+                return name
+        return None
+
+    def upsert_cw_list(
+        self, protocol_id: str, name: str,
+        *, barcodes: list[str] | None = None, active: bool | None = None,
+    ) -> dict:
+        per_machine = self._cw_lists.setdefault(protocol_id, {})
+        existing = per_machine.get(name) or {"active": False, "barcodes": set()}
+        if barcodes is not None:
+            existing["barcodes"] = {b.strip() for b in barcodes if b and b.strip()}
+        if active is not None:
+            existing["active"] = bool(active)
+        per_machine[name] = existing
+        return self._serialize_cw_list(name, existing)
+
+    def delete_cw_list(self, protocol_id: str, name: str) -> bool:
+        per_machine = self._cw_lists.get(protocol_id, {})
+        return per_machine.pop(name, None) is not None
+
+    @staticmethod
+    def _serialize_cw_list(name: str, lst: dict) -> dict:
+        return {
+            "name": name,
+            "active": bool(lst.get("active")),
+            "barcodes": sorted(lst.get("barcodes", set())),
+            "count": len(lst.get("barcodes", set())),
+        }
 
     @property
-    def expected_barcodes(self) -> dict[str, list[str]]:
-        return {mid: sorted(s) for mid, s in self._expected_barcodes.items()}
+    def cw_lists(self) -> dict[str, list[dict]]:
+        """For broadcast in /events/recent — pro Maschine eine Liste von
+        Listen-Objekten in Insertion-Order (Reihenfolge der Erst-Anlage).
+        """
+        return {
+            mid: [self._serialize_cw_list(n, l) for n, l in lists.items()]
+            for mid, lists in self._cw_lists.items()
+        }
 
     @property
     def connected_machines(self) -> list[str]:
@@ -321,15 +375,15 @@ class ConnectionManager:
                                 conn.protocol_id is not None
                                 and self._machine_modes.get(conn.protocol_id) == "multi_only"
                             )
-                            expected = (
-                                self._expected_barcodes.get(conn.protocol_id)
-                                if conn.protocol_id else None
-                            ) or None
+                            active_lists = (
+                                self.get_active_cw_lists(conn.protocol_id)
+                                if conn.protocol_id else []
+                            )
                             response = build_response(
                                 msg_type, msg_data,
                                 is_duplicate=is_duplicate,
                                 multi_only=multi_only,
-                                expected_barcodes=expected,
+                                active_cw_lists=active_lists,
                             )
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
@@ -372,6 +426,12 @@ class ConnectionManager:
                             rejection = response.get("rejection_reason")
                             if rejection:
                                 msg_data["rejection_reason"] = rejection
+                            # Welche CW-Liste hat den Scan „gefangen"? Wird
+                            # an die Bestellung gehängt, damit die Tabelle
+                            # die Spalte rendern und filtern kann.
+                            matched_list = response.get("cw_list")
+                            if matched_list:
+                                msg_data["cw_list"] = matched_list
 
                         # Keep the in-memory tracker in sync with the latest
                         # event so future ENQ duplicate-checks see the truth.

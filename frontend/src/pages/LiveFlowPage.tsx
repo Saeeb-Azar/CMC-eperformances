@@ -185,7 +185,15 @@ interface PackageRow {
   manualBy?: string;
   rejectionReason?: string;
   rejectionStation?: 'scanner' | 'sensor' | 'labeler' | 'exit';
+  cwList?: string;
   events: RawEvent[];
+}
+
+interface CWList {
+  name: string;
+  active: boolean;
+  barcodes: string[];
+  count: number;
 }
 
 const REJECTION_LABEL: Record<string, string> = {
@@ -247,6 +255,11 @@ function aggregatePackages(events: RawEvent[]): PackageRow[] {
       pkg.manualReason = getStr(ev, 'reason');
       pkg.manualBy = getStr(ev, 'resolved_by');
     }
+
+    // CW-Liste, durch die der Scan akzeptiert wurde, kommt im ENQ-Payload
+    // vom Gateway mit. Wir nehmen die erste, die wir sehen — danach bleibt
+    // sie konstant für das Paket.
+    pkg.cwList ??= getStr(ev, 'cw_list');
 
     // Pick up rejection reasons emitted by the gateway, so the row can
     // show *why* the order ended up in EJECTED (not just that it did).
@@ -311,10 +324,12 @@ export default function LiveFlowPage() {
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
   const [pendingConnections, setPendingConnections] = useState(0);
   const [machineModes, setMachineModes] = useState<Record<string, string>>({});
-  const [expectedBarcodes, setExpectedBarcodes] = useState<Record<string, string[]>>({});
+  const [cwLists, setCwLists] = useState<Record<string, CWList[]>>({});
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  // Filter auf Tabelle: nur Pakete dieser CW-Liste anzeigen (oder alle).
+  const [cwListFilter, setCwListFilter] = useState<string | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sinceRef = useRef(0);
@@ -332,7 +347,7 @@ export default function LiveFlowPage() {
         if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
         if (typeof data.pending_connections === 'number') setPendingConnections(data.pending_connections);
         if (data.machine_modes && typeof data.machine_modes === 'object') setMachineModes(data.machine_modes);
-        if (data.expected_barcodes && typeof data.expected_barcodes === 'object') setExpectedBarcodes(data.expected_barcodes);
+        if (data.cw_lists && typeof data.cw_lists === 'object') setCwLists(data.cw_lists);
         if (Array.isArray(data.events) && data.events.length > 0) {
           setEvents((prev) => [...prev, ...data.events].slice(-2000));
         }
@@ -369,18 +384,19 @@ export default function LiveFlowPage() {
     if (!selectedMachine && machineList.length > 0) setSelectedMachine(machineList[0]);
   }, [machineList, selectedMachine]);
 
-  // Packages for the focused machine, filtered by search.
+  // Packages for the focused machine, filtered by search and CW-Liste.
   const packages = useMemo(() => {
-    const list = selectedMachine
+    let list = selectedMachine
       ? allPackages.filter((p) => p.machine_id === selectedMachine)
       : allPackages;
+    if (cwListFilter) list = list.filter((p) => p.cwList === cwListFilter);
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) =>
       p.ref.toLowerCase().includes(q) ||
       (p.barcode ?? '').toLowerCase().includes(q),
     );
-  }, [allPackages, selectedMachine, search]);
+  }, [allPackages, selectedMachine, search, cwListFilter]);
 
   // Bucket counts for the cards
   const counts = useMemo(() => {
@@ -413,21 +429,53 @@ export default function LiveFlowPage() {
   const latestType = events[events.length - 1]?.type ?? null;
   const latestBarcode = allPackages.length > 0 ? (allPackages[allPackages.length - 1].barcode ?? null) : null;
 
-  const setMachineExpectedBarcodes = async (machineId: string, next: string[] | null) => {
-    setExpectedBarcodes((prev) => {
-      const copy = { ...prev };
-      if (next === null || next.length === 0) delete copy[machineId];
-      else copy[machineId] = next;
-      return copy;
+  const upsertCwList = async (
+    machineId: string,
+    name: string,
+    patch: { active?: boolean; barcodes?: string[] },
+  ) => {
+    // Optimistisch lokal anwenden
+    setCwLists((prev) => {
+      const list = prev[machineId] ?? [];
+      const idx = list.findIndex((l) => l.name === name);
+      const current: CWList = idx >= 0 ? list[idx] : { name, active: false, barcodes: [], count: 0 };
+      const merged: CWList = {
+        name,
+        active: patch.active ?? current.active,
+        barcodes: patch.barcodes ?? current.barcodes,
+        count: (patch.barcodes ?? current.barcodes).length,
+      };
+      const next = [...list];
+      if (idx >= 0) next[idx] = merged;
+      else next.push(merged);
+      return { ...prev, [machineId]: next };
     });
     try {
-      await fetch(`${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/expected-barcodes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ barcodes: next }),
-      });
+      await fetch(
+        `${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/cw-lists/${encodeURIComponent(name)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        },
+      );
     } catch (e) {
-      console.error('setMachineExpectedBarcodes failed', e);
+      console.error('upsertCwList failed', e);
+    }
+  };
+
+  const deleteCwList = async (machineId: string, name: string) => {
+    setCwLists((prev) => {
+      const list = prev[machineId] ?? [];
+      return { ...prev, [machineId]: list.filter((l) => l.name !== name) };
+    });
+    try {
+      await fetch(
+        `${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/cw-lists/${encodeURIComponent(name)}`,
+        { method: 'DELETE' },
+      );
+    } catch (e) {
+      console.error('deleteCwList failed', e);
     }
   };
 
@@ -505,10 +553,15 @@ export default function LiveFlowPage() {
           connectedIds={connectedMachines}
           open={sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}
-          expectedBarcodes={selectedMachine ? (expectedBarcodes[selectedMachine] ?? []) : []}
-          onExpectedBarcodesChange={(next) => {
-            if (selectedMachine) setMachineExpectedBarcodes(selectedMachine, next);
+          cwLists={selectedMachine ? (cwLists[selectedMachine] ?? []) : []}
+          onUpsertCwList={(name, patch) => {
+            if (selectedMachine) upsertCwList(selectedMachine, name, patch);
           }}
+          onDeleteCwList={(name) => {
+            if (selectedMachine) deleteCwList(selectedMachine, name);
+          }}
+          cwListFilter={cwListFilter}
+          onCwListFilterChange={setCwListFilter}
         />
         <MainPane
           machine={selectedMachine}
@@ -549,27 +602,26 @@ interface MachineSidebarProps {
   connectedIds: string[];
   open: boolean;
   onToggle: () => void;
-  expectedBarcodes: string[];
-  onExpectedBarcodesChange: (next: string[] | null) => void;
+  cwLists: CWList[];
+  onUpsertCwList: (name: string, patch: { active?: boolean; barcodes?: string[] }) => void;
+  onDeleteCwList: (name: string) => void;
+  cwListFilter: string | null;
+  onCwListFilterChange: (next: string | null) => void;
 }
 
 function MachineSidebar({
   machines, stats, selected, onSelect, connectedIds, open, onToggle,
-  expectedBarcodes, onExpectedBarcodesChange,
+  cwLists, onUpsertCwList, onDeleteCwList, cwListFilter, onCwListFilterChange,
 }: MachineSidebarProps) {
-  const [draft, setDraft] = useState('');
-  const addBarcode = () => {
-    const v = draft.trim();
-    if (!v) return;
-    if (expectedBarcodes.includes(v)) {
-      setDraft('');
-      return;
-    }
-    onExpectedBarcodesChange([...expectedBarcodes, v]);
-    setDraft('');
-  };
-  const removeBarcode = (b: string) => {
-    onExpectedBarcodesChange(expectedBarcodes.filter((x) => x !== b));
+  const [newListName, setNewListName] = useState('');
+  const [editingList, setEditingList] = useState<string | null>(null);
+
+  const createList = () => {
+    const v = newListName.trim();
+    if (!v || cwLists.some((l) => l.name === v)) return;
+    onUpsertCwList(v, { active: false, barcodes: [] });
+    setNewListName('');
+    setEditingList(v);
   };
   return (
     <aside style={{
@@ -670,10 +722,10 @@ function MachineSidebar({
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Box size={12} />
               <strong style={{ fontSize: 11, letterSpacing: 0.3, textTransform: 'uppercase' }}>
-                CW-Liste
+                CW-Listen
               </strong>
             </span>
-            <span style={{ fontSize: 10 }}>{expectedBarcodes.length}</span>
+            <span style={{ fontSize: 10 }}>{cwLists.length}</span>
           </div>
 
           {!selected ? (
@@ -690,69 +742,289 @@ function MachineSidebar({
               <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
                 <input
                   type="text"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addBarcode(); }}
-                  placeholder="Barcode + Enter"
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') createList(); }}
+                  placeholder="Neue Liste (z.B. CW1)"
                   style={{
                     flex: 1, minWidth: 0, padding: '4px 6px', fontSize: 11,
-                    fontFamily: 'var(--font-mono)',
                     border: '1px solid var(--clr-border)', borderRadius: 4,
                   }}
                 />
                 <button
-                  onClick={addBarcode}
-                  disabled={!draft.trim()}
+                  onClick={createList}
+                  disabled={!newListName.trim()}
                   style={{
                     padding: '4px 8px', fontSize: 11, fontWeight: 600,
                     border: '1px solid var(--clr-border)', borderRadius: 4,
                     background: 'var(--clr-bg-elevated, #fff)',
-                    cursor: draft.trim() ? 'pointer' : 'not-allowed',
-                    opacity: draft.trim() ? 1 : 0.5,
+                    cursor: newListName.trim() ? 'pointer' : 'not-allowed',
+                    opacity: newListName.trim() ? 1 : 0.5,
                   }}
                 >+</button>
               </div>
-              {expectedBarcodes.length === 0 ? (
+              {cwLists.length === 0 ? (
                 <div style={{
                   fontSize: 10, color: 'var(--clr-text-muted)',
                   padding: '8px', textAlign: 'center',
                   border: '1px dashed var(--clr-border)', borderRadius: 4,
                 }}>
-                  Leer — alle Barcodes werden angenommen
+                  Keine Listen — alle Scans gehen durch
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 240, overflowY: 'auto' }}>
-                  {expectedBarcodes.map((b) => (
-                    <div key={b} style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      padding: '3px 6px', fontSize: 11,
-                      background: 'var(--clr-bg-subtle, #f8fafc)',
-                      borderRadius: 3,
-                    }}>
-                      <code style={{
-                        flex: 1, minWidth: 0,
-                        fontFamily: 'var(--font-mono)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{b}</code>
-                      <button
-                        onClick={() => removeBarcode(b)}
-                        title="Entfernen"
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 360, overflowY: 'auto' }}>
+                  {cwLists.map((lst) => {
+                    const isFiltered = cwListFilter === lst.name;
+                    return (
+                      <div
+                        key={lst.name}
                         style={{
-                          padding: 0, width: 18, height: 18,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          border: 'none', background: 'transparent',
-                          color: 'var(--clr-text-muted)', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '6px 8px',
+                          border: `1px solid ${lst.active ? '#3b82f6' : 'var(--clr-border)'}`,
+                          borderRadius: 4,
+                          background: lst.active
+                            ? '#eff6ff'
+                            : isFiltered ? 'var(--clr-bg-subtle, #f4f6fa)' : 'transparent',
                         }}
-                      ><X size={11} /></button>
-                    </div>
-                  ))}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={lst.active}
+                          onChange={(e) => onUpsertCwList(lst.name, { active: e.target.checked })}
+                          title={lst.active ? 'Liste aktiv — wird bei ENQ geprüft' : 'Inaktiv — wird nicht geprüft'}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <button
+                          onClick={() => setEditingList(lst.name)}
+                          style={{
+                            flex: 1, minWidth: 0, textAlign: 'left',
+                            padding: 0, border: 'none', background: 'transparent',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontWeight: 600 }}>{lst.name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>
+                            {lst.count} {lst.count === 1 ? 'Barcode' : 'Barcodes'}
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => onCwListFilterChange(isFiltered ? null : lst.name)}
+                          title={isFiltered ? 'Filter aus' : 'Tabelle nach dieser Liste filtern'}
+                          style={{
+                            padding: '2px 6px', fontSize: 9, fontWeight: 600,
+                            border: `1px solid ${isFiltered ? '#3b82f6' : 'var(--clr-border)'}`,
+                            background: isFiltered ? '#3b82f6' : 'transparent',
+                            color: isFiltered ? '#fff' : 'var(--clr-text-muted)',
+                            borderRadius: 3, cursor: 'pointer',
+                          }}
+                        >
+                          <Filter size={10} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
+              )}
+              {cwListFilter && (
+                <button
+                  onClick={() => onCwListFilterChange(null)}
+                  style={{
+                    width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 10,
+                    border: '1px dashed var(--clr-border)', borderRadius: 4,
+                    background: 'transparent', cursor: 'pointer',
+                    color: 'var(--clr-text-muted)',
+                  }}
+                >
+                  Filter „{cwListFilter}" deaktivieren
+                </button>
               )}
             </>
           )}
         </div>
       )}
+
+      {editingList && (() => {
+        const lst = cwLists.find((l) => l.name === editingList);
+        if (!lst) return null;
+        return (
+          <CWListModal
+            list={lst}
+            onClose={() => setEditingList(null)}
+            onSave={(barcodes) => onUpsertCwList(editingList, { barcodes })}
+            onDelete={() => { onDeleteCwList(editingList); setEditingList(null); }}
+          />
+        );
+      })()}
     </aside>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// CW-Listen Editor-Modal
+// ────────────────────────────────────────────────────────────────────────
+
+interface CWListModalProps {
+  list: CWList;
+  onClose: () => void;
+  onSave: (barcodes: string[]) => void;
+  onDelete: () => void;
+}
+
+function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
+  const [draft, setDraft] = useState('');
+  const [barcodes, setBarcodes] = useState<string[]>(list.barcodes);
+
+  const add = () => {
+    const v = draft.trim();
+    if (!v || barcodes.includes(v)) { setDraft(''); return; }
+    const next = [...barcodes, v];
+    setBarcodes(next);
+    onSave(next);
+    setDraft('');
+  };
+  const remove = (b: string) => {
+    const next = barcodes.filter((x) => x !== b);
+    setBarcodes(next);
+    onSave(next);
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 100,
+        background: 'rgba(15, 23, 42, 0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 520,
+          background: 'var(--clr-bg-elevated, #fff)',
+          borderRadius: 8,
+          boxShadow: '0 20px 50px rgba(15, 23, 42, 0.3)',
+          display: 'flex', flexDirection: 'column',
+          maxHeight: '80vh',
+        }}
+      >
+        <div style={{
+          padding: '14px 18px',
+          borderBottom: '1px solid var(--clr-border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{list.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
+              {barcodes.length} {barcodes.length === 1 ? 'Barcode' : 'Barcodes'}
+              {list.active && <span style={{ marginLeft: 8, color: '#1d4ed8', fontWeight: 600 }}>· AKTIV</span>}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              padding: 4, border: 'none', background: 'transparent', cursor: 'pointer',
+            }}
+          ><X size={16} /></button>
+        </div>
+
+        <div style={{ padding: '14px 18px', display: 'flex', gap: 6 }}>
+          <input
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+            placeholder="Barcode + Enter"
+            autoFocus
+            style={{
+              flex: 1, padding: '6px 10px', fontSize: 13,
+              fontFamily: 'var(--font-mono)',
+              border: '1px solid var(--clr-border)', borderRadius: 6,
+            }}
+          />
+          <button
+            onClick={add}
+            disabled={!draft.trim()}
+            style={{
+              padding: '6px 14px', fontSize: 13, fontWeight: 600,
+              border: '1px solid var(--clr-border)', borderRadius: 6,
+              background: 'var(--clr-bg-subtle, #f4f6fa)',
+              cursor: draft.trim() ? 'pointer' : 'not-allowed',
+              opacity: draft.trim() ? 1 : 0.5,
+            }}
+          >Hinzufügen</button>
+        </div>
+
+        <div style={{
+          padding: '0 18px 14px', flex: 1, overflowY: 'auto',
+          display: 'flex', flexDirection: 'column', gap: 3,
+        }}>
+          {barcodes.length === 0 ? (
+            <div style={{
+              fontSize: 12, color: 'var(--clr-text-muted)',
+              padding: '20px', textAlign: 'center',
+              border: '1px dashed var(--clr-border)', borderRadius: 6,
+            }}>
+              Noch keine Barcodes
+            </div>
+          ) : (
+            barcodes.map((b) => (
+              <div key={b} style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 10px', fontSize: 12,
+                background: 'var(--clr-bg-subtle, #f8fafc)',
+                borderRadius: 4,
+              }}>
+                <code style={{
+                  flex: 1, minWidth: 0,
+                  fontFamily: 'var(--font-mono)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{b}</code>
+                <button
+                  onClick={() => remove(b)}
+                  title="Entfernen"
+                  style={{
+                    padding: 2, border: 'none', background: 'transparent',
+                    color: 'var(--clr-text-muted)', cursor: 'pointer',
+                  }}
+                ><X size={13} /></button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{
+          padding: '12px 18px',
+          borderTop: '1px solid var(--clr-border)',
+          display: 'flex', justifyContent: 'space-between',
+        }}>
+          <button
+            onClick={() => {
+              if (window.confirm(`Liste „${list.name}" wirklich löschen?`)) onDelete();
+            }}
+            style={{
+              padding: '6px 12px', fontSize: 12, fontWeight: 600,
+              border: '1px solid #fecaca', background: '#fef2f2',
+              color: '#991b1b', borderRadius: 6, cursor: 'pointer',
+            }}
+          >
+            <Trash2 size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+            Löschen
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '6px 14px', fontSize: 12, fontWeight: 600,
+              border: '1px solid var(--clr-border)',
+              background: 'var(--clr-bg-elevated, #fff)',
+              borderRadius: 6, cursor: 'pointer',
+            }}
+          >Schließen</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -881,6 +1153,7 @@ function MainPane(p: MainPaneProps) {
               <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
                 <Th>Position</Th>
                 <Th>Typ</Th>
+                <Th>CW-Liste</Th>
                 <Th>Barcode / ID</Th>
                 <Th>Referenz</Th>
                 <Th>Status</Th>
@@ -966,6 +1239,18 @@ function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
           background: type === 'M' ? '#ede9fe' : '#dbeafe',
           color:      type === 'M' ? '#5b21b6' : '#1e40af',
         }}>{type}</span>
+      </Td>
+      <Td>
+        {pkg.cwList ? (
+          <span style={{
+            display: 'inline-block', padding: '2px 6px',
+            fontSize: 10, fontWeight: 600, letterSpacing: 0.3,
+            background: '#eff6ff', color: '#1d4ed8',
+            border: '1px solid #bfdbfe', borderRadius: 3,
+          }}>{pkg.cwList}</span>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>—</span>
+        )}
       </Td>
       <Td><code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pkg.barcode ?? '—'}</code></Td>
       <Td><code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pkg.ref}</code></Td>

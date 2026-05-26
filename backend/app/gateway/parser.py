@@ -199,29 +199,26 @@ def build_response(
     *,
     is_duplicate: bool = False,
     multi_only: bool = False,
-    expected_barcodes: set[str] | None = None,
+    active_cw_lists: list[tuple[str, set[str]]] | None = None,
 ) -> dict:
     """Build a default CIS response for a CMC message type.
 
     Echoes back `event` and `reference_id` so the simulator recognises the
     correlation; without them it reports "reference is wrong".
 
-    ENQ-specific handling per cmc-process-doc § 7:
-      - empty / "NOREAD" barcode             → ref `NOREAD-<event>`, result=0
-      - is_duplicate flag set                → ref `DUPLICATE-<event>`, result=0
-      - barcode not in CW-Liste (when set)   → ref `UNKNOWN-<event>`, result=0
-      - multi_only mode + pure-numeric       → ref `SINGLE-REJECT-<event>`, result=0
-      Per cmc-process-doc § 3: alphabetic / M-prefixed barcodes take the
-      Multi-Order Path, pure-numeric take the Single-Order Path. When the
-      operator has flipped a machine into multi-only mode, single-order
-      scans must not be accepted.
-      All flag the scan as rejected without ever creating an active state
-      downstream.
+    ENQ-specific handling:
+      - empty / "NOREAD" barcode                    → ref `NOREAD-<event>`,        result=0
+      - is_duplicate flag set                       → ref `DUPLICATE-<event>`,     result=0
+      - aktive CW-Listen gepflegt, kein Match darin → ref `UNKNOWN-<event>`,       result=0
+      - multi_only mode + pure-numeric              → ref `SINGLE-REJECT-<event>`, result=0
+      Wenn der Scan akzeptiert wird und durch eine aktive CW-Liste
+      „gefangen" wurde, wird ihr Name als `cw_list` im Response-Dict
+      mitgegeben — der Read-Loop hängt das ans Broadcast-Payload und die
+      UI rendert/filtert danach.
 
-    If `expected_barcodes` is None or empty, no CW-Liste check is performed
-    (every otherwise-valid barcode is accepted). Once a CW-Liste is pushed
-    in, every scan must match an entry — anything else gets the UNKNOWN
-    treatment per § 7 error case #2.
+      `active_cw_lists` ist eine Liste von (name, barcodes)-Tupeln in
+      Wirkungs-Reihenfolge. Wenn die Liste leer / None ist, wird kein
+      Listen-Filter angewandt — Scans gehen durch wie ohne Listen.
     """
     ref = data.get("reference_id", data.get("referenceId", ""))
     event = data.get("event", "")
@@ -229,25 +226,34 @@ def build_response(
 
     # ENQ classification
     rejection_reason: str | None = None
+    matched_cw_list: str | None = None
     is_noread = False
     is_unknown = False
     is_single_reject = False
     if msg_type == "ENQ":
-        barcode_str = str(barcode or "").strip().upper()
-        expected_upper = (
-            {b.upper() for b in expected_barcodes} if expected_barcodes else None
-        )
-        if not barcode_str or barcode_str == "NOREAD":
+        barcode_str = str(barcode or "").strip()
+        barcode_upper = barcode_str.upper()
+        has_active_lists = bool(active_cw_lists)
+        if not barcode_str or barcode_upper == "NOREAD":
             is_noread = True
             rejection_reason = "no_read"
         elif is_duplicate:
             rejection_reason = "already_active"
-        elif expected_upper is not None and barcode_str not in expected_upper:
-            is_unknown = True
-            rejection_reason = "unknown_barcode"
-        elif multi_only and barcode_str.isdigit():
-            is_single_reject = True
-            rejection_reason = "multi_only_mode"
+        elif has_active_lists:
+            for name, codes in (active_cw_lists or []):
+                # Listen-Match case-insensitiv, damit Tippvarianten von
+                # Operator-/Pulpo-Eingaben matchen.
+                upper_codes = {c.upper() for c in codes}
+                if barcode_upper in upper_codes:
+                    matched_cw_list = name
+                    break
+            if matched_cw_list is None:
+                is_unknown = True
+                rejection_reason = "unknown_barcode"
+        if not (is_noread or is_duplicate or is_unknown):
+            if multi_only and barcode_str.isdigit():
+                is_single_reject = True
+                rejection_reason = "multi_only_mode"
 
     if msg_type == "ENQ" and not ref:
         event_num = str(event or "").strip().lstrip("0")
@@ -291,9 +297,10 @@ def build_response(
             # Feeders bitmask (8 chars, one per carton-forming feeder).
             # "01000000" = use feeder #2, the default on the simulator.
             "feeders": "01000000",
-            # Internal hint — stripped before wire serialisation, used by
+            # Internal hints — stripped before wire serialisation, used by
             # connection.py to annotate the broadcast event for the dashboard.
             "rejection_reason": rejection_reason,
+            "cw_list": matched_cw_list,
         },
         "IND": {"event": event, "reference_id": ref, "result": 1},
         "ACK": {"event": event, "reference_id": ref, "result": 1, "item_validated": True, "flag": "PROCESSABLE"},
