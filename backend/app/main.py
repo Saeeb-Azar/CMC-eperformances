@@ -173,6 +173,7 @@ def events_recent(since: int = 0, limit: int = 200):
         "pending_connections": connection_manager.pending_connections,
         "machine_modes": connection_manager.machine_modes,
         "cw_lists": connection_manager.cw_lists,
+        "pending_ejections": connection_manager.pending_ejections,
     }
 
 
@@ -218,6 +219,23 @@ def upsert_cw_list(machine_id: str, name: str, body: dict):
 def delete_cw_list(machine_id: str, name: str):
     deleted = connection_manager.delete_cw_list(machine_id, name)
     return {"ok": True, "deleted": deleted}
+
+
+@app.post("/api/v1/machines/{machine_id}/eject/{ref}")
+def mark_for_ejection(machine_id: str, ref: str):
+    """Markiert eine laufende Bestellung zum mid-flight Eject. Beim
+    nächsten ACK / INV / LAB1 / LAB2 / END dieses Refs antworten wir mit
+    Reject; die Maschine wirft das Paket am nächsten möglichen Gate aus,
+    das Band läuft weiter, andere Pakete bleiben unangetastet.
+    """
+    connection_manager.mark_for_ejection(machine_id, ref)
+    return {"ok": True, "machine_id": machine_id, "ref": ref}
+
+
+@app.delete("/api/v1/machines/{machine_id}/eject/{ref}")
+def unmark_ejection(machine_id: str, ref: str):
+    removed = connection_manager.unmark_ejection(machine_id, ref)
+    return {"ok": True, "removed": removed}
 
 
 @app.get("/")

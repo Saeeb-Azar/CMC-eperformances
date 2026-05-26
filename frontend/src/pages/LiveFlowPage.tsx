@@ -204,6 +204,9 @@ const REJECTION_LABEL: Record<string, string> = {
   skipped_by_subsequent_end: 'Übersprungen (späteres END)',
   dimensions_rejected: '3D-Maße abgewiesen',
   label_verification_failed: 'Etikett-Verifikation fehlgeschlagen',
+  manual_eject:    'Manuell ausgeworfen',
+  weight_deviation: 'Gewicht außerhalb Toleranz',
+  size_deviation:  'Maße außerhalb Toleranz',
 };
 
 function aggregatePackages(events: RawEvent[]): PackageRow[] {
@@ -325,6 +328,10 @@ export default function LiveFlowPage() {
   const [pendingConnections, setPendingConnections] = useState(0);
   const [machineModes, setMachineModes] = useState<Record<string, string>>({});
   const [cwLists, setCwLists] = useState<Record<string, CWList[]>>({});
+  // refs that are scheduled for mid-flight eject — keyed by machine_id.
+  // The Eject-Button puts the ref in here, the backend pops it once the
+  // next ACK / INV / LAB1 / LAB2 / END for that ref arrives.
+  const [pendingEjections, setPendingEjections] = useState<Record<string, string[]>>({});
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -348,6 +355,11 @@ export default function LiveFlowPage() {
         if (typeof data.pending_connections === 'number') setPendingConnections(data.pending_connections);
         if (data.machine_modes && typeof data.machine_modes === 'object') setMachineModes(data.machine_modes);
         if (data.cw_lists && typeof data.cw_lists === 'object') setCwLists(data.cw_lists);
+        if (data.pending_ejections && typeof data.pending_ejections === 'object') {
+          setPendingEjections(data.pending_ejections);
+        } else {
+          setPendingEjections({});
+        }
         if (Array.isArray(data.events) && data.events.length > 0) {
           setEvents((prev) => [...prev, ...data.events].slice(-2000));
         }
@@ -461,6 +473,40 @@ export default function LiveFlowPage() {
       );
     } catch (e) {
       console.error('upsertCwList failed', e);
+    }
+  };
+
+  const ejectPackage = async (machineId: string, ref: string) => {
+    // Optimistisch: in der Pending-Liste eintragen, damit der Button-Status
+    // sofort umspringt. Sobald die Maschine das nächste ACK/LAB1/END
+    // schickt, popt das Backend den Eintrag und der Reject wird verschickt.
+    setPendingEjections((prev) => {
+      const list = prev[machineId] ?? [];
+      if (list.includes(ref)) return prev;
+      return { ...prev, [machineId]: [...list, ref] };
+    });
+    try {
+      await fetch(
+        `${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/eject/${encodeURIComponent(ref)}`,
+        { method: 'POST' },
+      );
+    } catch (e) {
+      console.error('ejectPackage failed', e);
+    }
+  };
+
+  const cancelEject = async (machineId: string, ref: string) => {
+    setPendingEjections((prev) => {
+      const list = prev[machineId] ?? [];
+      return { ...prev, [machineId]: list.filter((x) => x !== ref) };
+    });
+    try {
+      await fetch(
+        `${API_BASE}/api/v1/machines/${encodeURIComponent(machineId)}/eject/${encodeURIComponent(ref)}`,
+        { method: 'DELETE' },
+      );
+    } catch (e) {
+      console.error('cancelEject failed', e);
     }
   };
 
@@ -578,6 +624,11 @@ export default function LiveFlowPage() {
           onMultiOnlyChange={(v) => {
             if (selectedMachine) setMachineMode(selectedMachine, v ? 'multi_only' : null);
           }}
+          pendingEjectionRefs={
+            new Set(selectedMachine ? (pendingEjections[selectedMachine] ?? []) : [])
+          }
+          onEject={ejectPackage}
+          onCancelEject={cancelEject}
         />
         <FocusPanel
           pkg={selectedPackage}
@@ -1045,6 +1096,9 @@ interface MainPaneProps {
   nowTs: number;
   multiOnly: boolean;
   onMultiOnlyChange: (v: boolean) => void;
+  pendingEjectionRefs: Set<string>;
+  onEject: (machineId: string, ref: string) => void;
+  onCancelEject: (machineId: string, ref: string) => void;
 }
 
 function MainPane(p: MainPaneProps) {
@@ -1161,6 +1215,7 @@ function MainPane(p: MainPaneProps) {
                 <Th>Seit</Th>
                 <Th>Maße (L×B×H mm)</Th>
                 <Th>Gewicht</Th>
+                <Th>Aktion</Th>
               </tr>
             </thead>
             <tbody>
@@ -1172,6 +1227,9 @@ function MainPane(p: MainPaneProps) {
                   selected={pkg.ref === p.selectedRef}
                   onClick={() => p.onSelectRef(pkg.ref === p.selectedRef ? null : pkg.ref)}
                   nowTs={p.nowTs}
+                  ejectPending={p.pendingEjectionRefs.has(pkg.ref)}
+                  onEject={() => p.onEject(pkg.machine_id, pkg.ref)}
+                  onCancelEject={() => p.onCancelEject(pkg.machine_id, pkg.ref)}
                 />
               ))}
             </tbody>
@@ -1202,9 +1260,15 @@ interface TableRowProps {
   selected: boolean;
   onClick: () => void;
   nowTs: number;
+  ejectPending: boolean;
+  onEject: () => void;
+  onCancelEject: () => void;
 }
 
-function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
+function TableRow({
+  pkg, position, selected, onClick, nowTs,
+  ejectPending, onEject, onCancelEject,
+}: TableRowProps) {
   const sc = STATE_COLORS[pkg.state];
   const station = currentStation(pkg.state);
   const StationIcon = STATION_ICONS[station];
@@ -1279,6 +1343,42 @@ function TableRow({ pkg, position, selected, onClick, nowTs }: TableRowProps) {
       <Td><span className="tabular-nums" style={{ color: 'var(--clr-text-muted)' }}>{fmtSeit(pkg.lastSeen, nowTs)}</span></Td>
       <Td><span className="tabular-nums">{dims}</span></Td>
       <Td><span className="tabular-nums">{weight}</span></Td>
+      <Td>
+        {(() => {
+          // Eject ist nur sinnvoll solange das Paket noch auf der Linie
+          // ist. Nach END / REM / EJECT / FAIL ist es zu spät.
+          const canEject = !['ENDED', 'REMOVED', 'EJECTED', 'FAILED'].includes(pkg.state);
+          if (!canEject) {
+            return <span style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>—</span>;
+          }
+          if (ejectPending) {
+            return (
+              <button
+                onClick={(e) => { e.stopPropagation(); onCancelEject(); }}
+                title="Eject zurücknehmen (solange die Maschine noch nicht das nächste Gate erreicht hat)"
+                style={{
+                  padding: '3px 8px', fontSize: 10, fontWeight: 600,
+                  border: '1px solid #fbbf24', background: '#fffbeb',
+                  color: '#92400e', borderRadius: 4, cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >Vorgemerkt</button>
+            );
+          }
+          return (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEject(); }}
+              title="Nächstes Gate antworten: REJECT → Maschine wirft am nächsten Gate aus, Band läuft weiter"
+              style={{
+                padding: '3px 8px', fontSize: 10, fontWeight: 600,
+                border: '1px solid #fecaca', background: '#fef2f2',
+                color: '#991b1b', borderRadius: 4, cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >Eject</button>
+          );
+        })()}
+      </Td>
     </tr>
   );
 }

@@ -200,6 +200,7 @@ def build_response(
     is_duplicate: bool = False,
     multi_only: bool = False,
     active_cw_lists: list[tuple[str, set[str]]] | None = None,
+    pending_eject: bool = False,
 ) -> dict:
     """Build a default CIS response for a CMC message type.
 
@@ -276,6 +277,21 @@ def build_response(
         not is_noread and not is_duplicate and not is_unknown and not is_single_reject
     )
 
+    # Mid-flight Eject — Operator hat das Paket nachträglich verworfen
+    # (oder ein automatisches Soll-/Ist-Check wird später hier ankoppeln).
+    # Die Maschine kann den Reject nur an bestimmten Gates ausführen:
+    #   - ACK    → Gate hinter dem 3D-Sensor (frühest möglich, kein Karton/Label
+    #              verschwendet, Band läuft weiter)
+    #   - LAB1/2 → kein Label drucken, Maschine wirft am Ausgang aus
+    #   - INV    → keine Etiketten-Daten, gleiches Verhalten wie LAB
+    #   - END    → letzte Reject-Stelle bei Ausgangsverifikation
+    # An welcher Stelle es schlägt hängt davon ab, wann der Operator klickt;
+    # wir reagieren beim ersten betroffenen Event. Andere Pakete sind nicht
+    # betroffen — die Maschine läuft normal weiter.
+    eject_now = pending_eject and msg_type in ("ACK", "INV", "LAB1", "LAB2", "END")
+    if eject_now and rejection_reason is None:
+        rejection_reason = "manual_eject"
+
     responses = {
         "ENQ": {
             "event": event,
@@ -303,13 +319,50 @@ def build_response(
             "cw_list": matched_cw_list,
         },
         "IND": {"event": event, "reference_id": ref, "result": 1},
-        "ACK": {"event": event, "reference_id": ref, "result": 1, "item_validated": True, "flag": "PROCESSABLE"},
-        "INV": {"event": event, "reference_id": ref, "result": 1, "match_barcode": barcode},
-        "LAB1": {"event": event, "reference_id": ref, "result": 1, "match_barcode": barcode, "label_url": "", "status": ""},
-        "LAB2": {"event": event, "reference_id": ref, "result": 1, "match_barcode": barcode, "label_url": "", "status": ""},
-        "END": {"event": event, "reference_id": ref, "result": 1},
+        "ACK": {
+            "event": event, "reference_id": ref,
+            "result": 0 if eject_now else 1,
+            "item_validated": not eject_now,
+            "flag": "EJECTED" if eject_now else "PROCESSABLE",
+            "rejection_reason": rejection_reason if eject_now else None,
+        },
+        "INV": {
+            "event": event, "reference_id": ref,
+            "result": 0 if eject_now else 1,
+            "match_barcode": barcode,
+            "rejection_reason": rejection_reason if eject_now else None,
+        },
+        "LAB1": {
+            "event": event, "reference_id": ref,
+            "result": 0 if eject_now else 1,
+            "match_barcode": barcode,
+            "label_url": "",
+            "status": "REJECTED" if eject_now else "",
+            "rejection_reason": rejection_reason if eject_now else None,
+        },
+        "LAB2": {
+            "event": event, "reference_id": ref,
+            "result": 0 if eject_now else 1,
+            "match_barcode": barcode,
+            "label_url": "",
+            "status": "REJECTED" if eject_now else "",
+            "rejection_reason": rejection_reason if eject_now else None,
+        },
+        "END": {
+            "event": event, "reference_id": ref,
+            "result": 0 if eject_now else 1,
+            "rejection_reason": rejection_reason if eject_now else None,
+        },
         "REM": {"event": event, "reference_id": ref, "result": 1},
         "HBT": {"result": 1},
+        # STS: machine reports its operational state ("RUNNING" / "PAUSE" /
+        # "STOP" / "ERROR"). We just acknowledge — the simulator only needs
+        # a positively-framed reply with `result=1`. Echoing the status back
+        # is harmless and helps debugging.
+        "STS": {
+            "result": 1,
+            "status": str(data.get("status", "RUNNING") or "RUNNING"),
+        },
     }
 
     return responses.get(msg_type, {"result": 1})
@@ -346,6 +399,8 @@ def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> b
         "ACK": ["event", "reference_id", "result", "item_validated", "flag"],
         "LAB1": ["event", "reference_id", "result", "match_barcode", "label_url", "status"],
         "LAB2": ["event", "reference_id", "result", "match_barcode", "label_url", "status"],
+        # STS reply: CIS acknowledges a machine-status broadcast.
+        "STS": ["result", "status"],
     }
 
     def _fmt(v):

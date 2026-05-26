@@ -159,6 +159,14 @@ class ConnectionManager:
         # und anzeigen kann. Wenn KEINE Liste aktiv ist → kein Filter
         # (jeder Scan kommt durch, abgesehen von NOREAD/Dup/Multi-Only).
         self._cw_lists: dict[str, dict[str, dict]] = {}
+        # Mid-flight Ejections: pro Maschine eine Menge von reference_ids,
+        # die beim nächsten ACK/INV/LAB1/LAB2/END mit Reject beantwortet
+        # werden sollen. Die Maschine wirft das Paket dann am nächsten
+        # möglichen Gate aus; das Band läuft normal weiter, andere
+        # Bestellungen sind nicht betroffen. In-Memory; entweder durch
+        # Operator (manuelle Eject-Button) oder später durch automatische
+        # Soll-/Ist-Checks befüllt.
+        self._pending_ejections: dict[str, set[str]] = {}
 
     def get_mode(self, protocol_id: str) -> str | None:
         return self._machine_modes.get(protocol_id)
@@ -225,6 +233,43 @@ class ConnectionManager:
             "barcodes": sorted(lst.get("barcodes", set())),
             "count": len(lst.get("barcodes", set())),
         }
+
+    # ── Pending Ejections ─────────────────────────────────────────────────
+
+    def mark_for_ejection(self, protocol_id: str, ref_id: str) -> None:
+        """Vormerken: das Paket mit dieser reference_id wird beim nächsten
+        Pipeline-Event (ACK / INV / LAB1 / LAB2 / END) per Reject-Response
+        beantwortet. Die Maschine wirft es am nächsten möglichen Gate aus.
+        """
+        if not ref_id:
+            return
+        self._pending_ejections.setdefault(protocol_id, set()).add(ref_id)
+
+    def unmark_ejection(self, protocol_id: str, ref_id: str) -> bool:
+        s = self._pending_ejections.get(protocol_id)
+        if not s:
+            return False
+        removed = ref_id in s
+        s.discard(ref_id)
+        return removed
+
+    def is_ejection_pending(self, protocol_id: str, ref_id: str) -> bool:
+        return ref_id in self._pending_ejections.get(protocol_id, set())
+
+    def consume_ejection(self, protocol_id: str, ref_id: str) -> bool:
+        """Atomisch: true zurückgeben wenn das Paket markiert war, und im
+        gleichen Zug aus der Menge entfernen. Beim nächsten Event ist es
+        damit nicht mehr aktiv — wir wollen nicht zweimal rejecten.
+        """
+        s = self._pending_ejections.get(protocol_id)
+        if not s or ref_id not in s:
+            return False
+        s.discard(ref_id)
+        return True
+
+    @property
+    def pending_ejections(self) -> dict[str, list[str]]:
+        return {mid: sorted(s) for mid, s in self._pending_ejections.items() if s}
 
     @property
     def cw_lists(self) -> dict[str, list[dict]]:
@@ -379,11 +424,27 @@ class ConnectionManager:
                                 self.get_active_cw_lists(conn.protocol_id)
                                 if conn.protocol_id else []
                             )
+                            # Wenn das Paket zum Eject vorgemerkt ist, ziehen
+                            # wir die Markierung jetzt — beim NÄCHSTEN Event
+                            # dieses Refs (z.B. LAB1 nach ACK) wäre sie
+                            # ohnehin nicht mehr wirksam; und wir wollen
+                            # nicht doppelt rejecten. So bekommt das erste
+                            # relevante Gate den Reject und das war's.
+                            msg_ref = (
+                                msg_data.get("reference_id") or msg_data.get("referenceId") or ""
+                                if isinstance(msg_data, dict) else ""
+                            )
+                            eject_now = bool(
+                                conn.protocol_id and msg_ref
+                                and msg_type in ("ACK", "INV", "LAB1", "LAB2", "END")
+                                and self.consume_ejection(conn.protocol_id, str(msg_ref))
+                            )
                             response = build_response(
                                 msg_type, msg_data,
                                 is_duplicate=is_duplicate,
                                 multi_only=multi_only,
                                 active_cw_lists=active_lists,
+                                pending_eject=eject_now,
                             )
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
