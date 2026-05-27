@@ -86,16 +86,26 @@ class ActivePackageTracker:
             per_machine.pop(ref, None)
 
     def eject_stale_predecessors(self, machine_id: str, current_seq: int) -> list[dict[str, object]]:
-        """When END fires for sequence N, all older active states (< N) on
-        the same machine were silently lost (jam, manual removal without
-        REM). Transition them to EJECTED and return the cleanup list so the
-        caller can broadcast synthetic events for the dashboard.
+        """Räume Pakete weg, die am Scanner hängen geblieben sind.
+
+        Nur Pakete im Status ASSIGNED (ENQ akzeptiert, aber kein IND/ACK/
+        LAB gefolgt) zählen als „verloren". Sobald die Maschine ein IND
+        oder später geschickt hat, hat sie das Paket physisch übernommen
+        und wird ein eigenes END liefern — wir greifen dann nicht ein.
+
+        Der Event-Counter ist ein globaler Zähler über alle Nachrichten
+        (HBT, ACK, IND…), nicht pro Paket. Ein END mit hohem Counter
+        heißt nur „21. Nachricht insgesamt", nicht „Paket #21 fertig" —
+        Pakete laufen verschachtelt durch die Stationen, ihr ENQ-Counter
+        ist nahezu immer kleiner als der END-Counter eines beliebigen
+        anderen Pakets. Deshalb darf der Seq-Vergleich allein noch nichts
+        als verloren markieren.
         """
         per_machine = self._packages.get(machine_id, {})
         ejected: list[dict[str, object]] = []
         stale_refs = [
             ref for ref, pkg in per_machine.items()
-            if pkg["state"] in ACTIVE_STATES and int(pkg.get("seq") or 0) < current_seq
+            if pkg["state"] == "ASSIGNED" and int(pkg.get("seq") or 0) < current_seq
         ]
         for ref in stale_refs:
             pkg = per_machine.pop(ref)

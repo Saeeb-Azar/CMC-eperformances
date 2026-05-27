@@ -319,12 +319,16 @@ async def _eject_stale_predecessors(db, machine: Machine, current_seq: int) -> N
     older enq_sequence was silently lost (jam, manual removal without REM,
     etc.). Transition them to EJECTED so the dashboard stops counting them
     as on-conveyor.
+
+    Nur Pakete im Status ASSIGNED zählen — alles darüber hat die Maschine
+    physisch übernommen und liefert ein eigenes END. Der Event-Counter
+    ist global über alle Nachrichten, nicht pro Paket; ihn allein zur
+    Skip-Erkennung zu nehmen würde aktive Pakete fälschlich auswerfen.
     """
-    active_states = ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED")
     res = await db.execute(
         select(OrderState).where(
             OrderState.machine_db_id == machine.id,
-            OrderState.state.in_(active_states),
+            OrderState.state == "ASSIGNED",
             OrderState.enq_sequence < current_seq,
         )
     )
