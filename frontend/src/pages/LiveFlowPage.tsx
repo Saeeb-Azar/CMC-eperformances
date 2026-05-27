@@ -339,7 +339,14 @@ export default function LiveFlowPage() {
   const [cwListFilter, setCwListFilter] = useState<string | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const sinceRef = useRef(0);
+  // Cutoff für „Tabelle geleert" wird in localStorage gespiegelt, damit
+  // ein Reload den Clear nicht rückgängig macht — wir starten den Poll
+  // direkt ab dem letzten Cutoff statt bei 0.
+  const sinceRef = useRef<number>(
+    typeof window !== 'undefined'
+      ? Number(window.localStorage.getItem('cmc.clearCutoffId') || 0)
+      : 0,
+  );
 
   // Event polling
   useEffect(() => {
@@ -495,6 +502,23 @@ export default function LiveFlowPage() {
     }
   };
 
+  const handleClearTable = () => {
+    const count = allPackages.length;
+    if (count === 0) return;
+    const ok = window.confirm(
+      `Tabelle wirklich leeren?\n\n${count} ${count === 1 ? 'Bestellung wird' : 'Bestellungen werden'} aus der Live-Ansicht entfernt. Die Backend-Historie bleibt erhalten — neue Events erscheinen normal.`,
+    );
+    if (!ok) return;
+    setEvents([]);
+    setSelectedRef(null);
+    try {
+      window.localStorage.setItem('cmc.clearCutoffId', String(sinceRef.current));
+    } catch {
+      // localStorage kann blockiert sein — Reload würde dann alte
+      // Events wiedersehen, kein Beinbruch.
+    }
+  };
+
   const cancelEject = async (machineId: string, ref: string) => {
     setPendingEjections((prev) => {
       const list = prev[machineId] ?? [];
@@ -629,6 +653,7 @@ export default function LiveFlowPage() {
           }
           onEject={ejectPackage}
           onCancelEject={cancelEject}
+          onClearTable={handleClearTable}
         />
         <FocusPanel
           pkg={selectedPackage}
@@ -1099,6 +1124,7 @@ interface MainPaneProps {
   pendingEjectionRefs: Set<string>;
   onEject: (machineId: string, ref: string) => void;
   onCancelEject: (machineId: string, ref: string) => void;
+  onClearTable: () => void;
 }
 
 function MainPane(p: MainPaneProps) {
@@ -1172,6 +1198,23 @@ function MainPane(p: MainPaneProps) {
             cursor: 'pointer',
           }}>
             <Filter size={13} /> Filter
+          </button>
+          <button
+            onClick={p.onClearTable}
+            disabled={p.packages.length === 0}
+            title="Live-Ansicht leeren — Backend-Historie bleibt"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '6px 10px', fontSize: 12, fontWeight: 600,
+              border: '1px solid #fecaca',
+              background: p.packages.length === 0 ? '#fef2f2' : '#fef2f2',
+              color: '#991b1b',
+              borderRadius: 6,
+              cursor: p.packages.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: p.packages.length === 0 ? 0.5 : 1,
+            }}
+          >
+            <Trash2 size={13} /> Leeren
           </button>
           <Bell size={15} style={{ color: 'var(--clr-text-muted)' }} />
         </div>
