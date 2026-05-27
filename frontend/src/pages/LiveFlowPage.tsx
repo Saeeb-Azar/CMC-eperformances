@@ -1271,8 +1271,8 @@ function MainPane(p: MainPaneProps) {
                   onClick={() => p.onSelectRef(pkg.ref === p.selectedRef ? null : pkg.ref)}
                   nowTs={p.nowTs}
                   ejectPending={p.pendingEjectionRefs.has(pkg.ref)}
-                  onEject={() => p.onEject(pkg.machine_id, pkg.ref)}
-                  onCancelEject={() => p.onCancelEject(pkg.machine_id, pkg.ref)}
+                  onEject={() => { if (pkg.machine_id) p.onEject(pkg.machine_id, pkg.ref); }}
+                  onCancelEject={() => { if (pkg.machine_id) p.onCancelEject(pkg.machine_id, pkg.ref); }}
                 />
               ))}
             </tbody>
