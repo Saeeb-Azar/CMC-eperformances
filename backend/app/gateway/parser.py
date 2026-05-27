@@ -199,7 +199,7 @@ def build_response(
     *,
     is_duplicate: bool = False,
     multi_only: bool = False,
-    active_cw_lists: list[tuple[str, set[str]]] | None = None,
+    cw_lists: list[tuple[str, bool, set[str]]] | None = None,
     pending_eject: bool = False,
 ) -> dict:
     """Build a default CIS response for a CMC message type.
@@ -234,21 +234,34 @@ def build_response(
     if msg_type == "ENQ":
         barcode_str = str(barcode or "").strip()
         barcode_upper = barcode_str.upper()
-        has_active_lists = bool(active_cw_lists)
+        all_lists = cw_lists or []
+        has_active_lists = any(active for _, active, _ in all_lists)
+        # Tagging: erste Liste, in der der Barcode auftaucht — egal ob
+        # aktiv oder nicht. all_lists ist so sortiert dass aktive zuerst
+        # kommen, ein aktiver Match wird also einem inaktiven vorgezogen.
+        # Damit zeigt die Spalte „CW-Liste" auch bei deaktivierten Listen
+        # die Herkunft an (Debug-Hilfe „liegt drin, ist aber nicht aktiv").
+        if barcode_str:
+            for name, _active, codes in all_lists:
+                upper_codes = {c.upper() for c in codes}
+                if barcode_upper in upper_codes:
+                    matched_cw_list = name
+                    break
         if not barcode_str or barcode_upper == "NOREAD":
             is_noread = True
             rejection_reason = "no_read"
         elif is_duplicate:
             rejection_reason = "already_active"
         elif has_active_lists:
-            for name, codes in (active_cw_lists or []):
-                # Listen-Match case-insensitiv, damit Tippvarianten von
-                # Operator-/Pulpo-Eingaben matchen.
-                upper_codes = {c.upper() for c in codes}
-                if barcode_upper in upper_codes:
-                    matched_cw_list = name
-                    break
-            if matched_cw_list is None:
+            # Filter: nur ein Treffer in einer AKTIVEN Liste lässt den
+            # Scan passieren. Match wird nochmal explizit gegen aktive
+            # Listen geprüft (matched_cw_list könnte einer inaktiven
+            # gehören).
+            accepted_by_active = any(
+                active and barcode_upper in {c.upper() for c in codes}
+                for _name, active, codes in all_lists
+            )
+            if not accepted_by_active:
                 is_unknown = True
                 rejection_reason = "unknown_barcode"
         if not (is_noread or is_duplicate or is_unknown):

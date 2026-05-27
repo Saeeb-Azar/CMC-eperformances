@@ -207,6 +207,18 @@ class ConnectionManager:
                 out.append((name, lst.get("barcodes", set())))
         return out
 
+    def get_all_cw_lists(self, protocol_id: str) -> list[tuple[str, bool, set[str]]]:
+        """Alle Listen mit Aktiv-Flag — für Filter UND Tagging. Insertion-
+        Order. Aktive Listen tauchen zuerst auf, damit beim Tagging ein
+        aktiver Treffer einem inaktiven vorgezogen wird.
+        """
+        items = list(self._cw_lists.get(protocol_id, {}).items())
+        items.sort(key=lambda kv: not kv[1].get("active"))
+        return [
+            (name, bool(lst.get("active")), lst.get("barcodes", set()))
+            for name, lst in items
+        ]
+
     def find_cw_list_for_barcode(self, protocol_id: str, barcode: str) -> str | None:
         """Welche aktive Liste enthält diesen Barcode? Erste Match gewinnt.
         Returns None wenn keine Liste matched oder keine aktiv ist.
@@ -430,8 +442,8 @@ class ConnectionManager:
                                 conn.protocol_id is not None
                                 and self._machine_modes.get(conn.protocol_id) == "multi_only"
                             )
-                            active_lists = (
-                                self.get_active_cw_lists(conn.protocol_id)
+                            all_lists = (
+                                self.get_all_cw_lists(conn.protocol_id)
                                 if conn.protocol_id else []
                             )
                             # Wenn das Paket zum Eject vorgemerkt ist, ziehen
@@ -453,7 +465,7 @@ class ConnectionManager:
                                 msg_type, msg_data,
                                 is_duplicate=is_duplicate,
                                 multi_only=multi_only,
-                                active_cw_lists=active_lists,
+                                cw_lists=all_lists,
                                 pending_eject=eject_now,
                             )
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
