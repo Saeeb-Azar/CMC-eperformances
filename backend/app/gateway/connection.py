@@ -7,6 +7,8 @@ Port 15001 as per CMC CIS protocol.
 """
 
 import asyncio
+import time
+from collections import Counter
 from datetime import datetime, timezone
 
 from app.core.logging import logger
@@ -19,6 +21,13 @@ from app.gateway.websocket import ws_manager
 # at ENQ". A barcode whose package is in any of these is considered already
 # being processed and must not be re-accepted at the scanner.
 ACTIVE_STATES = frozenset({"ASSIGNED", "INDUCTED", "SCANNED", "LABELED"})
+
+# Scanner-Glitch-Fenster: wenn derselbe Barcode innerhalb dieses
+# Intervalls erneut am Scanner ankommt, ist's mit hoher Wahrscheinlichkeit
+# eine Doppelablesung desselben physischen Pakets. 0.5s ist großzügig
+# genug für reale Scanner-Stotterer und schmal genug dass zwei echte
+# Single-Order-Bestellungen vom selben Artikel ungehindert durchkommen.
+SCAN_GLITCH_WINDOW_S = 0.5
 
 
 class ActivePackageTracker:
@@ -175,14 +184,22 @@ class ConnectionManager:
         # order) barcodes at the scanner. See cmc-process-doc § 3.
         self._machine_modes: dict[str, str] = {}
         # CW-Listen: pro Maschine mehrere benannte Listen (z.B. CW1..CW14),
-        # jede mit eigenem Aktiv-Flag und einer Barcode-Menge. Aus Pulpo
-        # gefütterte „Wellen". Eine Bestellung wird angenommen, sobald ihr
-        # Barcode in mindestens einer AKTIVEN Liste auftaucht. Die erste
-        # matchende Liste wird der Bestellung als Herkunft zugeordnet und
-        # an die Broadcasts gehängt, damit die UI sie spaltenweise filtern
-        # und anzeigen kann. Wenn KEINE Liste aktiv ist → kein Filter
-        # (jeder Scan kommt durch, abgesehen von NOREAD/Dup/Multi-Only).
+        # jede mit Aktiv-Flag und einer Mengen-Tabelle pro Barcode. Ein
+        # Eintrag sieht so aus: items[barcode] = {expected: N, consumed: K}.
+        # Damit decken wir Single-Order-Fälle ab, in denen mehrere Kunden
+        # denselben Artikel bestellt haben (z.B. BC0001 × 2). Ein ENQ
+        # wird akzeptiert, sobald es in mindestens einer aktiven Liste
+        # einen Eintrag mit `consumed < expected` gibt; auf der ersten
+        # passenden aktiven Liste wird `consumed` hochgezählt.
+        # `cw_list` (Anzeige-Tag) zeigt die zugeordnete Liste in der UI —
+        # bei Mehrfach-Match gewinnt die erste aktive, mit Rest kapazität.
         self._cw_lists: dict[str, dict[str, dict]] = {}
+        # Scanner-Glitch-Schutz: pro Maschine merken wir uns den letzten
+        # akzeptierten Barcode samt Zeitstempel. Wenn derselbe Code
+        # innerhalb von 500ms erneut reinkommt, ist das physikalisch fast
+        # immer ein Scanner-Wackler (gleiches Paket nochmal gelesen) und
+        # wird als DUPLICATE abgewiesen, ohne `consumed` zu erhöhen.
+        self._last_scan: dict[str, tuple[str, float]] = {}
         # Mid-flight Ejections: pro Maschine eine Menge von reference_ids,
         # die beim nächsten ACK/INV/LAB1/LAB2/END mit Reject beantwortet
         # werden sollen. Die Maschine wirft das Paket dann am nächsten
@@ -210,52 +227,131 @@ class ConnectionManager:
     def get_cw_lists(self, protocol_id: str) -> dict[str, dict]:
         return self._cw_lists.get(protocol_id, {})
 
-    def get_active_cw_lists(self, protocol_id: str) -> list[tuple[str, set[str]]]:
-        """Returns aktive Listen als [(name, {barcodes...}), ...] in
-        insertion order. Erste Liste in der Reihenfolge gewinnt bei
-        Mehrfach-Matches.
+    def evaluate_cw_for_enq(
+        self, protocol_id: str, barcode: str,
+    ) -> tuple[str | None, bool, bool]:
+        """Bewertet einen ENQ-Barcode gegen die CW-Listen der Maschine.
+
+        Rückgabe: (matched_list, filter_passed, has_active_lists)
+          - matched_list: Liste, in der der Barcode aufschlägt (Tag für UI).
+            Aktive Treffer mit Restmenge gewinnen, dann aktive ohne, dann
+            inaktive mit, dann inaktive ohne. None wenn der Barcode in
+            keiner Liste auftaucht.
+          - filter_passed: True wenn der Scan akzeptiert werden darf —
+            entweder weil keine aktive Liste existiert (kein Filter) oder
+            weil mindestens eine aktive Liste den Barcode mit
+            consumed < expected enthält.
+          - has_active_lists: ob überhaupt eine aktive Liste existiert.
         """
-        out: list[tuple[str, set[str]]] = []
-        for name, lst in self._cw_lists.get(protocol_id, {}).items():
+        lists = self._cw_lists.get(protocol_id, {})
+        if not barcode or not lists:
+            return (None, True, any(l.get("active") for l in lists.values()))
+
+        has_active = any(l.get("active") for l in lists.values())
+
+        active_with_remaining: str | None = None
+        active_consumed: str | None = None
+        inactive_with_remaining: str | None = None
+        inactive_consumed: str | None = None
+        for name, lst in lists.items():
+            entry = lst.get("items", {}).get(barcode)
+            if entry is None:
+                continue
+            has_rem = entry["consumed"] < entry["expected"]
             if lst.get("active"):
-                out.append((name, lst.get("barcodes", set())))
-        return out
+                if has_rem and active_with_remaining is None:
+                    active_with_remaining = name
+                elif not has_rem and active_consumed is None:
+                    active_consumed = name
+            else:
+                if has_rem and inactive_with_remaining is None:
+                    inactive_with_remaining = name
+                elif not has_rem and inactive_consumed is None:
+                    inactive_consumed = name
 
-    def get_all_cw_lists(self, protocol_id: str) -> list[tuple[str, bool, set[str]]]:
-        """Alle Listen mit Aktiv-Flag — für Filter UND Tagging. Insertion-
-        Order. Aktive Listen tauchen zuerst auf, damit beim Tagging ein
-        aktiver Treffer einem inaktiven vorgezogen wird.
-        """
-        items = list(self._cw_lists.get(protocol_id, {}).items())
-        items.sort(key=lambda kv: not kv[1].get("active"))
-        return [
-            (name, bool(lst.get("active")), lst.get("barcodes", set()))
-            for name, lst in items
-        ]
+        matched = (
+            active_with_remaining or active_consumed
+            or inactive_with_remaining or inactive_consumed
+        )
+        filter_passed = not has_active or active_with_remaining is not None
+        return matched, filter_passed, has_active
 
-    def find_cw_list_for_barcode(self, protocol_id: str, barcode: str) -> str | None:
-        """Welche aktive Liste enthält diesen Barcode? Erste Match gewinnt.
-        Returns None wenn keine Liste matched oder keine aktiv ist.
+    def consume_cw_entry(self, protocol_id: str, list_name: str, barcode: str) -> bool:
+        """Erhöht consumed um 1 auf der angegebenen Liste. True wenn
+        wirklich verbraucht wurde, False sonst (z.B. weil bereits voll).
         """
-        if not barcode:
-            return None
-        for name, barcodes in self.get_active_cw_lists(protocol_id):
-            if barcode in barcodes:
-                return name
-        return None
+        lst = self._cw_lists.get(protocol_id, {}).get(list_name)
+        if not lst:
+            return False
+        entry = lst.get("items", {}).get(barcode)
+        if not entry or entry["consumed"] >= entry["expected"]:
+            return False
+        entry["consumed"] += 1
+        return True
+
+    def is_scan_glitch(self, protocol_id: str, barcode: str, *, now: float) -> bool:
+        """True wenn derselbe Barcode innerhalb des Glitch-Fensters
+        bereits gesehen wurde. Aktualisiert das Last-Scan-Memo nicht —
+        Aufrufer entscheidet wann das passieren soll.
+        """
+        last = self._last_scan.get(protocol_id)
+        if not last or not barcode:
+            return False
+        last_barcode, last_ts = last
+        return last_barcode == barcode and (now - last_ts) < SCAN_GLITCH_WINDOW_S
+
+    def record_scan(self, protocol_id: str, barcode: str, *, now: float) -> None:
+        if barcode:
+            self._last_scan[protocol_id] = (barcode, now)
 
     def upsert_cw_list(
         self, protocol_id: str, name: str,
         *, barcodes: list[str] | None = None, active: bool | None = None,
     ) -> dict:
+        """Anlegen oder Updaten einer CW-Liste.
+
+        `barcodes` ist eine Liste von Roh-Barcodes (Duplikate erlaubt!).
+        Duplikate werden zu Mengenangaben aggregiert: ["BC0001","BC0001"]
+        → items["BC0001"].expected = 2. Bestehender `consumed`-Stand für
+        Barcodes, die in beiden Listen vorkommen, bleibt erhalten (auf
+        die neue expected gekappt), damit ein Mid-Shift-Edit nicht den
+        Verbrauchsstand vergisst.
+        """
         per_machine = self._cw_lists.setdefault(protocol_id, {})
-        existing = per_machine.get(name) or {"active": False, "barcodes": set()}
+        existing = per_machine.get(name) or {"active": False, "items": {}}
         if barcodes is not None:
-            existing["barcodes"] = {b.strip() for b in barcodes if b and b.strip()}
+            counter = Counter(b.strip() for b in barcodes if b and b.strip())
+            old_items = existing.get("items", {})
+            new_items: dict[str, dict[str, int]] = {}
+            for barcode, expected in counter.items():
+                old_consumed = old_items.get(barcode, {}).get("consumed", 0)
+                new_items[barcode] = {
+                    "expected": expected,
+                    "consumed": min(old_consumed, expected),
+                }
+            existing["items"] = new_items
         if active is not None:
             existing["active"] = bool(active)
         per_machine[name] = existing
         return self._serialize_cw_list(name, existing)
+
+    def reset_cw_consumed(self, protocol_id: str | None = None) -> int:
+        """Setzt `consumed` aller Listen-Einträge zurück. Wird vom
+        Dashboard-Leeren-Button mit aufgerufen, damit der nächste Scan
+        wieder voll zählt.
+        """
+        cleared = 0
+        machines = (
+            [protocol_id] if protocol_id is not None
+            else list(self._cw_lists.keys())
+        )
+        for mid in machines:
+            for lst in self._cw_lists.get(mid, {}).values():
+                for entry in lst.get("items", {}).values():
+                    if entry.get("consumed"):
+                        cleared += 1
+                        entry["consumed"] = 0
+        return cleared
 
     def delete_cw_list(self, protocol_id: str, name: str) -> bool:
         per_machine = self._cw_lists.get(protocol_id, {})
@@ -263,11 +359,24 @@ class ConnectionManager:
 
     @staticmethod
     def _serialize_cw_list(name: str, lst: dict) -> dict:
+        items = lst.get("items", {})
+        rows = [
+            {
+                "barcode": barcode,
+                "expected": entry["expected"],
+                "consumed": entry["consumed"],
+            }
+            for barcode, entry in sorted(items.items())
+        ]
+        total_expected = sum(e["expected"] for e in rows)
+        total_consumed = sum(e["consumed"] for e in rows)
         return {
             "name": name,
             "active": bool(lst.get("active")),
-            "barcodes": sorted(lst.get("barcodes", set())),
-            "count": len(lst.get("barcodes", set())),
+            "items": rows,
+            "total_expected": total_expected,
+            "total_consumed": total_consumed,
+            "remaining": total_expected - total_consumed,
         }
 
     # ── Pending Ejections ─────────────────────────────────────────────────
@@ -285,11 +394,18 @@ class ConnectionManager:
         if protocol_id is None:
             cleared_ejections = sum(len(s) for s in self._pending_ejections.values())
             self._pending_ejections.clear()
+            self._last_scan.clear()
         else:
             s = self._pending_ejections.pop(protocol_id, None)
             if s:
                 cleared_ejections = len(s)
-        return {"packages": cleared_packages, "ejections": cleared_ejections}
+            self._last_scan.pop(protocol_id, None)
+        cleared_consumed = self.reset_cw_consumed(protocol_id)
+        return {
+            "packages": cleared_packages,
+            "ejections": cleared_ejections,
+            "consumed_reset": cleared_consumed,
+        }
 
     def mark_for_ejection(self, protocol_id: str, ref_id: str) -> None:
         """Vormerken: das Paket mit dieser reference_id wird beim nächsten
@@ -460,24 +576,32 @@ class ConnectionManager:
                     # then fan out to browsers and persistence after.
                     response: dict | None = None
                     if msg_type != "UNKNOWN":
-                        # Order-Reservation guard (process doc Section 7
-                        # "Order Reservation at ENQ"): if the barcode is
-                        # already on the belt, reject the scan up front so
-                        # we never create a duplicate state.
+                        # ENQ-Vorberechnung: Glitch-Schutz + CW-Listen-
+                        # Auswertung. Beides liefert dem Parser fertige
+                        # Flags, side-effects (consumed-Hochzähler, Last-
+                        # Scan-Memo) bleiben hier in der Connection-Schicht.
                         is_duplicate = False
-                        if msg_type == "ENQ":
+                        is_unknown_barcode = False
+                        matched_cw_list: str | None = None
+                        filter_passed = True
+                        if msg_type == "ENQ" and conn.protocol_id:
                             barcode = str(msg_data.get("barcode", "") or "").strip()
-                            if barcode:
-                                is_duplicate = self._tracker.is_active_barcode(machine_id, barcode)
+                            now_ts = time.monotonic()
+                            if barcode and self.is_scan_glitch(
+                                conn.protocol_id, barcode, now=now_ts,
+                            ):
+                                is_duplicate = True
+                            else:
+                                matched_cw_list, filter_passed, _has_active = (
+                                    self.evaluate_cw_for_enq(conn.protocol_id, barcode)
+                                )
+                                if not filter_passed:
+                                    is_unknown_barcode = True
 
                         try:
                             multi_only = (
                                 conn.protocol_id is not None
                                 and self._machine_modes.get(conn.protocol_id) == "multi_only"
-                            )
-                            all_lists = (
-                                self.get_all_cw_lists(conn.protocol_id)
-                                if conn.protocol_id else []
                             )
                             # Wenn das Paket zum Eject vorgemerkt ist, ziehen
                             # wir die Markierung jetzt — beim NÄCHSTEN Event
@@ -497,10 +621,21 @@ class ConnectionManager:
                             response = build_response(
                                 msg_type, msg_data,
                                 is_duplicate=is_duplicate,
+                                is_unknown_barcode=is_unknown_barcode,
+                                matched_cw_list=matched_cw_list,
                                 multi_only=multi_only,
-                                cw_lists=all_lists,
                                 pending_eject=eject_now,
                             )
+                            # Nach erfolgreicher ENQ-Annahme: verbrauchten
+                            # CW-Slot abbuchen und Glitch-Memo setzen.
+                            if (
+                                msg_type == "ENQ" and conn.protocol_id
+                                and response.get("result") == 1
+                            ):
+                                bc = str(msg_data.get("barcode", "") or "").strip()
+                                if matched_cw_list and filter_passed:
+                                    self.consume_cw_entry(conn.protocol_id, matched_cw_list, bc)
+                                self.record_scan(conn.protocol_id, bc, now=time.monotonic())
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         except Exception as e:

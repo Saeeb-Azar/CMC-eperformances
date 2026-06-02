@@ -189,11 +189,19 @@ interface PackageRow {
   events: RawEvent[];
 }
 
+interface CWListItem {
+  barcode: string;
+  expected: number;
+  consumed: number;
+}
+
 interface CWList {
   name: string;
   active: boolean;
-  barcodes: string[];
-  count: number;
+  items: CWListItem[];
+  total_expected: number;
+  total_consumed: number;
+  remaining: number;
 }
 
 const REJECTION_LABEL: Record<string, string> = {
@@ -453,16 +461,42 @@ export default function LiveFlowPage() {
     name: string,
     patch: { active?: boolean; barcodes?: string[] },
   ) => {
-    // Optimistisch lokal anwenden
+    // Optimistisch lokal anwenden — Backend liefert beim nächsten Poll
+    // die kanonische Form zurück (aggregiert nach Menge, plus consumed).
     setCwLists((prev) => {
       const list = prev[machineId] ?? [];
       const idx = list.findIndex((l) => l.name === name);
-      const current: CWList = idx >= 0 ? list[idx] : { name, active: false, barcodes: [], count: 0 };
+      const empty: CWList = {
+        name, active: false, items: [],
+        total_expected: 0, total_consumed: 0, remaining: 0,
+      };
+      const current: CWList = idx >= 0 ? list[idx] : empty;
+      let items = current.items;
+      if (patch.barcodes !== undefined) {
+        // Eingabe-Liste (Duplikate erlaubt) → aggregierte Items
+        const counts = new Map<string, number>();
+        for (const raw of patch.barcodes) {
+          const b = raw.trim();
+          if (!b) continue;
+          counts.set(b, (counts.get(b) ?? 0) + 1);
+        }
+        // consumed aus altem Stand übernehmen (auf neue expected gekappt)
+        const oldByBarcode = new Map(current.items.map((x) => [x.barcode, x]));
+        items = [...counts.entries()].map(([barcode, expected]) => ({
+          barcode,
+          expected,
+          consumed: Math.min(oldByBarcode.get(barcode)?.consumed ?? 0, expected),
+        }));
+      }
+      const total_expected = items.reduce((s, x) => s + x.expected, 0);
+      const total_consumed = items.reduce((s, x) => s + x.consumed, 0);
       const merged: CWList = {
         name,
         active: patch.active ?? current.active,
-        barcodes: patch.barcodes ?? current.barcodes,
-        count: (patch.barcodes ?? current.barcodes).length,
+        items,
+        total_expected,
+        total_consumed,
+        remaining: total_expected - total_consumed,
       };
       const next = [...list];
       if (idx >= 0) next[idx] = merged;
@@ -889,7 +923,10 @@ function MachineSidebar({
                         >
                           <div style={{ fontSize: 11, fontWeight: 600 }}>{lst.name}</div>
                           <div style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>
-                            {lst.count} {lst.count === 1 ? 'Barcode' : 'Barcodes'}
+                            {lst.total_consumed} / {lst.total_expected} verbraucht
+                            {lst.items.length > 0 && lst.items.length !== lst.total_expected
+                              ? ` · ${lst.items.length} ${lst.items.length === 1 ? 'Artikel' : 'Artikel'}`
+                              : ''}
                           </div>
                         </button>
                         <button
@@ -957,20 +994,60 @@ interface CWListModalProps {
 
 function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
   const [draft, setDraft] = useState('');
-  const [barcodes, setBarcodes] = useState<string[]>(list.barcodes);
+  const [items, setItems] = useState<CWListItem[]>(list.items);
+  // Live-Updates aus dem Polling-Stream übernehmen — vor allem damit
+  // der consumed-Zähler im offenen Modal mitwächst, wenn die Maschine
+  // scannt während der Operator das Modal noch offen hat.
+  useEffect(() => { setItems(list.items); }, [list.items]);
+
+  const totalExpected = items.reduce((s, x) => s + x.expected, 0);
+  const totalConsumed = items.reduce((s, x) => s + x.consumed, 0);
+
+  const persist = (next: CWListItem[]) => {
+    setItems(next);
+    // Backend nimmt eine flache Liste — Duplikate werden serverseitig
+    // wieder zu Mengen aggregiert. Wir blähen einfach jede Menge auf.
+    const flat: string[] = [];
+    for (const it of next) {
+      for (let i = 0; i < it.expected; i += 1) flat.push(it.barcode);
+    }
+    onSave(flat);
+  };
 
   const add = () => {
     const v = draft.trim();
-    if (!v || barcodes.includes(v)) { setDraft(''); return; }
-    const next = [...barcodes, v];
-    setBarcodes(next);
-    onSave(next);
+    if (!v) return;
+    const idx = items.findIndex((x) => x.barcode === v);
+    let next: CWListItem[];
+    if (idx >= 0) {
+      next = [...items];
+      next[idx] = { ...next[idx], expected: next[idx].expected + 1 };
+    } else {
+      next = [...items, { barcode: v, expected: 1, consumed: 0 }];
+    }
+    persist(next);
     setDraft('');
   };
-  const remove = (b: string) => {
-    const next = barcodes.filter((x) => x !== b);
-    setBarcodes(next);
-    onSave(next);
+
+  const inc = (barcode: string) => {
+    const next = items.map((x) =>
+      x.barcode === barcode ? { ...x, expected: x.expected + 1 } : x,
+    );
+    persist(next);
+  };
+
+  const dec = (barcode: string) => {
+    const next = items
+      .map((x) => x.barcode === barcode
+        ? { ...x, expected: x.expected - 1, consumed: Math.min(x.consumed, x.expected - 1) }
+        : x,
+      )
+      .filter((x) => x.expected > 0);
+    persist(next);
+  };
+
+  const remove = (barcode: string) => {
+    persist(items.filter((x) => x.barcode !== barcode));
   };
 
   return (
@@ -1002,7 +1079,10 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           <div>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{list.name}</div>
             <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-              {barcodes.length} {barcodes.length === 1 ? 'Barcode' : 'Barcodes'}
+              {totalConsumed} / {totalExpected} verbraucht
+              {items.length > 0 && (
+                <span> · {items.length} {items.length === 1 ? 'Artikel' : 'Artikel'}</span>
+              )}
               {list.active && <span style={{ marginLeft: 8, color: '#1d4ed8', fontWeight: 600 }}>· AKTIV</span>}
             </div>
           </div>
@@ -1045,37 +1125,73 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           padding: '0 18px 14px', flex: 1, overflowY: 'auto',
           display: 'flex', flexDirection: 'column', gap: 3,
         }}>
-          {barcodes.length === 0 ? (
+          {items.length === 0 ? (
             <div style={{
               fontSize: 12, color: 'var(--clr-text-muted)',
               padding: '20px', textAlign: 'center',
               border: '1px dashed var(--clr-border)', borderRadius: 6,
             }}>
-              Noch keine Barcodes
+              Noch keine Artikel
             </div>
           ) : (
-            barcodes.map((b) => (
-              <div key={b} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '6px 10px', fontSize: 12,
-                background: 'var(--clr-bg-subtle, #f8fafc)',
-                borderRadius: 4,
-              }}>
-                <code style={{
-                  flex: 1, minWidth: 0,
-                  fontFamily: 'var(--font-mono)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{b}</code>
-                <button
-                  onClick={() => remove(b)}
-                  title="Entfernen"
-                  style={{
-                    padding: 2, border: 'none', background: 'transparent',
-                    color: 'var(--clr-text-muted)', cursor: 'pointer',
-                  }}
-                ><X size={13} /></button>
-              </div>
-            ))
+            items.map((it) => {
+              const full = it.consumed >= it.expected;
+              return (
+                <div key={it.barcode} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', fontSize: 12,
+                  background: full ? '#f0fdf4' : 'var(--clr-bg-subtle, #f8fafc)',
+                  border: full ? '1px solid #bbf7d0' : '1px solid transparent',
+                  borderRadius: 4,
+                }}>
+                  <code style={{
+                    flex: 1, minWidth: 0,
+                    fontFamily: 'var(--font-mono)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{it.barcode}</code>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: 11, fontWeight: 600,
+                    color: full ? '#166534' : 'var(--clr-text-muted)',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {it.consumed} / {it.expected}
+                  </div>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button
+                      onClick={() => dec(it.barcode)}
+                      title="Menge -1"
+                      style={{
+                        width: 22, height: 22, padding: 0,
+                        border: '1px solid var(--clr-border)',
+                        background: 'var(--clr-bg-elevated, #fff)',
+                        borderRadius: 3, cursor: 'pointer',
+                        fontSize: 13, fontWeight: 700, lineHeight: '20px',
+                      }}
+                    >−</button>
+                    <button
+                      onClick={() => inc(it.barcode)}
+                      title="Menge +1"
+                      style={{
+                        width: 22, height: 22, padding: 0,
+                        border: '1px solid var(--clr-border)',
+                        background: 'var(--clr-bg-elevated, #fff)',
+                        borderRadius: 3, cursor: 'pointer',
+                        fontSize: 13, fontWeight: 700, lineHeight: '20px',
+                      }}
+                    >+</button>
+                  </div>
+                  <button
+                    onClick={() => remove(it.barcode)}
+                    title="Eintrag ganz entfernen"
+                    style={{
+                      padding: 2, border: 'none', background: 'transparent',
+                      color: 'var(--clr-text-muted)', cursor: 'pointer',
+                    }}
+                  ><X size={13} /></button>
+                </div>
+              );
+            })
           )}
         </div>
 
