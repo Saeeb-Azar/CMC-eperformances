@@ -511,12 +511,20 @@ export default function LiveFlowPage() {
     if (!ok) return;
     setEvents([]);
     setSelectedRef(null);
+    setPendingEjections({});
     try {
       window.localStorage.setItem('cmc.clearCutoffId', String(sinceRef.current));
     } catch {
       // localStorage kann blockiert sein — Reload würde dann alte
       // Events wiedersehen, kein Beinbruch.
     }
+    // Backend-Tracker leeren, sonst weist er den nächsten gleichen
+    // Barcode als Doppel-Scan ab, obwohl die Tabelle leer ist.
+    void fetch(`${API_BASE}/api/v1/runtime/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }).catch((e) => console.error('runtime reset failed', e));
   };
 
   const cancelEject = async (machineId: string, ref: string) => {

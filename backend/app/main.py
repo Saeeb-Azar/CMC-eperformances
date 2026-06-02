@@ -221,6 +221,20 @@ def delete_cw_list(machine_id: str, name: str):
     return {"ok": True, "deleted": deleted}
 
 
+@app.post("/api/v1/runtime/reset")
+def reset_runtime(body: dict | None = None):
+    """Laufzeitstatus zurücksetzen — aktiver Paket-Tracker + pending
+    Ejections. Aufgerufen vom Dashboard-Leeren-Button; ohne diesen
+    Schritt würde ein erneuter Scan desselben Barcodes als Doppel-Scan
+    abgewiesen, weil der Tracker noch Einträge aus der gerade gelöschten
+    Tabelle hält. Optional pro Maschine: {"machine_id": "0001"}.
+    CW-Listen und Modi bleiben unberührt.
+    """
+    machine_id = (body or {}).get("machine_id") if isinstance(body, dict) else None
+    summary = connection_manager.reset_runtime(machine_id)
+    return {"ok": True, **summary}
+
+
 @app.post("/api/v1/machines/{machine_id}/eject/{ref}")
 def mark_for_ejection(machine_id: str, ref: str):
     """Markiert eine laufende Bestellung zum mid-flight Eject. Beim

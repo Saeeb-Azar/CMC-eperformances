@@ -46,6 +46,20 @@ class ActivePackageTracker:
                 return True
         return False
 
+    def clear(self, machine_id: str | None = None) -> int:
+        """Tracker leeren — entweder pro Maschine oder global. Operator-
+        Action wenn das Dashboard „Leeren" geklickt wird; ohne diesen
+        Schritt würde der Tracker einen Barcode weiter als aktiv halten
+        und neue Scans als Doppel-Scan abweisen, obwohl die Tabelle
+        längst leer ist.
+        """
+        if machine_id is None:
+            count = sum(len(m) for m in self._packages.values())
+            self._packages.clear()
+            return count
+        m = self._packages.pop(machine_id, {})
+        return len(m)
+
     def apply(self, machine_id: str, msg_type: str, data: dict, response_ref: str) -> None:
         ref = response_ref or data.get("reference_id", "") or ""
         if not ref:
@@ -257,6 +271,25 @@ class ConnectionManager:
         }
 
     # ── Pending Ejections ─────────────────────────────────────────────────
+
+    def reset_runtime(self, protocol_id: str | None = None) -> dict:
+        """Maschinen-Laufzeitstatus leeren: aktiver Paket-Tracker und
+        Pending-Ejections. Aufgerufen vom Dashboard-Leeren-Button —
+        damit neue Scans nicht fälschlich als Doppel-Scan abgewiesen
+        werden, weil der Tracker noch Bestellungen aus der gerade
+        gelöschten Tabelle hält. CW-Listen und Maschinen-Modi bleiben
+        unangetastet (das ist Konfiguration, kein Laufzeitstatus).
+        """
+        cleared_packages = self._tracker.clear(protocol_id)
+        cleared_ejections = 0
+        if protocol_id is None:
+            cleared_ejections = sum(len(s) for s in self._pending_ejections.values())
+            self._pending_ejections.clear()
+        else:
+            s = self._pending_ejections.pop(protocol_id, None)
+            if s:
+                cleared_ejections = len(s)
+        return {"packages": cleared_packages, "ejections": cleared_ejections}
 
     def mark_for_ejection(self, protocol_id: str, ref_id: str) -> None:
         """Vormerken: das Paket mit dieser reference_id wird beim nächsten
