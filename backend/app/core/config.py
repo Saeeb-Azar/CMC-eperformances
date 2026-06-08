@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # ── Pulpo WMS integration ─────────────────────────────────────────
+    # Aktiv sobald `pulpo_base_url` + `pulpo_api_key` gesetzt sind. Die
+    # exakten Endpoints stehen in modules/pulpo/client.py noch als TODOs
+    # — bis Pulpo-Doku vorliegt sind die Werte hier ungenutzt.
+    pulpo_base_url: str = ""
+    pulpo_api_key: str = ""
+    # HMAC-Secret zur Webhook-Verifikation. Leerlassen für lokale Tests
+    # (akzeptiert dann alles, loggt eine Warnung). Produktiv setzen.
+    pulpo_webhook_secret: str = ""
+    # Pick-Location-ID die unserer CMC1000-Maschine entspricht. Wird
+    # bei jedem ENQ-Lookup zur Filterung der Pulpo-Queue gebraucht.
+    pulpo_pick_location: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

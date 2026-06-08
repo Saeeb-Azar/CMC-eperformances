@@ -20,6 +20,7 @@ from app.modules.tenants import models as _tenant_models  # noqa: F401
 from app.modules.machines import models as _machine_models  # noqa: F401
 from app.modules.orders import models as _order_models  # noqa: F401
 from app.modules.audit import models as _audit_models  # noqa: F401
+from app.modules.pulpo import models as _pulpo_models  # noqa: F401
 
 # Import routers from all modules
 from app.modules.auth.router import router as auth_router
@@ -30,6 +31,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.simulator.router import router as simulator_router
 from app.modules.cmc_actions.router import router as cmc_actions_router
+from app.modules.pulpo.router import router as pulpo_router
 
 settings = get_settings()
 
@@ -99,6 +101,9 @@ app.include_router(audit_router, prefix=API_PREFIX)
 app.include_router(analytics_router, prefix=API_PREFIX)
 app.include_router(simulator_router, prefix=API_PREFIX)
 app.include_router(cmc_actions_router, prefix=API_PREFIX)
+# Pulpo Webhook-Empfang — prefix=API_PREFIX nicht nötig, der Router
+# bringt seinen vollen Pfad selbst mit.
+app.include_router(pulpo_router)
 
 
 @app.websocket("/ws/simulator")
