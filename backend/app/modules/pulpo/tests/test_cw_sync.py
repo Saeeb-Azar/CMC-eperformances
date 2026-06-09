@@ -65,25 +65,26 @@ def test_sync_pushes_list_into_connection_manager():
     try:
         async def run():
             async with sm() as db:
-                db.add(Machine(
-                    tenant_id="t1", machine_id="0001", name="CW1000",
-                    pulpo_pick_location="CW-A", is_active=True,
-                ))
-                db.add(Machine(
-                    tenant_id="t1", machine_id="0002", name="No-Pulpo",
-                    pulpo_pick_location="", is_active=True,   # no location → skipped
-                ))
-                db.add(_order("t1", "1", "CW-A", "queue", [("111", 2)]))
+                # machine with a location filter → only that location's orders
+                db.add(Machine(tenant_id="t1", machine_id="0001", name="CW",
+                               pulpo_pick_location="100", is_active=True))
+                # machine without a location → the WHOLE queue
+                db.add(Machine(tenant_id="t1", machine_id="0002", name="All",
+                               pulpo_pick_location="", is_active=True))
+                db.add(_order("t1", "1", "100", "queue", [("111", 2)]))
+                db.add(_order("t1", "2", "200", "queue", [("222", 3)]))
                 await db.commit()
                 return await cw_sync.sync_cw_lists_from_cache(db)
 
         synced = asyncio.run(run())
-        assert synced == 1
-        lists = cm.get_cw_lists("0001")
-        assert PULPO_LIST_NAME in lists
-        assert lists[PULPO_LIST_NAME]["source"] == "pulpo"
-        assert lists[PULPO_LIST_NAME]["items"]["111"]["expected"] == 2
-        assert cm.get_cw_lists("0002") == {}
+        assert synced == 2
+        # 0001 is filtered to location "100" → only ean 111
+        items1 = cm.get_cw_lists("0001")[PULPO_LIST_NAME]["items"]
+        assert items1 == {"111": {"expected": 2, "consumed": 0}}
+        assert cm.get_cw_lists("0001")[PULPO_LIST_NAME]["source"] == "pulpo"
+        # 0002 has no location → whole queue (111 + 222)
+        items2 = cm.get_cw_lists("0002")[PULPO_LIST_NAME]["items"]
+        assert set(items2.keys()) == {"111", "222"}
     finally:
         cw_sync.connection_manager = connection_manager  # restore
 

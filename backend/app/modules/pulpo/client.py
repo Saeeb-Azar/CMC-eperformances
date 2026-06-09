@@ -223,13 +223,15 @@ class PulpoClient:
         result = await self._request("GET", "/inventory/products", params={"barcode": barcode})
         return self._as_list(result)
 
-    async def list_queue_orders(self, pick_location: str, *, limit: int = 1000) -> list[dict]:
-        """All packing orders in ``queue`` state at a pick location. Used for
-        the full cache resync (§ 3 self-heal) and as the basis for EAN matching."""
-        result = await self._request(
-            "GET", "/packing/orders",
-            params={"state": "queue", "origin_location_code": pick_location, "limit": limit},
-        )
+    async def list_queue_orders(self, pick_location: str | None = None, *, limit: int = 2000) -> list[dict]:
+        """Packing orders in ``queue`` state. With no ``pick_location`` this
+        returns the WHOLE packing queue (all CW orders for this tenant); with
+        one it filters by origin_location_code. Basis for the CW-Liste / EAN
+        matching and the § 3 self-heal resync."""
+        params: dict[str, Any] = {"state": "queue", "limit": limit}
+        if pick_location:
+            params["origin_location_code"] = pick_location
+        result = await self._request("GET", "/packing/orders", params=params)
         return self._as_list(result)
 
     async def sample_queue(self, *, limit: int = 25) -> list[dict]:

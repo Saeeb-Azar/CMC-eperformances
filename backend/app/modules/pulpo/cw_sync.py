@@ -1,18 +1,16 @@
 """CW-Liste ↔ Pulpo packing-queue sync.
 
-The CW-Liste of a machine is derived automatically from the Pulpo packing
-queue at the machine's ``pulpo_pick_location`` — it is never edited by hand.
+The CW-Liste of a machine mirrors the Pulpo **packing queue** (menu „Packen" →
+„In Warteschlange"). For this tenant the whole queue is CartonWrap work, so by
+default we take the ENTIRE packing queue. ``pulpo_pick_location`` on a machine
+is an OPTIONAL extra filter (origin_location_code) — leave it empty to get all.
 
 Two mechanisms keep it live:
-  1. Webhook-driven (primary): packing_order_created/finished update the local
-     cache (pulpo_packing_orders/items); afterwards we rebuild the affected
-     machines' CW-Listen straight from that cache — no Pulpo call needed.
-  2. Periodic resync (self-heal, cmc-process-doc § 3): pull the queue from
-     Pulpo for each location into the cache, then rebuild. Covers missed
-     webhooks. Only runs when the Pulpo client is configured.
-
-``sync_cw_lists_from_cache`` is the pure, DB-only core (unit-tested).
-``resync_cache_from_pulpo`` is the network part and is best-effort/defensive.
+  1. Webhooks (packing_order_created/finished) update the cache; afterwards we
+     rebuild the CW-Listen from the cache.
+  2. A periodic resync pulls the live queue from Pulpo into the cache and
+     self-heals: orders no longer in Pulpo's queue are closed so they drop off
+     the CW-Liste.
 """
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
@@ -32,108 +30,97 @@ from .models import PulpoOrderItem, PulpoPackingOrder
 
 
 async def build_cw_items_for_location(
-    db: AsyncSession, tenant_id: str, pick_location: str,
+    db: AsyncSession, tenant_id: str, pick_location: str | None,
 ) -> dict[str, int]:
-    """Aggregate barcode → expected-quantity for all queued Pulpo orders at a
-    pick location. DB-side GROUP BY on the cached order items."""
+    """Aggregate barcode → expected-quantity over the cached queue. With no
+    ``pick_location`` it covers the whole packing queue; with one it filters
+    by the cached order location."""
     stmt = (
         select(PulpoOrderItem.ean, func.sum(PulpoOrderItem.quantity))
         .join(PulpoPackingOrder, PulpoOrderItem.order_db_id == PulpoPackingOrder.id)
         .where(
             PulpoPackingOrder.tenant_id == tenant_id,
             PulpoPackingOrder.state == "queue",
-            PulpoPackingOrder.pick_location == pick_location,
             PulpoOrderItem.ean != "",
         )
         .group_by(PulpoOrderItem.ean)
     )
+    if pick_location:
+        stmt = stmt.where(PulpoPackingOrder.pick_location == pick_location)
     rows = (await db.execute(stmt)).all()
     return {ean: int(qty or 0) for ean, qty in rows if ean}
 
 
 async def sync_cw_lists_from_cache(db: AsyncSession) -> int:
-    """Rebuild every machine's Pulpo CW-Liste from the local cache. Returns
-    the number of machines synced. Pure DB work — safe to call often."""
+    """Rebuild the Pulpo CW-Liste of every active machine from the cache.
+    ``pulpo_pick_location`` is an optional filter (empty = whole queue)."""
     machines = (
-        await db.execute(
-            select(Machine).where(
-                Machine.is_active.is_(True),
-                Machine.pulpo_pick_location != "",
-            )
-        )
+        await db.execute(select(Machine).where(Machine.is_active.is_(True)))
     ).scalars().all()
     for m in machines:
-        items = await build_cw_items_for_location(db, m.tenant_id, m.pulpo_pick_location)
-        # protocol_id used by the gateway is the machine's machine_id ("0001").
+        items = await build_cw_items_for_location(db, m.tenant_id, m.pulpo_pick_location or None)
         connection_manager.set_pulpo_cw_list(m.machine_id, items)
     return len(machines)
 
 
 async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
-    """Self-heal: pull the live queue from Pulpo for every configured pick
-    location into the cache (filling EANs via product lookup), then rebuild
-    the CW-Listen. Best-effort — a Pulpo failure is logged, not raised.
-
-    NOTE: the exact Pulpo payload field names are validated against live data;
-    extraction here is defensive and mirrors the webhook service.
-    """
+    """Self-heal: pull the live packing queue from Pulpo into the cache, then
+    rebuild the CW-Listen. Orders no longer in Pulpo's queue get closed so they
+    drop off. Best-effort — a Pulpo failure is logged, not raised."""
     if not pulpo.configured:
         return {"ok": False, "reason": "pulpo not configured"}
 
-    # Distinct pick locations across active machines.
-    locations = {
-        loc for (loc,) in (
-            await db.execute(
-                select(Machine.pulpo_pick_location).where(
-                    Machine.is_active.is_(True), Machine.pulpo_pick_location != "",
-                )
-            )
-        ).all() if loc
-    }
-    if not locations:
-        return {"ok": True, "locations": 0}
+    has_machine = (
+        await db.execute(select(Machine.id).where(Machine.is_active.is_(True)).limit(1))
+    ).first()
+    if not has_machine:
+        return {"ok": True, "machines": 0}
 
     from .service import _get_default_tenant_id  # local import avoids a cycle
     tenant_id = await _get_default_tenant_id(db)
-    product_barcode_cache: dict[str, str] = {}
-    synced = 0
+    product_cache: dict[str, str] = {}
+
     try:
-        for location in locations:
-            orders = await pulpo.list_queue_orders(location)
-            logger.info(f"Pulpo resync location={location!r}: {len(orders)} queue orders")
-            if orders:
-                o0 = orders[0]
-                sample_items = (o0.get("items") or [])[:2]
-                logger.info(
-                    f"Pulpo sample order: keys={list(o0.keys())} "
-                    f"origin_location_id={o0.get('origin_location_id')} "
-                    f"items={sample_items}"
-                )
-            for order in orders:
-                await _upsert_queue_order(db, tenant_id, location, order, product_barcode_cache)
-                synced += 1
-        # Discovery: if the configured location matched nothing, show what the
-        # queue actually contains so the real location code can be identified.
-        if synced == 0:
-            sample = await pulpo.sample_queue(limit=25)
-            locs = sorted({str(o.get("origin_location_id")) for o in sample})
+        orders = await pulpo.list_queue_orders(None)  # whole packing queue
+        logger.info(f"Pulpo resync: {len(orders)} packing-queue orders pulled")
+        if orders:
+            o0 = orders[0]
             logger.info(
-                f"Pulpo discovery (location filter matched 0): {len(sample)} queue orders "
-                f"unfiltered, origin_location_ids seen={locs}, "
-                f"first order keys={list(sample[0].keys()) if sample else []}"
+                f"Pulpo sample order: keys={list(o0.keys())} "
+                f"items={(o0.get('items') or [])[:2]}"
             )
+        pulled_ids: set[str] = set()
+        for order in orders:
+            oid = order.get("id")
+            if oid is None:
+                continue
+            pulled_ids.add(str(oid))
+            await _upsert_queue_order(db, tenant_id, order, product_cache)
+
+        # Self-heal: close cached queue orders that are no longer in the queue.
+        close_stmt = (
+            update(PulpoPackingOrder)
+            .where(
+                PulpoPackingOrder.tenant_id == tenant_id,
+                PulpoPackingOrder.state == "queue",
+            )
+            .values(state="closed", updated_at=datetime.now(timezone.utc))
+        )
+        if pulled_ids:
+            close_stmt = close_stmt.where(PulpoPackingOrder.pulpo_order_id.notin_(pulled_ids))
+        await db.execute(close_stmt)
         await db.flush()
     except PulpoError as e:
         logger.warning(f"Pulpo resync failed: {e} — keeping existing cache")
         return {"ok": False, "error": str(e)}
 
     await sync_cw_lists_from_cache(db)
-    return {"ok": True, "locations": len(locations), "orders": synced}
+    return {"ok": True, "orders": len(orders)}
 
 
 async def _resolve_ean(item: dict, cache: dict[str, str]) -> str:
-    """EAN for a packing item — directly from the item if present, else
-    resolved via the product's first barcode (cached per run)."""
+    """EAN for a packing item — directly from the item if present, else via the
+    product's first barcode (cached per run)."""
     for key in ("ean", "gtin", "barcode"):
         v = item.get(key)
         if v:
@@ -158,10 +145,9 @@ async def _resolve_ean(item: dict, cache: dict[str, str]) -> str:
 
 
 async def _upsert_queue_order(
-    db: AsyncSession, tenant_id: str, location: str, order: dict, product_cache: dict[str, str],
+    db: AsyncSession, tenant_id: str, order: dict, product_cache: dict[str, str],
 ) -> None:
-    """Upsert one Pulpo queue order (+ its items, with EANs resolved) into the
-    cache. Only touches queue orders pulled from the live API."""
+    """Upsert one Pulpo queue order (+ its items, EANs resolved) into the cache."""
     pulpo_order_id = order.get("id")
     if pulpo_order_id is None:
         return
@@ -176,11 +162,10 @@ async def _upsert_queue_order(
         row = PulpoPackingOrder(tenant_id=tenant_id, pulpo_order_id=str(pulpo_order_id))
         db.add(row)
     row.state = "queue"
-    row.pick_location = location
+    row.pick_location = str(order.get("origin_location_id") or order.get("origin_location_code") or "")
     row.raw_payload = order
     row.updated_at = datetime.now(timezone.utc)
 
-    # Replace items (queue contents are authoritative on resync).
     for existing in list(row.items):
         await db.delete(existing)
     row.items = []
