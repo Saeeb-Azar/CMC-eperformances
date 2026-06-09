@@ -74,6 +74,7 @@ export interface MachineRead {
   max_length_mm: number;
   max_width_mm: number;
   max_height_mm: number;
+  pulpo_pick_location: string;
   status: string;
   is_online: boolean;
   is_active: boolean;
@@ -106,7 +107,12 @@ export interface MachineCreateInput {
   max_length_mm?: number;
   max_width_mm?: number;
   max_height_mm?: number;
+  pulpo_pick_location?: string;
 }
+
+export type MachineUpdateInput = Partial<Omit<MachineCreateInput, 'machine_id'>> & {
+  is_active?: boolean;
+};
 
 export interface OrderStateListItem {
   id: string;
@@ -260,6 +266,11 @@ export const api = {
   createMachine: (data: MachineCreateInput) =>
     request<MachineRead>('/machines', {
       method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMachine: (id: string, data: MachineUpdateInput) =>
+    request<MachineRead>(`/machines/${id}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),

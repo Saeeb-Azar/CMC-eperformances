@@ -7,6 +7,8 @@ interface MachineFormModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (machine: MachineRead) => void;
+  /** When set, the modal edits this machine instead of creating a new one. */
+  machine?: MachineRead | null;
 }
 
 const DEFAULTS: MachineCreateInput = {
@@ -23,21 +25,42 @@ const DEFAULTS: MachineCreateInput = {
   max_length_mm: 6000,
   max_width_mm: 4000,
   max_height_mm: 3000,
+  pulpo_pick_location: '',
 };
 
-export default function MachineFormModal({ open, onClose, onCreated }: MachineFormModalProps) {
+function fromMachine(m: MachineRead): MachineCreateInput {
+  return {
+    machine_id: m.machine_id,
+    name: m.name,
+    model: m.model,
+    tcp_role: m.tcp_role as 'server' | 'client',
+    tcp_host: m.tcp_host,
+    tcp_port: m.tcp_port,
+    lab1_enabled: m.lab1_enabled,
+    lab2_enabled: m.lab2_enabled,
+    inv_enabled: m.inv_enabled,
+    pre_create_labels: m.pre_create_labels,
+    max_length_mm: m.max_length_mm,
+    max_width_mm: m.max_width_mm,
+    max_height_mm: m.max_height_mm,
+    pulpo_pick_location: m.pulpo_pick_location ?? '',
+  };
+}
+
+export default function MachineFormModal({ open, onClose, onCreated, machine }: MachineFormModalProps) {
   const { t } = useTranslation();
+  const isEdit = !!machine;
   const [form, setForm] = useState<MachineCreateInput>(DEFAULTS);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Reset form each time the modal opens.
+  // Reset/prefill form each time the modal opens.
   useEffect(() => {
     if (open) {
-      setForm(DEFAULTS);
+      setForm(machine ? fromMachine(machine) : DEFAULTS);
       setError('');
     }
-  }, [open]);
+  }, [open, machine]);
 
   // Close on Escape for keyboard users.
   useEffect(() => {
@@ -62,8 +85,10 @@ export default function MachineFormModal({ open, onClose, onCreated }: MachineFo
     }
     setLoading(true);
     try {
-      const created = await api.createMachine(form);
-      onCreated(created);
+      const saved = isEdit && machine
+        ? await api.updateMachine(machine.id, form)
+        : await api.createMachine(form);
+      onCreated(saved);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('machines.form.errorGeneric'));
@@ -90,7 +115,7 @@ export default function MachineFormModal({ open, onClose, onCreated }: MachineFo
               <Server size={16} />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-gray-900">{t('machines.form.title')}</h2>
+              <h2 className="text-base font-semibold text-gray-900">{isEdit ? t('machines.form.editTitle', 'Maschine bearbeiten') : t('machines.form.title')}</h2>
               <p className="text-xs text-gray-500">{t('machines.form.subtitle')}</p>
             </div>
           </div>
@@ -120,6 +145,7 @@ export default function MachineFormModal({ open, onClose, onCreated }: MachineFo
                 onChange={(e) => update('machine_id', e.target.value)}
                 className="input"
                 required
+                disabled={isEdit}
               />
             </Field>
             <Field label={t('machines.form.name')}>
@@ -172,6 +198,19 @@ export default function MachineFormModal({ open, onClose, onCreated }: MachineFo
               />
             </Field>
           </div>
+
+          <Field
+            label={t('machines.form.pulpoPickLocation', 'Pulpo Pick-Location')}
+            hint={t('machines.form.pulpoPickLocationHint', 'origin_location_code in Pulpo. Gesetzt = CW-Liste wird automatisch aus der Pulpo-Queue befüllt. Leer = keine Pulpo-Anbindung.')}
+          >
+            <input
+              type="text"
+              value={form.pulpo_pick_location ?? ''}
+              onChange={(e) => update('pulpo_pick_location', e.target.value)}
+              className="input"
+              placeholder="z.B. CW-A"
+            />
+          </Field>
 
           <div>
             <p className="text-xs font-medium text-gray-600 mb-2">{t('machines.form.maxDimensions')}</p>
@@ -240,7 +279,7 @@ export default function MachineFormModal({ open, onClose, onCreated }: MachineFo
             className="h-10 px-5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50"
           >
             {loading && <Loader2 size={14} className="animate-spin" />}
-            {loading ? t('common.loading') : t('machines.form.create')}
+            {loading ? t('common.loading') : isEdit ? t('common.save', 'Speichern') : t('machines.form.create')}
           </button>
         </div>
       </form>

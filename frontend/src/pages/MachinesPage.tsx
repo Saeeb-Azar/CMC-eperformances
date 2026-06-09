@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
-import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus } from 'lucide-react';
+import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus, Pencil, Boxes } from 'lucide-react';
 import { api, type MachineRead } from '../services/api';
 import MachineFormModal from '../components/machines/MachineFormModal';
 
@@ -20,6 +20,7 @@ export default function MachinesPage() {
   const [machines, setMachines] = useState<MachineRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<MachineRead | null>(null);
   const [search, setSearch] = useState('');
   const [filterState, setFilterState] = useState<FilterState>({ online: [], status: [] });
 
@@ -128,6 +129,31 @@ export default function MachinesPage() {
         </div>
       ),
     },
+    {
+      key: 'pulpo',
+      header: t('machines.pulpoLocation', 'Pulpo-Location'),
+      width: 150,
+      render: (m) => (
+        m.pulpo_pick_location
+          ? <span className="cell-muted flex items-center gap-1"><Boxes size={12} className="text-blue-500" />{m.pulpo_pick_location}</span>
+          : <span className="cell-muted text-gray-300">—</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: 56,
+      render: (m) => (
+        <button
+          type="button"
+          onClick={() => setEditing(m)}
+          className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+          title={t('common.edit', 'Bearbeiten')}
+        >
+          <Pencil size={14} />
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -149,10 +175,15 @@ export default function MachinesPage() {
         </div>
 
         <MachineFormModal
-          open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          open={modalOpen || !!editing}
+          machine={editing}
+          onClose={() => { setModalOpen(false); setEditing(null); }}
           onCreated={(m) => {
-            setMachines((prev) => [m, ...prev]);
+            setMachines((prev) => {
+              const idx = prev.findIndex((x) => x.id === m.id);
+              if (idx >= 0) { const next = [...prev]; next[idx] = m; return next; }
+              return [m, ...prev];
+            });
             reload();
           }}
         />

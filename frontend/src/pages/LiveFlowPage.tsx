@@ -198,6 +198,7 @@ interface CWListItem {
 interface CWList {
   name: string;
   active: boolean;
+  source?: string;  // "pulpo" = auto-synced from the Pulpo queue (read-only)
   items: CWListItem[];
   total_expected: number;
   total_consumed: number;
@@ -731,16 +732,8 @@ function MachineSidebar({
   machines, stats, selected, onSelect, connectedIds, open, onToggle,
   cwLists, onUpsertCwList, onDeleteCwList, cwListFilter, onCwListFilterChange,
 }: MachineSidebarProps) {
-  const [newListName, setNewListName] = useState('');
+  // CW-Listen come exclusively from Pulpo now — no manual creation/editing.
   const [editingList, setEditingList] = useState<string | null>(null);
-
-  const createList = () => {
-    const v = newListName.trim();
-    if (!v || cwLists.some((l) => l.name === v)) return;
-    onUpsertCwList(v, { active: false, barcodes: [] });
-    setNewListName('');
-    setEditingList(v);
-  };
   return (
     <aside style={{
       borderRight: '1px solid var(--clr-border)',
@@ -857,37 +850,13 @@ function MachineSidebar({
             </div>
           ) : (
             <>
-              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-                <input
-                  type="text"
-                  value={newListName}
-                  onChange={(e) => setNewListName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') createList(); }}
-                  placeholder="Neue Liste (z.B. CW1)"
-                  style={{
-                    flex: 1, minWidth: 0, padding: '4px 6px', fontSize: 11,
-                    border: '1px solid var(--clr-border)', borderRadius: 4,
-                  }}
-                />
-                <button
-                  onClick={createList}
-                  disabled={!newListName.trim()}
-                  style={{
-                    padding: '4px 8px', fontSize: 11, fontWeight: 600,
-                    border: '1px solid var(--clr-border)', borderRadius: 4,
-                    background: 'var(--clr-bg-elevated, #fff)',
-                    cursor: newListName.trim() ? 'pointer' : 'not-allowed',
-                    opacity: newListName.trim() ? 1 : 0.5,
-                  }}
-                >+</button>
-              </div>
               {cwLists.length === 0 ? (
                 <div style={{
                   fontSize: 10, color: 'var(--clr-text-muted)',
                   padding: '8px', textAlign: 'center',
                   border: '1px dashed var(--clr-border)', borderRadius: 4,
                 }}>
-                  Keine Listen — alle Scans gehen durch
+                  Keine Pulpo-Queue — Pick-Location der Maschine in den Einstellungen setzen
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 360, overflowY: 'auto' }}>
@@ -921,7 +890,16 @@ function MachineSidebar({
                             cursor: 'pointer',
                           }}
                         >
-                          <div style={{ fontSize: 11, fontWeight: 600 }}>{lst.name}</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {lst.name}
+                            {lst.source === 'pulpo' && (
+                              <span style={{
+                                fontSize: 8, fontWeight: 700, letterSpacing: 0.3,
+                                padding: '1px 4px', borderRadius: 3,
+                                background: '#dbeafe', color: '#1d4ed8',
+                              }}>PULPO</span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>
                             {lst.total_consumed} / {lst.total_expected} verbraucht
                             {lst.items.length > 0 && lst.items.length !== lst.total_expected
@@ -1002,6 +980,8 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
 
   const totalExpected = items.reduce((s, x) => s + x.expected, 0);
   const totalConsumed = items.reduce((s, x) => s + x.consumed, 0);
+  // Pulpo-sourced lists are read-only — content is derived from the queue.
+  const readOnly = list.source === 'pulpo';
 
   const persist = (next: CWListItem[]) => {
     setItems(next);
@@ -1094,32 +1074,43 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           ><X size={16} /></button>
         </div>
 
-        <div style={{ padding: '14px 18px', display: 'flex', gap: 6 }}>
-          <input
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-            placeholder="Barcode + Enter"
-            autoFocus
-            style={{
-              flex: 1, padding: '6px 10px', fontSize: 13,
-              fontFamily: 'var(--font-mono)',
-              border: '1px solid var(--clr-border)', borderRadius: 6,
-            }}
-          />
-          <button
-            onClick={add}
-            disabled={!draft.trim()}
-            style={{
-              padding: '6px 14px', fontSize: 13, fontWeight: 600,
-              border: '1px solid var(--clr-border)', borderRadius: 6,
-              background: 'var(--clr-bg-subtle, #f4f6fa)',
-              cursor: draft.trim() ? 'pointer' : 'not-allowed',
-              opacity: draft.trim() ? 1 : 0.5,
-            }}
-          >Hinzufügen</button>
-        </div>
+        {readOnly ? (
+          <div style={{
+            margin: '14px 18px 0', padding: '8px 10px', fontSize: 11,
+            borderRadius: 6, background: '#eff6ff', color: '#1d4ed8',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <Box size={13} />
+            Automatisch aus der Pulpo-Queue synchronisiert — read-only.
+          </div>
+        ) : (
+          <div style={{ padding: '14px 18px', display: 'flex', gap: 6 }}>
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+              placeholder="Barcode + Enter"
+              autoFocus
+              style={{
+                flex: 1, padding: '6px 10px', fontSize: 13,
+                fontFamily: 'var(--font-mono)',
+                border: '1px solid var(--clr-border)', borderRadius: 6,
+              }}
+            />
+            <button
+              onClick={add}
+              disabled={!draft.trim()}
+              style={{
+                padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                border: '1px solid var(--clr-border)', borderRadius: 6,
+                background: 'var(--clr-bg-subtle, #f4f6fa)',
+                cursor: draft.trim() ? 'pointer' : 'not-allowed',
+                opacity: draft.trim() ? 1 : 0.5,
+              }}
+            >Hinzufügen</button>
+          </div>
+        )}
 
         <div style={{
           padding: '0 18px 14px', flex: 1, overflowY: 'auto',
@@ -1157,38 +1148,42 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                   }}>
                     {it.consumed} / {it.expected}
                   </div>
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    <button
-                      onClick={() => dec(it.barcode)}
-                      title="Menge -1"
-                      style={{
-                        width: 22, height: 22, padding: 0,
-                        border: '1px solid var(--clr-border)',
-                        background: 'var(--clr-bg-elevated, #fff)',
-                        borderRadius: 3, cursor: 'pointer',
-                        fontSize: 13, fontWeight: 700, lineHeight: '20px',
-                      }}
-                    >−</button>
-                    <button
-                      onClick={() => inc(it.barcode)}
-                      title="Menge +1"
-                      style={{
-                        width: 22, height: 22, padding: 0,
-                        border: '1px solid var(--clr-border)',
-                        background: 'var(--clr-bg-elevated, #fff)',
-                        borderRadius: 3, cursor: 'pointer',
-                        fontSize: 13, fontWeight: 700, lineHeight: '20px',
-                      }}
-                    >+</button>
-                  </div>
-                  <button
-                    onClick={() => remove(it.barcode)}
-                    title="Eintrag ganz entfernen"
-                    style={{
-                      padding: 2, border: 'none', background: 'transparent',
-                      color: 'var(--clr-text-muted)', cursor: 'pointer',
-                    }}
-                  ><X size={13} /></button>
+                  {!readOnly && (
+                    <>
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        <button
+                          onClick={() => dec(it.barcode)}
+                          title="Menge -1"
+                          style={{
+                            width: 22, height: 22, padding: 0,
+                            border: '1px solid var(--clr-border)',
+                            background: 'var(--clr-bg-elevated, #fff)',
+                            borderRadius: 3, cursor: 'pointer',
+                            fontSize: 13, fontWeight: 700, lineHeight: '20px',
+                          }}
+                        >−</button>
+                        <button
+                          onClick={() => inc(it.barcode)}
+                          title="Menge +1"
+                          style={{
+                            width: 22, height: 22, padding: 0,
+                            border: '1px solid var(--clr-border)',
+                            background: 'var(--clr-bg-elevated, #fff)',
+                            borderRadius: 3, cursor: 'pointer',
+                            fontSize: 13, fontWeight: 700, lineHeight: '20px',
+                          }}
+                        >+</button>
+                      </div>
+                      <button
+                        onClick={() => remove(it.barcode)}
+                        title="Eintrag ganz entfernen"
+                        style={{
+                          padding: 2, border: 'none', background: 'transparent',
+                          color: 'var(--clr-text-muted)', cursor: 'pointer',
+                        }}
+                      ><X size={13} /></button>
+                    </>
+                  )}
                 </div>
               );
             })
@@ -1200,19 +1195,23 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           borderTop: '1px solid var(--clr-border)',
           display: 'flex', justifyContent: 'space-between',
         }}>
-          <button
-            onClick={() => {
-              if (window.confirm(`Liste „${list.name}" wirklich löschen?`)) onDelete();
-            }}
-            style={{
-              padding: '6px 12px', fontSize: 12, fontWeight: 600,
-              border: '1px solid #fecaca', background: '#fef2f2',
-              color: '#991b1b', borderRadius: 6, cursor: 'pointer',
-            }}
-          >
-            <Trash2 size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-            Löschen
-          </button>
+          {readOnly ? (
+            <span />
+          ) : (
+            <button
+              onClick={() => {
+                if (window.confirm(`Liste „${list.name}" wirklich löschen?`)) onDelete();
+              }}
+              style={{
+                padding: '6px 12px', fontSize: 12, fontWeight: 600,
+                border: '1px solid #fecaca', background: '#fef2f2',
+                color: '#991b1b', borderRadius: 6, cursor: 'pointer',
+              }}
+            >
+              <Trash2 size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+              Löschen
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{
