@@ -1499,7 +1499,7 @@ function MainPane(p: MainPaneProps) {
         ) : (
         <>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+          <table className="data-table" style={{ minWidth: 720 }}>
             <thead>
               <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
                 <Th>Position</Th>
@@ -1579,7 +1579,7 @@ function CwListsTab({ cwLists }: { cwLists: CWList[] }) {
           Keine CW-Listen — Pulpo Pick-Location der Maschine in den Einstellungen setzen.
         </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <table className="data-table">
           <thead>
             <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
               <Th>Liste</Th><Th>Quelle</Th><Th>Aktiv</Th><Th>Artikel</Th><Th>Verbraucht</Th><Th>Verbleibend</Th>
@@ -1611,17 +1611,9 @@ function CwListsTab({ cwLists }: { cwLists: CWList[] }) {
   );
 }
 
+// Header/cell styling now comes from the shared table.css (.data-table).
 function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th style={{
-      textAlign: 'left', padding: '10px 12px',
-      fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
-      letterSpacing: 0.5, color: 'var(--clr-text-muted)',
-      whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </th>
-  );
+  return <th>{children}</th>;
 }
 
 interface TableRowProps {
@@ -1756,11 +1748,7 @@ function TableRow({
 }
 
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <td className={className} style={{ padding: '10px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-      {children}
-    </td>
-  );
+  return <td className={className}>{children}</td>;
 }
 
 function EmptyState({ connected, hasSimulator }: { connected: boolean; hasSimulator: boolean }) {
