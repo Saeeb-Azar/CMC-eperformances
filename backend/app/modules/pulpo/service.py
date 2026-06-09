@@ -63,7 +63,7 @@ def _tenant_id_from(payload: dict) -> str | None:
 
 async def _get_default_tenant_id(db: AsyncSession) -> str:
     # Single-Tenant-Setup wie aktuell: nimm den ersten Tenant.
-    from app.modules.auth.models import Tenant
+    from app.modules.tenants.models import Tenant
     res = await db.execute(select(Tenant).limit(1))
     tenant = res.scalar_one_or_none()
     if not tenant:
