@@ -37,6 +37,13 @@
   font-size: var(--text-base);
 }
 
+/* Compact button */
+.btn--sm {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--text-xs);
+}
+
 .btn-icon {
   display: inline-flex;
   align-items: center;

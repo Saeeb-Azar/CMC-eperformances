@@ -7,7 +7,7 @@ import {
   ScanBarcode, LogIn, Ruler, Tag, FileText,
   CheckCircle, XCircle, Trash2, Activity,
   Info, Server, ChevronRight, ChevronDown, Search,
-  ExternalLink,
+  ExternalLink, Copy, Check,
 } from 'lucide-react';
 import PackageStations, {
   type StationId, type StationStatus, STATIONS,
@@ -139,6 +139,11 @@ export default function SimulatorPage() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [textFilter, setTextFilter] = useState('');
   const [showSetup, setShowSetup] = useState(false);
+  const [resolveInput, setResolveInput] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [resolveResult, setResolveResult] = useState<{ ip: string; port: number | null } | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [resolveCopied, setResolveCopied] = useState(false);
   const [packetSearch, setPacketSearch] = useState('');
   const [packetFilters, setPacketFilters] = useState<FilterState>({ status: [], stage: [] });
   const [mergeByBarcode, setMergeByBarcode] = useState(true);
@@ -186,6 +191,51 @@ export default function SimulatorPage() {
       clearInterval(interval);
     };
   }, []);
+
+  // Resolve a Railway TCP-proxy hostname (e.g. roundhouse.proxy.rlwy.net:56127)
+  // to a numeric IP the CW1000 simulator can use, so the user doesn't have to
+  // run nslookup by hand.
+  const handleResolve = async () => {
+    const input = resolveInput.trim();
+    if (!input || resolving) return;
+    setResolving(true);
+    setResolveError(null);
+    setResolveResult(null);
+    setResolveCopied(false);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/v1/simulator/resolve?host=${encodeURIComponent(input)}`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setResolveResult({ ip: data.ip, port: data.port ?? null });
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : t('simulator.resolverError'));
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const resolvedAddress = resolveResult
+    ? resolveResult.port != null
+      ? `${resolveResult.ip}:${resolveResult.port}`
+      : resolveResult.ip
+    : '';
+
+  const copyResolved = async () => {
+    if (!resolvedAddress) return;
+    try {
+      await navigator.clipboard.writeText(resolvedAddress);
+      setResolveCopied(true);
+      setTimeout(() => setResolveCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — user can still select manually */
+    }
+  };
 
   // Aggregate package lifecycles for the flow panel + summary table
   const packages = useMemo<PackageSummary[]>(() => {
@@ -752,6 +802,65 @@ export default function SimulatorPage() {
                     <strong>{t('simulator.railwaySetup')}:</strong><br />
                     {t('simulator.railwaySteps', { port: gatewayPort })}
                   </div>
+
+                  {/* Hostname → IP resolver: paste the Railway proxy address,
+                      get the numeric IP the simulator needs (no nslookup). */}
+                  <div className="p-3 rounded-lg" style={{ background: 'var(--clr-surface-sunken)' }}>
+                    <p className="text-sm" style={{ fontWeight: 600, marginBottom: 4 }}>
+                      {t('simulator.resolverTitle')}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--clr-text-muted)', marginBottom: 8, lineHeight: 1.5 }}>
+                      {t('simulator.resolverDesc')}
+                    </p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="text"
+                        className="input mono"
+                        style={{ flex: 1, fontSize: 'var(--text-xs)' }}
+                        placeholder={t('simulator.resolverPlaceholder')}
+                        value={resolveInput}
+                        onChange={(e) => setResolveInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void handleResolve(); }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--sm"
+                        onClick={() => void handleResolve()}
+                        disabled={resolving || !resolveInput.trim()}
+                      >
+                        {resolving ? t('simulator.resolverResolving') : t('simulator.resolverButton')}
+                      </button>
+                    </div>
+                    {resolveResult && (
+                      <div
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          gap: 8, marginTop: 8, padding: '6px 10px', borderRadius: 8,
+                          background: 'var(--clr-success-soft)', color: 'var(--clr-success-text)',
+                        }}
+                      >
+                        <code className="mono" style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>
+                          {resolvedAddress}
+                        </code>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          onClick={() => void copyResolved()}
+                          title={t('simulator.resolverCopy')}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                          {resolveCopied ? <Check size={14} /> : <Copy size={14} />}
+                          {resolveCopied ? t('simulator.resolverCopied') : t('simulator.resolverCopy')}
+                        </button>
+                      </div>
+                    )}
+                    {resolveError && (
+                      <p className="text-xs" style={{ color: 'var(--clr-danger-text, #dc2626)', marginTop: 6 }}>
+                        {t('simulator.resolverError')}: {resolveError}
+                      </p>
+                    )}
+                  </div>
+
                   <p className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
                     {t('simulator.internalPort')}: <code className="mono px-1.5 py-0.5 rounded" style={{ background: 'var(--clr-surface-sunken)' }}>{gatewayPort}</code>
                   </p>

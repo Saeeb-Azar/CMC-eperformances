@@ -2,6 +2,9 @@
 Simulator API: connect/disconnect to CMC CartonWrap simulator for testing.
 """
 
+import asyncio
+import socket
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -103,3 +106,55 @@ async def get_simulator_status():
         websocket_clients=ws_manager.client_count,
         connected_machines=connection_manager.connected_machines,
     )
+
+
+class ResolveResult(BaseModel):
+    host: str
+    ip: str
+    port: int | None = None
+
+
+@router.get("/resolve", response_model=ResolveResult)
+async def resolve_host(host: str):
+    """Resolve a Railway TCP-proxy address to a numeric IP.
+
+    The CW1000 CIS simulator only accepts a numeric IP, but Railway hands out
+    a hostname like ``roundhouse.proxy.rlwy.net:56127``. This does the DNS
+    lookup server-side (a browser can't) so the UI can show ``IP:port`` ready
+    to paste. Accepts a bare hostname, ``host:port``, or a full URL; any
+    trailing ``:port`` is parsed out and echoed back unchanged.
+    """
+    raw = (host or "").strip()
+    if "://" in raw:  # tolerate a pasted scheme like tcp:// or https://
+        raw = raw.split("://", 1)[1]
+    raw = raw.strip("/")
+
+    port: int | None = None
+    hostname = raw
+    if ":" in raw:
+        maybe_host, _, port_str = raw.rpartition(":")
+        if port_str.strip().isdigit():
+            hostname = maybe_host
+            port = int(port_str.strip())
+    hostname = hostname.strip()
+
+    if not hostname:
+        raise HTTPException(400, "No hostname provided")
+
+    loop = asyncio.get_running_loop()
+    try:
+        # Prefer IPv4 (what the simulator expects); fall back to any family.
+        try:
+            infos = await loop.getaddrinfo(
+                hostname, port, family=socket.AF_INET, type=socket.SOCK_STREAM
+            )
+        except socket.gaierror:
+            infos = await loop.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except Exception as e:
+        raise HTTPException(502, f"DNS lookup failed for '{hostname}': {e}")
+
+    if not infos:
+        raise HTTPException(502, f"No address found for '{hostname}'")
+
+    ip = infos[0][4][0]
+    return ResolveResult(host=hostname, ip=ip, port=port)
