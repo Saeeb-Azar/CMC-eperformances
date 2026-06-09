@@ -31,22 +31,38 @@ router = APIRouter(prefix="/api/v1/webhooks/pulpo", tags=["pulpo"])
 
 
 def _verify_webhook_signature(raw_body: bytes, signature_header: str | None) -> bool:
-    """HMAC-SHA256-Verifikation. Pulpo schickt vermutlich einen Header
-    wie `X-Pulpo-Signature: sha256=<hex>`. Format ggf. anpassen sobald
-    wir's bestätigt haben.
+    """HMAC-SHA256-Verifikation (Fallback). Pulpo nutzt primär ein
+    `?secret=`-Query-Param (siehe `_authorize_webhook`); dieser Header-Weg
+    bleibt als Fallback erhalten.
     """
     secret = (get_settings().pulpo_webhook_secret or "").encode()
     if not secret:
-        # No secret configured — accept (Demo / Local-Dev mode). Logge
-        # damit ein vergessenes Secret im Prod auffällt.
         logger.warning("Pulpo webhook received but PULPO_WEBHOOK_SECRET is not set — accepting unverified")
         return True
     if not signature_header:
         return False
-    # Trim optional "sha256=" prefix.
     sig = signature_header.split("=", 1)[1] if "=" in signature_header else signature_header
     expected = hmac.new(secret, raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, sig)
+
+
+def _authorize_webhook(request: Request, raw_body: bytes, signature_header: str | None) -> bool:
+    """Authorize an incoming Pulpo webhook.
+
+    Pulpo's mechanism (confirmed from the webhook logs) is a `?secret=...`
+    query parameter appended to the webhook URL. We compare it to
+    PULPO_WEBHOOK_SECRET; if that's unset we accept (demo/local). An HMAC
+    signature header is still accepted as a fallback.
+    """
+    secret = (get_settings().pulpo_webhook_secret or "")
+    if not secret:
+        logger.warning("Pulpo webhook received but PULPO_WEBHOOK_SECRET is not set — accepting unverified")
+        return True
+    provided = request.query_params.get("secret") or ""
+    if provided and hmac.compare_digest(provided, secret):
+        return True
+    return _verify_webhook_signature(raw_body, signature_header)
+
 
 
 @router.post("/packing_order_created", status_code=status.HTTP_200_OK)
@@ -150,8 +166,8 @@ async def webhook_dispatch(
     below still work for setups that prefer one webhook per type.
     """
     raw = await request.body()
-    if not _verify_webhook_signature(raw, x_pulpo_signature):
-        raise HTTPException(status_code=401, detail="invalid signature")
+    if not _authorize_webhook(request, raw, x_pulpo_signature):
+        raise HTTPException(status_code=401, detail="invalid secret")
     payload = _parse_json(raw)
     event = _detect_event_type(payload, request.headers)
     # Log the first real deliveries verbatim (capped) so we can confirm the
