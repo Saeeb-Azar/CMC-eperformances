@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
-import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus, Pencil, Boxes } from 'lucide-react';
+import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus, Pencil, Boxes, CheckCircle, AlertTriangle } from 'lucide-react';
 import { api, type MachineRead } from '../services/api';
 import MachineFormModal from '../components/machines/MachineFormModal';
 
@@ -172,6 +172,33 @@ export default function MachinesPage() {
           >
             <Plus size={16} /> {t('machines.addMachine')}
           </button>
+        </div>
+
+        {/* Stat cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+          {(() => {
+            const online = machines.filter((m) => m.is_online).length;
+            const warnings = machines.filter((m) => m.status === 'ERROR').length;
+            const cards = [
+              { label: 'Maschinen', sub: 'gesamt', value: machines.length, icon: <Boxes size={20} />, c: { bg: '#eff6ff', fg: '#2563eb' } },
+              { label: 'Online', sub: 'Maschinen', value: online, icon: <CheckCircle size={20} />, c: { bg: '#ecfdf5', fg: '#059669' } },
+              { label: 'Warnungen', sub: 'aktiv', value: warnings, icon: <AlertTriangle size={20} />, c: { bg: '#fffbeb', fg: '#d97706' } },
+              { label: 'Verbindungen', sub: 'aktiv', value: online, icon: <Wifi size={20} />, c: { bg: '#f5f3ff', fg: '#7c3aed' } },
+            ];
+            return cards.map((s) => (
+              <div key={s.label} style={{
+                background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
+                borderRadius: 14, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16,
+              }}>
+                <span style={{ width: 46, height: 46, borderRadius: 12, background: s.c.bg, color: s.c.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.icon}</span>
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{s.value}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--clr-text)', marginTop: 4 }}>{s.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>{s.sub}</div>
+                </div>
+              </div>
+            ));
+          })()}
         </div>
 
         <MachineFormModal
