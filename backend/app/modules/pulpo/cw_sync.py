@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -118,21 +118,23 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     tenant_id = await _get_default_tenant_id(db)
     product_cache: dict[str, str] = {}
 
-    # Resolve origin_location_id → Lagerplatz code (e.g. 247 → "CW10").
-    loc_map: dict[str, str] = {}
-    try:
-        for loc in await pulpo.list_packing_locations():
-            lid = loc.get("id")
-            code = loc.get("code") or loc.get("name")
-            if lid is not None and code:
-                loc_map[str(lid)] = str(code)
-        logger.info(f"Pulpo locations: {len(loc_map)} (sample {list(loc_map.items())[:5]})")
-    except PulpoError as e:
-        logger.warning(f"Pulpo locations fetch failed: {e}")
-
     try:
         orders = await pulpo.list_queue_orders(None)  # whole packing queue
         logger.info(f"Pulpo resync: {len(orders)} packing-queue orders pulled")
+
+        # Resolve each distinct origin_location_id → Lagerplatz code (e.g.
+        # 457127 → "CW10") via the warehouse-locations endpoint (cached).
+        loc_map: dict[str, str] = {}
+        for lid in {str(o.get("origin_location_id")) for o in orders if o.get("origin_location_id") is not None}:
+            try:
+                loc = await pulpo.get_location(lid)
+                code = (loc or {}).get("code") or (loc or {}).get("name")
+                if code:
+                    loc_map[lid] = str(code)
+            except PulpoError as e:
+                logger.warning(f"Pulpo location {lid} lookup failed: {e}")
+        logger.info(f"Pulpo locations resolved: {list(loc_map.items())[:8]}")
+
         if orders:
             import json as _json
             o0 = orders[0]
@@ -265,16 +267,19 @@ async def _upsert_queue_order(
     row.cart_box_barcode = _extract_cartbox(order)
     row.raw_payload = order
     row.updated_at = datetime.now(timezone.utc)
+    await db.flush()  # ensure row.id exists before (re)writing items
 
-    for existing in list(row.items):
-        await db.delete(existing)
-    row.items = []
+    # Replace items via explicit query — never touch row.items (would lazy-load
+    # outside the async context → greenlet error).
+    await db.execute(delete(PulpoOrderItem).where(PulpoOrderItem.order_db_id == row.id))
     for item in order.get("items") or []:
         ean = await _resolve_ean(item, product_cache)
+        prod = item.get("product") if isinstance(item.get("product"), dict) else {}
         db.add(PulpoOrderItem(
-            order=row,
+            order_db_id=row.id,
             ean=ean,
-            product_id=str(item.get("product_id") or ""),
+            product_id=str(item.get("product_id") or prod.get("id") or prod.get("sku") or ""),
+            product_name=str(prod.get("name") or ""),
             quantity=int(item.get("requested_quantity") or item.get("quantity") or 1),
             raw_payload=item if isinstance(item, dict) else {},
         ))

@@ -304,6 +304,15 @@ class PulpoClient:
         an order's origin_location_id to its Lagerplatz code."""
         return self._as_list(await self._request("GET", "/packing/locations"))
 
+    async def get_location(self, location_id: int | str) -> dict | None:
+        """A single warehouse location by id → its ``code`` (e.g. 'CW10')."""
+        try:
+            return await self._request("GET", f"/warehouses/locations/{location_id}")
+        except PulpoError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
     async def list_shipping_locations(self, order_id: int | str) -> list[dict]:
         """Valid shipping locations for a packing order — needed for close()."""
         result = await self._request("GET", f"/packing/orders/{order_id}/shipping_locations")
