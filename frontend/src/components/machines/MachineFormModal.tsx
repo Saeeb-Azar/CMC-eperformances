@@ -163,10 +163,10 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
             <Section icon={<Boxes size={15} />} title={t('machines.form.sectionPulpo', 'Pulpo Integration')}>
               <Field
                 label={t('machines.form.pulpoPickLocation', 'Pulpo Pick-Location')}
-                hint={t('machines.form.pulpoPickLocationHint', 'origin_location_code in Pulpo. Gesetzt = CW-Liste wird automatisch aus der Pulpo-Queue befüllt. Leer = keine Pulpo-Anbindung.')}
+                hint={t('machines.form.pulpoPickLocationHint', 'Lagerplatz-Präfix in Pulpo. „CW" matcht CW1/CW6/CW10 (CartonWrap) und schließt SACK-Plätze aus. Leer = ganze Queue.')}
               >
                 <input type="text" className="modal-input" value={form.pulpo_pick_location ?? ''}
-                  onChange={(e) => update('pulpo_pick_location', e.target.value)} placeholder="z.B. Standard" />
+                  onChange={(e) => update('pulpo_pick_location', e.target.value)} placeholder="z.B. CW" />
               </Field>
             </Section>
           </div>

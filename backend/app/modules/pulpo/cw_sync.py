@@ -47,7 +47,9 @@ async def build_cw_items_for_location(
         .group_by(PulpoOrderItem.ean)
     )
     if pick_location:
-        stmt = stmt.where(PulpoPackingOrder.pick_location == pick_location)
+        # Prefix match: a machine configured with "CW" picks up CW1/CW6/CW10/…
+        # (CartonWrap locations) and excludes SACK* (manual sack packing).
+        stmt = stmt.where(PulpoPackingOrder.pick_location.like(f"{pick_location}%"))
     rows = (await db.execute(stmt)).all()
     return {ean: int(qty or 0) for ean, qty in rows if ean}
 
@@ -85,11 +87,10 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
         orders = await pulpo.list_queue_orders(None)  # whole packing queue
         logger.info(f"Pulpo resync: {len(orders)} packing-queue orders pulled")
         if orders:
+            import json as _json
             o0 = orders[0]
-            logger.info(
-                f"Pulpo sample order: keys={list(o0.keys())} "
-                f"items={(o0.get('items') or [])[:2]}"
-            )
+            logger.info(f"Pulpo sample order FULL: {_json.dumps(o0, default=str)[:2500]}")
+            logger.info(f"Pulpo sample order: keys={list(o0.keys())} loc={_extract_location_code(o0)!r}")
         pulled_ids: set[str] = set()
         for order in orders:
             oid = order.get("id")
@@ -119,6 +120,25 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     pulpo_runtime.last_sync_orders = len(orders)
     await sync_cw_lists_from_cache(db)
     return {"ok": True, "orders": len(orders)}
+
+
+def _extract_location_code(order: dict) -> str:
+    """The packing location CODE (e.g. 'CW6', 'SACK05') — what Pulpo shows as
+    'Lagerplatz'. Tries the likely field names defensively (the resync FULL log
+    reveals the real one); falls back to the numeric origin_location_id."""
+    for k in ("origin_location_code", "location_code", "lagerplatz",
+              "packing_location_code", "origin_location_name", "destination_location_code"):
+        v = order.get(k)
+        if v:
+            return str(v)
+    for k in ("origin_location", "location", "destination_location", "packing_location"):
+        v = order.get(k)
+        if isinstance(v, dict):
+            code = v.get("code") or v.get("name")
+            if code:
+                return str(code)
+    v = order.get("origin_location_id")
+    return str(v) if v is not None else ""
 
 
 async def _resolve_ean(item: dict, cache: dict[str, str]) -> str:
@@ -165,7 +185,7 @@ async def _upsert_queue_order(
         row = PulpoPackingOrder(tenant_id=tenant_id, pulpo_order_id=str(pulpo_order_id))
         db.add(row)
     row.state = "queue"
-    row.pick_location = str(order.get("origin_location_id") or order.get("origin_location_code") or "")
+    row.pick_location = _extract_location_code(order)
     row.raw_payload = order
     row.updated_at = datetime.now(timezone.utc)
 

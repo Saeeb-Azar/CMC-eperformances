@@ -330,7 +330,7 @@
       "tcpPort": "Port",
       "maxDimensions": "Max Dimensions",
       "pulpoPickLocation": "Pulpo pick location",
-      "pulpoPickLocationHint": "origin_location_code in Pulpo. Set = the CW-Liste is filled automatically from the Pulpo queue. Empty = no Pulpo sync.",
+      "pulpoPickLocationHint": "Pulpo location prefix. \"CW\" matches CW1/CW6/CW10 (CartonWrap) and excludes SACK locations. Empty = whole queue.",
       "stations": "Active Stations",
       "create": "Create machine",
       "errorRequired": "Please enter machine id and name",

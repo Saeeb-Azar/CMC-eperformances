@@ -330,7 +330,7 @@
       "tcpPort": "Port",
       "maxDimensions": "Max. Abmessungen",
       "pulpoPickLocation": "Pulpo Pick-Location",
-      "pulpoPickLocationHint": "origin_location_code in Pulpo. Gesetzt = CW-Liste wird automatisch aus der Pulpo-Queue befüllt. Leer = keine Pulpo-Anbindung.",
+      "pulpoPickLocationHint": "Lagerplatz-Präfix in Pulpo. „CW\" matcht CW1/CW6/CW10 (CartonWrap) und schließt SACK-Plätze aus. Leer = ganze Queue.",
       "stations": "Aktive Stationen",
       "create": "Maschine anlegen",
       "errorRequired": "Bitte Maschine-ID und Namen angeben",
