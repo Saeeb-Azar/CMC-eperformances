@@ -1,11 +1,10 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, Plug, LogOut, Zap } from 'lucide-react';
+import { LayoutDashboard, Plug, LogOut, Zap, Server, Settings } from 'lucide-react';
 
-// Minimal sidebar — only the two views we need to bring the machine integration
-// up locally: the live Dashboard (one row per package) and the Simulator
-// connection page. All other pages still exist as routes but are hidden until
-// the core flow is solid.
+// Sidebar nav. Dashboard + Simulator are the day-to-day views; Maschinen and
+// Einstellungen are needed to configure the Pulpo pick-location and the
+// Test-Modus. Further pages exist as routes but stay hidden for now.
 export default function Sidebar() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -18,7 +17,9 @@ export default function Sidebar() {
 
   const items = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/machines', icon: Server, label: t('nav.machines', 'Maschinen') },
     { to: '/simulator', icon: Plug, label: t('nav.simulator') },
+    { to: '/settings/company', icon: Settings, label: t('nav.settings', 'Einstellungen') },
   ];
 
   return (
