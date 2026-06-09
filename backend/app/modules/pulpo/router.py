@@ -118,3 +118,60 @@ def _parse_json(raw: bytes) -> dict[str, Any]:
         return json.loads(raw or b"{}")
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="invalid JSON")
+
+
+def _detect_event_type(payload: dict, headers) -> str:
+    """Figure out which Pulpo event this is. Pulpo bundles several types onto
+    one webhook URL, so the type comes either in a header or a payload field.
+    Defensive — tries the common spellings."""
+    for h in ("x-pulpo-event", "x-pulpo-topic", "x-pulpo-type", "x-event-type", "x-webhook-event"):
+        v = headers.get(h)
+        if v:
+            return str(v).lower()
+    if isinstance(payload, dict):
+        for k in ("type", "event", "event_type", "topic", "action", "name", "webhook_type"):
+            v = payload.get(k)
+            if isinstance(v, str) and v:
+                return v.lower()
+    return ""
+
+
+@router.post("", status_code=status.HTTP_200_OK)
+@router.post("/", status_code=status.HTTP_200_OK)
+async def webhook_dispatch(
+    request: Request,
+    x_pulpo_signature: str | None = Header(default=None),
+):
+    """Unified Pulpo webhook entry point.
+
+    Pulpo bundles several event types onto a single webhook URL, so point ONE
+    Pulpo webhook here (with the packing_order_created / packing_order_finished
+    types) and this reads the event type and dispatches. The per-type routes
+    below still work for setups that prefer one webhook per type.
+    """
+    raw = await request.body()
+    if not _verify_webhook_signature(raw, x_pulpo_signature):
+        raise HTTPException(status_code=401, detail="invalid signature")
+    payload = _parse_json(raw)
+    event = _detect_event_type(payload, request.headers)
+    # Log the first real deliveries verbatim (capped) so we can confirm the
+    # actual event-type field, headers and payload shape, then refine mapping.
+    logger.info(
+        f"Pulpo webhook event={event!r} "
+        f"headers={ {k: v for k, v in request.headers.items() if k.lower().startswith(('x-', 'content-type'))} } "
+        f"payload={str(payload)[:2000]}"
+    )
+    async for db in get_db():
+        if "packing_order_created" in event:
+            result = await service.handle_packing_order_created(db, payload)
+            await cw_sync.sync_cw_lists_from_cache(db)
+        elif "packing_order_finished" in event:
+            result = await service.handle_packing_order_finished(db, payload)
+            await cw_sync.sync_cw_lists_from_cache(db)
+        elif "box_closed" in event:  # covers box_closed / packing_box_closed
+            result = {"ok": True, "noted": True, "event": event}
+        else:
+            result = {"ok": True, "ignored": True, "event": event or "unknown"}
+        await db.commit()
+        return result
+
