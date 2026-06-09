@@ -7,7 +7,7 @@ import {
   ScanBarcode, LogIn, Ruler, Tag, FileText,
   CheckCircle, XCircle, Trash2, Activity,
   Info, Server, ChevronRight, ChevronDown, Search,
-  ExternalLink, Copy, Check,
+  ExternalLink, Copy, Check, Boxes, Heart,
 } from 'lucide-react';
 import PackageStations, {
   type StationId, type StationStatus, STATIONS,
@@ -412,24 +412,47 @@ export default function SimulatorPage() {
           </div>
         </div>
 
+        {/* Top stat row: 4 metric cards + a connection card (mockup layout) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) 1.4fr', gap: 14, marginBottom: 20 }}>
+          {[
+            { label: t('simulator.events'), value: stats.total, icon: <Boxes size={17} />, c: { bg: '#eef2ff', fg: '#4f46e5' } },
+            { label: t('simulator.scans'), value: stats.enq, icon: <ScanBarcode size={17} />, c: { bg: '#ecfdf5', fg: '#059669' } },
+            { label: t('simulator.complete'), value: stats.end, icon: <CheckCircle size={17} />, c: { bg: '#eff6ff', fg: '#2563eb' } },
+            { label: t('simulator.heartbeats'), value: stats.hbt, icon: <Heart size={17} />, c: { bg: '#fff1f2', fg: '#e11d48' } },
+          ].map(s => (
+            <div key={s.label} style={{
+              background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
+              borderRadius: 12, padding: '14px 16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <span style={{ width: 34, height: 34, borderRadius: 10, background: s.c.bg, color: s.c.fg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.icon}</span>
+                <span style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{s.value}</span>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--clr-text)', marginTop: 10 }}>{s.label}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--clr-text-muted)', marginTop: 1 }}>gesamt</div>
+            </div>
+          ))}
+          <div style={{
+            background: 'var(--clr-bg-elevated, #fff)',
+            border: `1px solid ${connected ? '#a7f3d0' : 'var(--clr-border)'}`,
+            borderTop: `3px solid ${connected ? '#10b981' : '#cbd5e1'}`,
+            borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            {connected ? <Wifi size={26} className="text-emerald-500" /> : <WifiOff size={26} style={{ color: '#94a3b8' }} />}
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+                {connected ? t('simulator.connected', 'Simulator verbunden') : t('common.disconnected')}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', marginTop: 2 }}>
+                {connectedMachines.length} {connectedMachines.length === 1 ? 'Maschine' : 'Maschinen'} · {stats.total} Empfänge gesamt
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid-main gap-6">
           {/* Left: Event Feed */}
           <div className="stack-4">
-            {/* Stats */}
-            <div className="grid-4 gap-4">
-              {[
-                { label: t('simulator.events'), value: stats.total },
-                { label: t('simulator.scans'), value: stats.enq },
-                { label: t('simulator.complete'), value: stats.end },
-                { label: t('simulator.heartbeats'), value: stats.hbt },
-              ].map(s => (
-                <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
-                  <span className="stat-card__label">{s.label}</span>
-                  <span className="stat-card__value">{s.value}</span>
-                </div>
-              ))}
-            </div>
-
             {/* Event Feed */}
             <div className="panel">
               <div className="panel__header">
