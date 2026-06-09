@@ -371,6 +371,34 @@ class ConnectionManager:
         }
         return self._serialize_cw_list(PULPO_LIST_NAME, per_machine[PULPO_LIST_NAME])
 
+    def set_pulpo_cw_lists(
+        self, protocol_id: str, lists: dict[str, dict[str, int]], *, active: bool = True,
+    ) -> None:
+        """Replace ALL Pulpo-sourced CW-Listen of a machine with one named list
+        per Lagerplatz (e.g. "CW1", "CW6", "CW10"). Each maps barcode→expected.
+        Existing `consumed` is preserved per barcode; Pulpo lists no longer
+        present are removed (manual lists are untouched)."""
+        per_machine = self._cw_lists.setdefault(protocol_id, {})
+        # Drop Pulpo lists that are no longer in the queue.
+        for name in [n for n, l in list(per_machine.items())
+                     if l.get("source") == "pulpo" and n not in lists]:
+            per_machine.pop(name, None)
+        for name, barcode_quantities in lists.items():
+            existing = per_machine.get(name) or {}
+            old_items = existing.get("items", {})
+            new_items: dict[str, dict[str, int]] = {}
+            for barcode, expected in barcode_quantities.items():
+                bc = (barcode or "").strip()
+                if not bc or expected <= 0:
+                    continue
+                old_consumed = old_items.get(bc, {}).get("consumed", 0)
+                new_items[bc] = {"expected": int(expected), "consumed": min(old_consumed, int(expected))}
+            per_machine[name] = {
+                "active": active if not existing else bool(existing.get("active", active)),
+                "items": new_items,
+                "source": "pulpo",
+            }
+
     def reset_cw_consumed(self, protocol_id: str | None = None) -> int:
         """Setzt `consumed` aller Listen-Einträge zurück. Wird vom
         Dashboard-Leeren-Button mit aufgerufen, damit der nächste Scan

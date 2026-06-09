@@ -184,6 +184,8 @@ Für eine echte Pilot-Installation: Env-Var auf `true` setzen, Backend redeploye
 | HTTP-Polling statt WebSocket | Resumable, proxy-resistant, einfach | 1s-Latenz im Best Case |
 | Persistenz off als Default | Saubere Demos, keine DB-Müll | Historische Daten erst sichtbar wenn an |
 | Reine TypeScript/Python-Codebase, kein Framework wie tRPC | Lesbar, debuggbar, keine Magic | Etwas mehr Boilerplate beim Endpoint-Schreiben |
+| Pulpo **Test-Modus** als Default (nur lesen) | Kein Risiko, dass im WMS etwas verändert wird, bevor wir bereit sind | Schreib-Flow muss bewusst scharfgeschaltet werden |
+| CW-Liste **automatisch aus Pulpo-Queue** (read-only) | Kein manuelles Pflegen, immer aktuell | Hängt an korrektem Lagerplatz-Präfix + erreichbarer Pulpo-API |
 
 ---
 
@@ -192,9 +194,30 @@ Für eine echte Pilot-Installation: Env-Var auf `true` setzen, Backend redeploye
 Wenn diese Demo zur ernsthaften Anwendung weiterwachsen soll, ist die Reihenfolge:
 
 1. **Persistenz an + Reset-Workflow definieren** (relativ einfach, ein Env-Var).
-2. **CW-Liste an ein WMS koppeln** (Pulpo, SAP, Weclapp — je nach Kunde) per Webhook oder Polling-Sync.
+2. ✅ **CW-Liste an Pulpo gekoppelt** (Webhook + Resync, read-only) — siehe Abschnitt 8. Offen: Deferred-Writes-Flow (Schreiben bei END).
 3. **Operator-Aktionen** (Resolve/Retry/Delete) aus der UI vollständig auf den In-Memory-Tracker durchschalten, damit sie auch ohne Persistenz funktionieren.
 4. **Multi-Maschinen-Dashboard** — heute zeigt die LiveFlowPage immer nur eine Maschine. Eine Übersichtsseite mit allen wäre der nächste UX-Schritt.
 5. **ACK-Mid-Flight-Reject** — Pakete am 3D-Sensor ausschleusen, wenn der Operator nachträglich Multi-Only einschaltet während Single-Order schon auf Band ist.
 
-Punkte 1 und 2 sind die Voraussetzung für eine Pilot-Installation bei einem echten Kunden. 3, 4 und 5 sind UX-Politur.
+Punkt 1 ist Voraussetzung für eine Pilot-Installation. 3, 4 und 5 sind UX-Politur.
+
+---
+
+## 8. Pulpo-Integration (WMS) — Entscheidungen
+
+Stand 2026-06. Pulpo-Mandant „Carton Wrap XS" (`eperformances_cwxs`) auf `eu.pulpo.co`.
+
+### Lesen ja, schreiben (vorerst) nein — „Test-Modus"
+Wichtigste Vorgabe: **es darf nichts in Pulpo verändert/geschlossen/gelöscht werden**, bevor wir bereit sind. Deshalb ein **harter Schreib-Guard** im `PulpoClient` (Default aus). Lesen (CW-Listen, Queue) läuft, Schreiben wirft sofort. Schalter sitzt in den Einstellungen, persistiert, Default = sicher. So kann man gefahrlos live deployen.
+
+### CW-Liste = Pulpo-Packing-Queue, gefiltert auf „CW"
+Die Aufträge stehen in **Packen → In Warteschlange**. Die Spalte **Lagerplatz** ist der entscheidende Code: `CW1/CW6/CW10` = CartonWrap, `SACK*` = Sack-Packen. Darum filtert die Maschine per **Präfix** `pulpo_pick_location = "CW"` (matcht `CW%`, schließt `SACK` aus). Befüllung automatisch über Webhooks + 30s-Resync (Self-Heal), read-only — kein manuelles Pflegen mehr.
+
+### OAuth2 statt API-Key
+Pulpo nutzt OAuth2 Password-Flow (`POST /api/v1/auth`). Der Client holt + cached das Bearer-Token, erneuert bei Ablauf/401. (`PULPO_API_KEY` ist Legacy.)
+
+### Webhook-Auth über `?secret=` statt HMAC-Header
+Aus den Pulpo-Webhook-Logs verifiziert: Pulpo hängt das Secret als **Query-Parameter** an die Ziel-URL (`…/webhooks/pulpo?secret=…`). Wir vergleichen es gegen `PULPO_WEBHOOK_SECRET` (selbst vergebener Wert, an beiden Stellen identisch). Ein Sammel-Endpoint nimmt mehrere Event-Typen auf einer URL entgegen (wie Pulpos Modell) und dispatcht selbst.
+
+### Bestehende Webhooks nicht anfassen
+Pulpo hat bereits Webhooks zu Fremdsystemen (altes Firebase/GCP, eperformances-Leitstand, Pulpo-Integrator). Die bleiben unberührt — wir legen einen **eigenen** Webhook für unser Backend an.

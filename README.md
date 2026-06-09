@@ -42,3 +42,19 @@ npm run dev
 export DATABASE_URL="postgresql://<user>:<pass>@<host>:5432/<db>"
 # postgresql:// wird intern zu postgresql+asyncpg:// umgeschrieben
 ```
+
+### Pulpo-WMS-Anbindung (optional)
+
+Liest die Packing-Queue aus Pulpo und befüllt die CW-Listen automatisch
+(read-only). Details: `docs/PROJECT.md` §12.
+
+```bash
+export PULPO_USERNAME="<pulpo-user>"
+export PULPO_PASSWORD="<pulpo-pass>"
+export PULPO_SCOPE="general"                 # Default
+export PULPO_WEBHOOK_SECRET="<selbst-vergeben>"  # = ?secret=… in der Pulpo-Webhook-URL
+# Maschine im Dashboard: Pulpo Pick-Location = "CW" (Präfix, matcht CW1/CW6/CW10)
+```
+
+> **Test-Modus** ist Default: es wird nur aus Pulpo gelesen, **nichts geschrieben**.
+> Umschaltbar unter Einstellungen → Pulpo-Anbindung.

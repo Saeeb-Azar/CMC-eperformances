@@ -78,13 +78,15 @@ def test_sync_pushes_list_into_connection_manager():
 
         synced = asyncio.run(run())
         assert synced == 2
-        # 0001 is filtered to location "100" → only ean 111
-        items1 = cm.get_cw_lists("0001")[PULPO_LIST_NAME]["items"]
-        assert items1 == {"111": {"expected": 2, "consumed": 0}}
-        assert cm.get_cw_lists("0001")[PULPO_LIST_NAME]["source"] == "pulpo"
-        # 0002 has no location → whole queue (111 + 222)
-        items2 = cm.get_cw_lists("0002")[PULPO_LIST_NAME]["items"]
-        assert set(items2.keys()) == {"111", "222"}
+        # 0001 prefix "100" → one list named after the location "100"
+        lists1 = cm.get_cw_lists("0001")
+        assert set(lists1.keys()) == {"100"}
+        assert lists1["100"]["source"] == "pulpo"
+        assert lists1["100"]["items"] == {"111": {"expected": 2, "consumed": 0}}
+        # 0002 no prefix → one list per location (100 + 200)
+        lists2 = cm.get_cw_lists("0002")
+        assert set(lists2.keys()) == {"100", "200"}
+        assert lists2["200"]["items"] == {"222": {"expected": 3, "consumed": 0}}
     finally:
         cw_sync.connection_manager = connection_manager  # restore
 

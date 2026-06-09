@@ -680,3 +680,68 @@ Die operator-seitigen Aktionen (`POST /packages/{ref}/resolve` etc.) greifen auf
 - **CW1000 CIS rel 4.0 Simulator** — Windows-Tool von CMC, mit dem wir die Wire-Format-Details validiert haben.
 
 Die exakten Field-Layouts unserer Pipe-Parser und -Serializer sind am Simulator empirisch verifiziert, nicht aus den PDFs abgelesen — die offizielle Spec liefert CMC normalerweise im Projekt-Kickoff.
+
+---
+
+## 12. Pulpo-Integration & UI-Redesign (Stand 2026-06)
+
+Dieser Abschnitt hält den Stand fest, der nach der ursprünglichen Doku dazukam.
+
+### 12.1 Pulpo-Modul (`backend/app/modules/pulpo/`)
+
+| Datei | Zweck |
+|---|---|
+| `client.py` | `PulpoClient` gegen die echte Pulpo-WMS-API (`eu.pulpo.co/api/v1`). **OAuth2 Password-Flow** (`POST /api/v1/auth` → Bearer-Token, in-memory gecacht, 401 → 1× Re-Auth). Methoden: Lookup (`find_packing_orders_by_ean`, `get_cartbox_by_barcode`, `list_queue_orders`, `get_product`, `list_shipping_locations`) und Deferred-Writes (`accept`/`create_box`/`update_box`/`create_shipment_tracking`/`attach_document`/`attach_label`/`finish`/`close`). |
+| `runtime.py` | `pulpo_runtime` — **Test-Modus-Schalter** (`write_enabled`, Default **False**) + `last_sync_at`. |
+| `cw_sync.py` | Baut die CW-Liste aus der Pulpo-**Packing-Queue**: `build_cw_items_for_location` (Präfix-Filter), `sync_cw_lists_from_cache`, `resync_cache_from_pulpo` (Self-Heal). |
+| `models.py` | Cache-Tabellen `pulpo_packing_orders` / `pulpo_order_items` (+ `deferred_writes`, `sync_state`). |
+| `router.py` | Webhook-Endpoints + Signatur/Secret-Prüfung. |
+| `service.py` | Mapping Webhook-Payload → Cache (defensiv). |
+| `wms-openapi.json` | Vendored Pulpo-WMS-OpenAPI als Referenz. |
+
+### 12.2 Test-Modus (Schreib-Sicherheit)
+- **Default: keine Schreibvorgänge an Pulpo.** Jede Schreib-Methode prüft `pulpo_runtime.write_enabled` (`_require_writes()`) und wirft sofort, bevor ein Request rausgeht.
+- Lesen (CW-Listen / Queue) ist immer erlaubt.
+- Umschaltbar in **Einstellungen → Pulpo-Anbindung** (persistiert in `tenant.settings`, beim Start geladen). Banner im LiveFlow zeigt den Modus.
+
+### 12.3 CW-Listen kommen aus Pulpo (kein manuelles Eintippen mehr)
+- Quelle ist die **Packing-Queue** (`GET /packing/orders?state=queue`), **nicht** Picking.
+- Der **Lagerplatz**-Code unterscheidet: `CW1`/`CW6`/`CW10` = CartonWrap, `SACK*` = Sack-Packen.
+- Die Maschine hat ein Feld **`pulpo_pick_location`** = **Präfix** (z.B. `CW`) → matcht `CW%`, schließt `SACK*` aus. Leer = ganze Queue.
+- Auto-Befüllung: **Webhooks** (`packing_order_created/finished`) + **periodischer Resync** (`CW_SYNC_INTERVAL_S`, Default 30s, mit Self-Heal). Die CW-Liste ist `source="pulpo"` → im UI **read-only**.
+- Items tragen SKU/`product_id`, nicht zwingend EAN → `_resolve_ean` löst per Produkt-Lookup auf.
+
+### 12.4 Webhooks
+- **Ein** Sammel-Endpoint `POST /api/v1/webhooks/pulpo` (dispatcht per Event-Typ) + die Einzel-Routen `…/packing_order_created|finished|box_closed`.
+- **Auth: `?secret=`-Query-Param** (Pulpos Mechanismus, aus den Webhook-Logs verifiziert) gegen `PULPO_WEBHOOK_SECRET`; HMAC-Header als Fallback; leeres Secret = ungeprüft akzeptieren.
+
+### 12.5 Neue/aktualisierte Endpoints
+```
+POST /api/v1/webhooks/pulpo[?secret=…]              (+ /packing_order_created|finished|box_closed)
+GET  /api/v1/settings/pulpo                          → { test_mode, write_enabled }
+PUT  /api/v1/settings/pulpo   { test_mode }          (persistiert)
+GET  /api/v1/settings/pulpo/status                   → { test_mode, configured, last_sync_at, open_orders, barcodes }
+GET  /api/v1/machines/{id}, PATCH /api/v1/machines/{id}  (jetzt inkl. pulpo_pick_location)
+```
+
+### 12.6 Neue Env-Variablen (Backend)
+```
+PULPO_BASE_URL (Default https://eu.pulpo.co) · PULPO_USERNAME · PULPO_PASSWORD · PULPO_SCOPE (general)
+PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (30)
+```
+`PULPO_API_KEY` ist Legacy/ungenutzt (seit OAuth2).
+
+### 12.7 Frontend
+- **Navigation** zeigt jetzt zusätzlich **Maschinen** und **Einstellungen** (vorher nur Dashboard + Simulator).
+- **Gemeinsame Styles**: `styles/components/modal.css` (`.modal*`) und `styles/components/table.css` (`.data-table*`) — eine Quelle für alle Modale/Tabellen.
+- **Maschinen-Modal** auf Karten-Sektionen umgebaut (Basisdaten/Netzwerk/Pulpo/Abmessungen/Stationen), inkl. **Edit-Modus** + `pulpo_pick_location`-Feld.
+- **Maschinen-Seite**: Stat-Karten (gesamt/online/Warnungen/Verbindungen) + Pulpo-Location-Spalte + ✏️-Edit.
+- **Einstellungen → Firma**: Firmenprofil, **Pulpo-Anbindung-Karte** (Status + Test-Modus-Schalter + Sync-Stats), Schnellzugriff, Abonnement.
+- **Simulator-Seite**: Icon-Stat-Karten + Connection-Karte, „Verbundene Maschinen" + **Paket-Verlauf-Donut**.
+- **LiveFlow**: Stat-Karten mit Sparklines, Tab-Leiste Aufträge/CW-Listen, **„Alle CW-Listen"**-Filter, Pagination; CW-Listen read-only mit „PULPO"-Badge.
+
+### 12.8 Bekannte offene Punkte
+- **Deferred-Writes-Flow ist noch NICHT verdrahtet** — bei END wird (noch) nichts an Pulpo geschrieben. Erst wenn das gebaut ist, hat „Test-Modus aus" echte Schreib-Wirkung.
+- **Exakte Pulpo-Feldnamen** (Lagerplatz-Code, EAN/SKU im Item) werden gegen echte `Pulpo sample order FULL`-Logs final verifiziert; Extraktion ist bis dahin defensiv.
+
+> Hinweis: Damit ist die in §9.4 genannte Lücke („CW-Liste pflegt sich nicht selbst") **adressiert** — die Liste kommt jetzt automatisch aus Pulpo (read-only).

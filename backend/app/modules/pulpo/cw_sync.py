@@ -20,6 +20,7 @@ from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.logging import logger
 from app.gateway.connection import connection_manager
@@ -54,15 +55,46 @@ async def build_cw_items_for_location(
     return {ean: int(qty or 0) for ean, qty in rows if ean}
 
 
+async def build_cw_lists_by_location(
+    db: AsyncSession, tenant_id: str, prefix: str | None,
+) -> dict[str, dict[str, int]]:
+    """One CW-Liste per Lagerplatz: {location_code: {barcode: expected_qty}}.
+
+    With ``prefix`` set (e.g. "CW") only locations starting with it are included
+    (CW1/CW6/CW10 …, excluding SACK*). Per order the scannable barcode is the
+    cart-box barcode if present (multi-order), else the items' EANs. Locations
+    with queued orders appear even if no barcode resolved yet (empty list)."""
+    stmt = (
+        select(PulpoPackingOrder)
+        .where(PulpoPackingOrder.tenant_id == tenant_id, PulpoPackingOrder.state == "queue")
+        .options(selectinload(PulpoPackingOrder.items))
+    )
+    if prefix:
+        stmt = stmt.where(PulpoPackingOrder.pick_location.like(f"{prefix}%"))
+    orders = (await db.execute(stmt)).scalars().all()
+    result: dict[str, dict[str, int]] = {}
+    for o in orders:
+        loc = (o.pick_location or "?").strip() or "?"
+        bucket = result.setdefault(loc, {})
+        if o.cart_box_barcode:
+            bucket[o.cart_box_barcode] = bucket.get(o.cart_box_barcode, 0) + 1
+        else:
+            for it in o.items:
+                if it.ean:
+                    bucket[it.ean] = bucket.get(it.ean, 0) + (it.quantity or 1)
+    return result
+
+
 async def sync_cw_lists_from_cache(db: AsyncSession) -> int:
-    """Rebuild the Pulpo CW-Liste of every active machine from the cache.
-    ``pulpo_pick_location`` is an optional filter (empty = whole queue)."""
+    """Rebuild the Pulpo CW-Listen of every active machine — one list per
+    Lagerplatz. ``pulpo_pick_location`` is the location prefix filter (empty =
+    all locations)."""
     machines = (
         await db.execute(select(Machine).where(Machine.is_active.is_(True)))
     ).scalars().all()
     for m in machines:
-        items = await build_cw_items_for_location(db, m.tenant_id, m.pulpo_pick_location or None)
-        connection_manager.set_pulpo_cw_list(m.machine_id, items)
+        lists = await build_cw_lists_by_location(db, m.tenant_id, m.pulpo_pick_location or None)
+        connection_manager.set_pulpo_cw_lists(m.machine_id, lists)
     return len(machines)
 
 
@@ -120,6 +152,23 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     pulpo_runtime.last_sync_orders = len(orders)
     await sync_cw_lists_from_cache(db)
     return {"ok": True, "orders": len(orders)}
+
+
+def _extract_cartbox(order: dict) -> str:
+    """The cart-box / picking-box barcode of an order (multi-order scan id),
+    if Pulpo provides one. Defensive across likely field names."""
+    for k in ("cart_box_barcode", "cartbox_barcode", "picking_box_barcode",
+              "kommissionier_box", "box_barcode", "barcode"):
+        v = order.get(k)
+        if v:
+            return str(v)
+    for k in ("cart_box", "cartbox", "picking_box"):
+        v = order.get(k)
+        if isinstance(v, dict):
+            bc = v.get("barcode") or v.get("code") or v.get("name")
+            if bc:
+                return str(bc)
+    return ""
 
 
 def _extract_location_code(order: dict) -> str:
@@ -186,6 +235,7 @@ async def _upsert_queue_order(
         db.add(row)
     row.state = "queue"
     row.pick_location = _extract_location_code(order)
+    row.cart_box_barcode = _extract_cartbox(order)
     row.raw_payload = order
     row.updated_at = datetime.now(timezone.utc)
 
