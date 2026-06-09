@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
-import { Building2, CreditCard } from 'lucide-react';
+import { Building2, CreditCard, Boxes, ShieldCheck, Loader2 } from 'lucide-react';
 import { api, type UserRead, type TenantRead } from '../../services/api';
 
 const planFeatures: Record<string, string[]> = {
@@ -14,6 +14,28 @@ export default function SettingsCompanyPage() {
   const { t } = useTranslation();
   const [me, setMe] = useState<UserRead | null>(null);
   const [tenant, setTenant] = useState<TenantRead | null>(null);
+  const [pulpoTestMode, setPulpoTestMode] = useState<boolean | null>(null);
+  const [pulpoSaving, setPulpoSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getPulpoSettings()
+      .then((s) => { if (!cancelled) setPulpoTestMode(s.test_mode); })
+      .catch(() => { /* default unknown */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const togglePulpoTestMode = async (next: boolean) => {
+    setPulpoSaving(true);
+    try {
+      const res = await api.setPulpoSettings(next);
+      setPulpoTestMode(res.test_mode);
+    } catch {
+      /* keep previous */
+    } finally {
+      setPulpoSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +130,51 @@ export default function SettingsCompanyPage() {
                 <p className="text-xs text-gray-400">{t('settings.company.memberSince')}</p>
                 <p className="text-sm font-semibold text-gray-900 mt-1">{createdAt}</p>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Pulpo Test-Modus */}
+        <div className="panel" style={{ marginTop: 24 }}>
+          <div className="panel__header">
+            <div className="flex items-center gap-2">
+              <Boxes size={16} className="text-gray-500" />
+              <h3 className="panel__title">{t('settings.pulpo.title', 'Pulpo-Anbindung')}</h3>
+            </div>
+          </div>
+          <div className="panel__body">
+            <div
+              className="rounded-lg p-4 flex items-start justify-between gap-4"
+              style={{
+                border: '1px solid var(--clr-border)',
+                background: pulpoTestMode === false ? '#fff7ed' : '#f0fdf4',
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <ShieldCheck size={18} className={pulpoTestMode === false ? 'text-orange-500' : 'text-emerald-600'} />
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {pulpoTestMode === false
+                      ? t('settings.pulpo.liveLabel', 'Live-Modus — Schreibvorgänge an Pulpo AKTIV')
+                      : t('settings.pulpo.testLabel', 'Test-Modus — keine Schreibvorgänge an Pulpo')}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1" style={{ maxWidth: 520, lineHeight: 1.5 }}>
+                    {t('settings.pulpo.desc',
+                      'Im Test-Modus werden Pulpo-Daten nur gelesen und angezeigt (CW-Listen). Bestellungen lassen sich abarbeiten, aber es wird nichts in Pulpo geändert, geschlossen oder gelöscht. Erst im Live-Modus gehen Schreibvorgänge an Pulpo.')}
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
+                {pulpoSaving && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                <span className="text-xs font-medium text-gray-600">{t('settings.pulpo.testToggle', 'Test-Modus')}</span>
+                <input
+                  type="checkbox"
+                  checked={pulpoTestMode !== false}
+                  disabled={pulpoTestMode === null || pulpoSaving}
+                  onChange={(e) => togglePulpoTestMode(e.target.checked)}
+                  style={{ width: 18, height: 18, cursor: 'pointer' }}
+                />
+              </label>
             </div>
           </div>
         </div>

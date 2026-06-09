@@ -336,6 +336,7 @@ export default function LiveFlowPage() {
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
   const [pendingConnections, setPendingConnections] = useState(0);
   const [machineModes, setMachineModes] = useState<Record<string, string>>({});
+  const [pulpoTestMode, setPulpoTestMode] = useState<boolean | null>(null);
   const [cwLists, setCwLists] = useState<Record<string, CWList[]>>({});
   // refs that are scheduled for mid-flight eject — keyed by machine_id.
   // The Eject-Button puts the ref in here, the backend pops it once the
@@ -370,6 +371,7 @@ export default function LiveFlowPage() {
         if (Array.isArray(data.connected_machines)) setConnectedMachines(data.connected_machines);
         if (typeof data.pending_connections === 'number') setPendingConnections(data.pending_connections);
         if (data.machine_modes && typeof data.machine_modes === 'object') setMachineModes(data.machine_modes);
+        if (typeof data.pulpo_test_mode === 'boolean') setPulpoTestMode(data.pulpo_test_mode);
         if (data.cw_lists && typeof data.cw_lists === 'object') setCwLists(data.cw_lists);
         if (data.pending_ejections && typeof data.pending_ejections === 'object') {
           setPendingEjections(data.pending_ejections);
@@ -652,6 +654,18 @@ export default function LiveFlowPage() {
                 : t('liveFlow.noSimulator')
         }
       />
+      {pulpoTestMode !== null && (
+        <div style={{
+          padding: '4px 14px', fontSize: 11, fontWeight: 600, textAlign: 'center',
+          background: pulpoTestMode ? '#eff6ff' : '#fff7ed',
+          color: pulpoTestMode ? '#1d4ed8' : '#c2410c',
+          borderBottom: '1px solid var(--clr-border)',
+        }}>
+          {pulpoTestMode
+            ? 'TEST-MODUS — Pulpo wird nur gelesen, keine Schreibvorgänge'
+            : '● LIVE — Schreibvorgänge an Pulpo sind aktiv'}
+        </div>
+      )}
       <div style={{
         flex: 1,
         display: 'grid',

@@ -14,6 +14,16 @@ import json
 import httpx
 
 from app.modules.pulpo.client import PulpoClient, PulpoError
+from app.modules.pulpo.runtime import pulpo_runtime
+
+
+def _with_writes(coro_factory):
+    """Run an async client call with Pulpo writes temporarily enabled."""
+    pulpo_runtime.write_enabled = True
+    try:
+        return asyncio.run(coro_factory())
+    finally:
+        pulpo_runtime.write_enabled = False
 
 
 def _make_client(handler, **kw) -> PulpoClient:
@@ -147,7 +157,7 @@ def test_deferred_write_sequence_hits_expected_endpoints():
         await client.finish_packing_order(10)
         await client.close_packing_order(10, shipping_location_id=3)
 
-    asyncio.run(run())
+    _with_writes(run)
     assert seen == [
         "POST /api/v1/packing/orders/10/accept",
         "POST /api/v1/packing/orders/10/box",
@@ -170,7 +180,7 @@ def test_update_box_encodes_dimensions_as_json_attributes():
         return httpx.Response(200, json={"ok": True})
 
     client = _make_client(handler)
-    asyncio.run(client.update_box(10, 88, length_mm=200, weight_g=250))
+    _with_writes(lambda: client.update_box(10, 88, length_mm=200, weight_g=250))
     attrs = json.loads(captured["body"]["attributes"])
     assert attrs == {"length_mm": 200, "weight_g": 250}
 
@@ -185,7 +195,7 @@ def test_close_passes_shipping_location_id():
         return httpx.Response(200)
 
     client = _make_client(handler)
-    asyncio.run(client.close_packing_order(10, shipping_location_id=3))
+    _with_writes(lambda: client.close_packing_order(10, shipping_location_id=3))
     assert captured["params"]["shipping_location_id"] == "3"
 
 

@@ -275,6 +275,14 @@ export const api = {
     }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),
 
+  // Pulpo settings — Test-Modus = no writes reach Pulpo
+  getPulpoSettings: () => request<{ test_mode: boolean; write_enabled: boolean }>('/settings/pulpo'),
+  setPulpoSettings: (test_mode: boolean) =>
+    request<{ ok: boolean; test_mode: boolean }>('/settings/pulpo', {
+      method: 'PUT',
+      body: JSON.stringify({ test_mode }),
+    }),
+
   // Orders
   listOrders: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';

@@ -32,6 +32,7 @@ from app.modules.analytics.router import router as analytics_router
 from app.modules.simulator.router import router as simulator_router
 from app.modules.cmc_actions.router import router as cmc_actions_router
 from app.modules.pulpo.router import router as pulpo_router
+from app.modules.pulpo.runtime import pulpo_runtime
 
 settings = get_settings()
 
@@ -57,6 +58,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"bootstrap_defaults failed: {e} — app still starting")
 
+    # Load the persisted Pulpo Test-Modus (default = safe / writes blocked).
+    await _load_pulpo_test_mode()
+
     # TCP gateway — try to start, but never crash the app
     tcp_port = settings.cmc_tcp_port
     try:
@@ -81,6 +85,41 @@ async def lifespan(app: FastAPI):
         await connection_manager.shutdown()
     except Exception:
         pass
+
+
+async def _load_pulpo_test_mode() -> None:
+    """Load the persisted Test-Modus from the first tenant's settings into the
+    runtime flag. Defaults to Test-Modus (safe) if nothing is stored."""
+    import json
+    from sqlalchemy import select
+    from app.core.database import async_session
+    from app.modules.tenants.models import Tenant
+    try:
+        async with async_session() as db:
+            tenant = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
+            settings_json = json.loads(tenant.settings) if tenant and tenant.settings else {}
+        # Absent setting → stay in safe Test-Modus.
+        pulpo_runtime.write_enabled = not bool(settings_json.get("pulpo_test_mode", True))
+        logger.info(f"Pulpo Test-Modus loaded = {pulpo_runtime.test_mode}")
+    except Exception as e:
+        pulpo_runtime.write_enabled = False  # safe fallback
+        logger.warning(f"Could not load Pulpo Test-Modus ({e}) — defaulting to Test-Modus")
+
+
+async def _persist_pulpo_test_mode(test_mode: bool) -> None:
+    """Persist the Test-Modus choice into the first tenant's settings JSON."""
+    import json
+    from sqlalchemy import select
+    from app.core.database import async_session
+    from app.modules.tenants.models import Tenant
+    async with async_session() as db:
+        tenant = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
+        if not tenant:
+            return
+        data = json.loads(tenant.settings) if tenant.settings else {}
+        data["pulpo_test_mode"] = bool(test_mode)
+        tenant.settings = json.dumps(data)
+        await db.commit()
 
 
 async def _cw_sync_loop() -> None:
@@ -203,7 +242,32 @@ def events_recent(since: int = 0, limit: int = 200):
         "machine_modes": connection_manager.machine_modes,
         "cw_lists": connection_manager.cw_lists,
         "pending_ejections": connection_manager.pending_ejections,
+        "pulpo_test_mode": pulpo_runtime.test_mode,
     }
+
+
+@app.get("/api/v1/settings/pulpo")
+def get_pulpo_settings():
+    """Current Pulpo write-safety mode. test_mode=True → no writes reach Pulpo."""
+    return {"test_mode": pulpo_runtime.test_mode, "write_enabled": pulpo_runtime.write_enabled}
+
+
+@app.put("/api/v1/settings/pulpo")
+async def set_pulpo_settings(body: dict):
+    """Toggle Test-Modus. Body: {"test_mode": true|false}.
+
+    test_mode=True (default) blocks ALL Pulpo write operations — you can work
+    with the (read-only) Pulpo data and process test orders, but nothing is
+    accepted/boxed/labeled/finished/closed in Pulpo. Persisted on the tenant
+    so the choice survives restarts.
+    """
+    test_mode = bool(body.get("test_mode", True)) if isinstance(body, dict) else True
+    pulpo_runtime.write_enabled = not test_mode
+    await _persist_pulpo_test_mode(test_mode)
+    logger.warning(
+        f"Pulpo Test-Modus = {test_mode} (writes {'BLOCKED' if test_mode else 'ENABLED'})"
+    )
+    return {"ok": True, "test_mode": pulpo_runtime.test_mode}
 
 
 @app.post("/api/v1/machines/{machine_id}/mode")

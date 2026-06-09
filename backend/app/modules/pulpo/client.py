@@ -33,6 +33,8 @@ import httpx
 from app.core.config import get_settings
 from app.core.logging import logger
 
+from .runtime import pulpo_runtime
+
 API_PREFIX = "/api/v1"
 
 
@@ -139,6 +141,18 @@ class PulpoClient:
     def _invalidate_token(self) -> None:
         self._token = None
         self._token_expiry = 0.0
+
+    @staticmethod
+    def _require_writes() -> None:
+        """Hard guard: blocks every write operation while Test-Modus is on.
+
+        Raises BEFORE any request leaves the process, so nothing can ever be
+        changed/closed/deleted in Pulpo unless writes are explicitly enabled
+        in the settings (pulpo_runtime.write_enabled)."""
+        if not pulpo_runtime.write_enabled:
+            raise PulpoError(
+                "Pulpo write blocked — Test-Modus aktiv (keine Schreibvorgänge an Pulpo)"
+            )
 
     # ── Core request ──────────────────────────────────────────────────
 
@@ -277,6 +291,7 @@ class PulpoClient:
 
     async def accept_packing_order(self, order_id: int | str) -> Any:
         """Step 1: accept (assign) the packing order."""
+        self._require_writes()
         return await self._request("POST", f"/packing/orders/{order_id}/accept")
 
     async def create_box(
@@ -286,6 +301,7 @@ class PulpoClient:
     ) -> dict:
         """Step 2a: create a packing box. Pulpo expects form-encoded fields and
         returns the box (with ``id``)."""
+        self._require_writes()
         return await self._request(
             "POST", f"/packing/orders/{order_id}/box",
             data={"product_id": product_id, "box_number": box_number, "quantity": quantity},
@@ -300,6 +316,7 @@ class PulpoClient:
         """Step 2b: update the box. The WMS only allows updating the free-form
         ``attributes`` field on a box, so machine-measured dimensions/weight are
         stored there as JSON (the carrier reads them back from attributes)."""
+        self._require_writes()
         attributes: dict[str, Any] = dict(extra_attributes or {})
         if length_mm is not None:
             attributes["length_mm"] = length_mm
@@ -320,6 +337,7 @@ class PulpoClient:
         tracking_url: str | None = None, attributes: dict | None = None,
     ) -> Any:
         """Step 3a: register the carrier tracking number on the box."""
+        self._require_writes()
         body: dict[str, Any] = {"carrier_code": carrier_code, "tracking_code": tracking_code}
         if tracking_url is not None:
             body["tracking_url"] = tracking_url
@@ -336,6 +354,7 @@ class PulpoClient:
     ) -> Any:
         """Step 3b: attach the label PDF (already uploaded to storage; ``path``
         is the storage reference) to the box."""
+        self._require_writes()
         body: dict[str, Any] = {
             "filename": filename, "path": path, "content_type": content_type,
         }
@@ -356,6 +375,7 @@ class PulpoClient:
 
         Returns {"tracking": ..., "attachment": ...} so the caller can record
         both results in the deferred-write log."""
+        self._require_writes()
         tracking = await self.create_shipment_tracking(
             order_id, box_id,
             carrier_code=carrier_code, tracking_code=tracking_code, tracking_url=tracking_url,
@@ -371,10 +391,12 @@ class PulpoClient:
 
     async def finish_packing_order(self, order_id: int | str) -> Any:
         """Step 4: finish the packing order."""
+        self._require_writes()
         return await self._request("POST", f"/packing/orders/{order_id}/finish")
 
     async def close_packing_order(self, order_id: int | str, shipping_location_id: int | str) -> Any:
         """Step 5: close the packing order at the given shipping location."""
+        self._require_writes()
         return await self._request(
             "POST", f"/packing/orders/{order_id}/close",
             params={"shipping_location_id": shipping_location_id},
