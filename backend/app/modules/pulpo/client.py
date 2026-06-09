@@ -232,6 +232,15 @@ class PulpoClient:
         )
         return self._as_list(result)
 
+    async def sample_queue(self, *, limit: int = 25) -> list[dict]:
+        """Diagnostic: a sample of queue packing orders WITHOUT any location
+        filter — used to discover the real location codes / payload shape when
+        the configured pick-location matches nothing."""
+        result = await self._request(
+            "GET", "/packing/orders", params={"state": "queue", "limit": limit},
+        )
+        return self._as_list(result)
+
     async def find_packing_orders_by_ean(self, ean: str, pick_location: str) -> list[dict]:
         """Single-order path: queue orders at this location whose items contain
         the scanned EAN. Caller picks the FIFO (oldest) order.

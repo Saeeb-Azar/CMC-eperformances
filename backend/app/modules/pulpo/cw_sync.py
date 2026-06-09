@@ -100,9 +100,28 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     try:
         for location in locations:
             orders = await pulpo.list_queue_orders(location)
+            logger.info(f"Pulpo resync location={location!r}: {len(orders)} queue orders")
+            if orders:
+                o0 = orders[0]
+                sample_items = (o0.get("items") or [])[:2]
+                logger.info(
+                    f"Pulpo sample order: keys={list(o0.keys())} "
+                    f"origin_location_id={o0.get('origin_location_id')} "
+                    f"items={sample_items}"
+                )
             for order in orders:
                 await _upsert_queue_order(db, tenant_id, location, order, product_barcode_cache)
                 synced += 1
+        # Discovery: if the configured location matched nothing, show what the
+        # queue actually contains so the real location code can be identified.
+        if synced == 0:
+            sample = await pulpo.sample_queue(limit=25)
+            locs = sorted({str(o.get("origin_location_id")) for o in sample})
+            logger.info(
+                f"Pulpo discovery (location filter matched 0): {len(sample)} queue orders "
+                f"unfiltered, origin_location_ids seen={locs}, "
+                f"first order keys={list(sample[0].keys()) if sample else []}"
+            )
         await db.flush()
     except PulpoError as e:
         logger.warning(f"Pulpo resync failed: {e} — keeping existing cache")
