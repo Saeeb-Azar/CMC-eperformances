@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Server, Loader2 } from 'lucide-react';
+import { X, Server, Loader2, Cpu, Network, Boxes, Ruler, Layers } from 'lucide-react';
 import { api, type MachineCreateInput, type MachineRead } from '../../services/api';
 
 interface MachineFormModalProps {
@@ -106,7 +106,7 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden"
+        className="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
@@ -130,159 +130,156 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto bg-slate-50">
           {error && (
             <div className="px-3 py-2.5 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label={t('machines.form.machineId')} hint={t('machines.form.machineIdHint')}>
-              <input
-                type="text"
-                value={form.machine_id}
-                onChange={(e) => update('machine_id', e.target.value)}
-                className="input"
-                required
-                disabled={isEdit}
-              />
-            </Field>
-            <Field label={t('machines.form.name')}>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => update('name', e.target.value)}
-                className="input"
-                required
-              />
-            </Field>
-          </div>
+          <Section icon={<Cpu size={15} />} title={t('machines.form.sectionBasics', 'Basisdaten')}>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={t('machines.form.machineId')} hint={t('machines.form.machineIdHint')}>
+                <input
+                  type="text"
+                  value={form.machine_id}
+                  onChange={(e) => update('machine_id', e.target.value)}
+                  className="input"
+                  required
+                  disabled={isEdit}
+                />
+              </Field>
+              <Field label={t('machines.form.name')}>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => update('name', e.target.value)}
+                  className="input"
+                  required
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={t('machines.form.model')}>
+                <select
+                  value={form.model ?? 'CW1000'}
+                  onChange={(e) => update('model', e.target.value)}
+                  className="input"
+                >
+                  <option value="CW1000">CW1000</option>
+                  <option value="CW XS">CW XS</option>
+                  <option value="CW XL">CW XL</option>
+                </select>
+              </Field>
+              <Field label={t('machines.form.tcpRole')}>
+                <select
+                  value={form.tcp_role}
+                  onChange={(e) => update('tcp_role', e.target.value as 'server' | 'client')}
+                  className="input"
+                >
+                  <option value="server">{t('machines.form.roleServer')}</option>
+                  <option value="client">{t('machines.form.roleClient')}</option>
+                </select>
+              </Field>
+            </div>
+          </Section>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label={t('machines.form.model')}>
-              <input
-                type="text"
-                value={form.model ?? ''}
-                onChange={(e) => update('model', e.target.value)}
-                className="input"
-              />
-            </Field>
-            <Field label={t('machines.form.tcpRole')}>
-              <select
-                value={form.tcp_role}
-                onChange={(e) => update('tcp_role', e.target.value as 'server' | 'client')}
-                className="input"
+            <Section icon={<Network size={15} />} title={t('machines.form.sectionNetwork', 'Netzwerk')}>
+              <div className="grid grid-cols-[1fr_96px] gap-3">
+                <Field label={t('machines.form.tcpHost')}>
+                  <input
+                    type="text"
+                    value={form.tcp_host ?? ''}
+                    onChange={(e) => update('tcp_host', e.target.value)}
+                    className="input"
+                  />
+                </Field>
+                <Field label={t('machines.form.tcpPort')}>
+                  <input
+                    type="number"
+                    value={form.tcp_port ?? 15001}
+                    onChange={(e) => update('tcp_port', Number(e.target.value))}
+                    className="input"
+                  />
+                </Field>
+              </div>
+            </Section>
+            <Section icon={<Boxes size={15} />} title={t('machines.form.sectionPulpo', 'Pulpo Integration')}>
+              <Field
+                label={t('machines.form.pulpoPickLocation', 'Pulpo Pick-Location')}
+                hint={t('machines.form.pulpoPickLocationHint', 'origin_location_code in Pulpo. Gesetzt = CW-Liste wird automatisch aus der Pulpo-Queue befüllt. Leer = keine Pulpo-Anbindung.')}
               >
-                <option value="server">{t('machines.form.roleServer')}</option>
-                <option value="client">{t('machines.form.roleClient')}</option>
-              </select>
-            </Field>
+                <input
+                  type="text"
+                  value={form.pulpo_pick_location ?? ''}
+                  onChange={(e) => update('pulpo_pick_location', e.target.value)}
+                  className="input"
+                  placeholder="z.B. Standard"
+                />
+              </Field>
+            </Section>
           </div>
 
-          <div className="grid grid-cols-[1fr_120px] gap-4">
-            <Field label={t('machines.form.tcpHost')}>
-              <input
-                type="text"
-                value={form.tcp_host ?? ''}
-                onChange={(e) => update('tcp_host', e.target.value)}
-                className="input"
-              />
-            </Field>
-            <Field label={t('machines.form.tcpPort')}>
-              <input
-                type="number"
-                value={form.tcp_port ?? 15001}
-                onChange={(e) => update('tcp_port', Number(e.target.value))}
-                className="input"
-              />
-            </Field>
-          </div>
-
-          <Field
-            label={t('machines.form.pulpoPickLocation', 'Pulpo Pick-Location')}
-            hint={t('machines.form.pulpoPickLocationHint', 'origin_location_code in Pulpo. Gesetzt = CW-Liste wird automatisch aus der Pulpo-Queue befüllt. Leer = keine Pulpo-Anbindung.')}
-          >
-            <input
-              type="text"
-              value={form.pulpo_pick_location ?? ''}
-              onChange={(e) => update('pulpo_pick_location', e.target.value)}
-              className="input"
-              placeholder="z.B. CW-A"
-            />
-          </Field>
-
-          <div>
-            <p className="text-xs font-medium text-gray-600 mb-2">{t('machines.form.maxDimensions')}</p>
+          <Section icon={<Ruler size={15} />} title={t('machines.form.maxDimensions')}>
             <div className="grid grid-cols-3 gap-3">
               <Field label="L (mm)">
-                <input
-                  type="number"
-                  value={form.max_length_mm ?? 6000}
-                  onChange={(e) => update('max_length_mm', Number(e.target.value))}
-                  className="input"
-                />
+                <input type="number" value={form.max_length_mm ?? 6000}
+                  onChange={(e) => update('max_length_mm', Number(e.target.value))} className="input" />
               </Field>
               <Field label="B (mm)">
-                <input
-                  type="number"
-                  value={form.max_width_mm ?? 4000}
-                  onChange={(e) => update('max_width_mm', Number(e.target.value))}
-                  className="input"
-                />
+                <input type="number" value={form.max_width_mm ?? 4000}
+                  onChange={(e) => update('max_width_mm', Number(e.target.value))} className="input" />
               </Field>
               <Field label="H (mm)">
-                <input
-                  type="number"
-                  value={form.max_height_mm ?? 3000}
-                  onChange={(e) => update('max_height_mm', Number(e.target.value))}
-                  className="input"
-                />
+                <input type="number" value={form.max_height_mm ?? 3000}
+                  onChange={(e) => update('max_height_mm', Number(e.target.value))} className="input" />
               </Field>
             </div>
-          </div>
+          </Section>
 
-          <div>
-            <p className="text-xs font-medium text-gray-600 mb-2">{t('machines.form.stations')}</p>
+          <Section icon={<Layers size={15} />} title={t('machines.form.stations')}>
             <div className="grid grid-cols-3 gap-3">
-              <ToggleField
-                checked={!!form.lab1_enabled}
-                onChange={(v) => update('lab1_enabled', v)}
-                label="LAB1"
-              />
-              <ToggleField
-                checked={!!form.lab2_enabled}
-                onChange={(v) => update('lab2_enabled', v)}
-                label="LAB2"
-              />
-              <ToggleField
-                checked={!!form.inv_enabled}
-                onChange={(v) => update('inv_enabled', v)}
-                label="INV"
-              />
+              <ToggleField checked={!!form.lab1_enabled} onChange={(v) => update('lab1_enabled', v)} label="LAB1" />
+              <ToggleField checked={!!form.lab2_enabled} onChange={(v) => update('lab2_enabled', v)} label="LAB2" />
+              <ToggleField checked={!!form.inv_enabled} onChange={(v) => update('inv_enabled', v)} label="INV" />
             </div>
-          </div>
+          </Section>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-white">
           <button
             type="button"
             onClick={onClose}
-            className="h-10 px-4 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+            className="h-10 px-4 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             {t('common.cancel')}
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="h-10 px-5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+            className="h-10 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50"
           >
-            {loading && <Loader2 size={14} className="animate-spin" />}
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
             {loading ? t('common.loading') : isEdit ? t('common.save', 'Speichern') : t('machines.form.create')}
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function Section({
+  icon, title, children,
+}: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <div className="flex items-center gap-2 text-gray-900">
+        <span className="text-blue-500">{icon}</span>
+        <h3 className="text-sm font-semibold">{title}</h3>
+      </div>
+      {children}
     </div>
   );
 }
