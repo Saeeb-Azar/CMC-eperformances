@@ -16,6 +16,7 @@ class MachineCreate(BaseModel):
     max_length_mm: int = 6000
     max_width_mm: int = 4000
     max_height_mm: int = 3000
+    pulpo_pick_location: str = ""
 
 
 class MachineRead(BaseModel):
@@ -34,6 +35,7 @@ class MachineRead(BaseModel):
     max_length_mm: int
     max_width_mm: int
     max_height_mm: int
+    pulpo_pick_location: str
     status: str
     is_online: bool
     is_active: bool
@@ -57,6 +59,7 @@ class MachineUpdate(BaseModel):
     max_length_mm: int | None = None
     max_width_mm: int | None = None
     max_height_mm: int | None = None
+    pulpo_pick_location: str | None = None
     is_active: bool | None = None
 
 

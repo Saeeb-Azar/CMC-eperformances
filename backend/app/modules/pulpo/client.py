@@ -260,6 +260,14 @@ class PulpoClient:
         """Full packing order by ID (includes items)."""
         return await self._request("GET", f"/packing/orders/{order_id}")
 
+    async def get_product(self, product_id: int | str) -> dict | None:
+        """Product (with its ``barcodes``) by ID. Used to resolve a packing
+        item's product_id → EAN during a queue resync, since packing items
+        only carry product_id."""
+        result = await self._request("GET", "/inventory/products", params={"id": product_id})
+        products = self._as_list(result)
+        return products[0] if products else None
+
     async def list_shipping_locations(self, order_id: int | str) -> list[dict]:
         """Valid shipping locations for a packing order — needed for close()."""
         result = await self._request("GET", f"/packing/orders/{order_id}/shipping_locations")

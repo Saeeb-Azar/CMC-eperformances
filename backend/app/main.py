@@ -68,13 +68,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"TCP Gateway failed to start: {e} — HTTP/WS still available")
 
+    # Periodic CW-Liste sync: rebuild every machine's Pulpo CW-Liste from the
+    # local cache, and (if Pulpo is configured) pull the live queue first as a
+    # self-heal for missed webhooks. Defensive — never crashes the app.
+    cw_sync_task = asyncio.create_task(_cw_sync_loop())
+
     yield
 
     logger.info("Shutting down")
+    cw_sync_task.cancel()
     try:
         await connection_manager.shutdown()
     except Exception:
         pass
+
+
+async def _cw_sync_loop() -> None:
+    """Background loop that keeps the Pulpo-derived CW-Listen fresh."""
+    from app.core.database import async_session
+    from app.modules.pulpo import cw_sync
+
+    while True:
+        try:
+            await asyncio.sleep(settings.cw_sync_interval_s)
+            async with async_session() as db:
+                await cw_sync.resync_cache_from_pulpo(db)   # no-op if Pulpo unconfigured
+                await cw_sync.sync_cw_lists_from_cache(db)
+                await db.commit()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:  # never let the loop die
+            logger.warning(f"CW-sync loop iteration failed: {e}")
 
 
 app = FastAPI(
@@ -205,12 +229,18 @@ def upsert_cw_list(machine_id: str, name: str, body: dict):
 
     Body: { "active": true|false, "barcodes": ["M001", ...] }
     Beide Felder optional — was nicht gesendet wird, bleibt unverändert.
+
+    Pulpo-gepflegte Listen (source="pulpo") sind read-only: ihre Barcodes
+    werden ausschließlich aus der Pulpo-Queue abgeleitet. Ein Barcode-Edit
+    wird abgelehnt; nur das Active-Flag darf umgeschaltet werden.
     """
     if not isinstance(body, dict):
         return {"ok": False, "error": "expected JSON object"}
     barcodes = body.get("barcodes")
     if barcodes is not None and not isinstance(barcodes, list):
         return {"ok": False, "error": "barcodes must be a list of strings"}
+    if barcodes is not None and connection_manager.is_pulpo_list(machine_id, name):
+        return {"ok": False, "error": "CW-Liste wird aus Pulpo gepflegt — Barcodes sind read-only"}
     active = body.get("active")
     serialized = connection_manager.upsert_cw_list(
         machine_id, name,

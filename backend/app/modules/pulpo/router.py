@@ -25,7 +25,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import logger
 
-from . import service
+from . import cw_sync, service
 
 router = APIRouter(prefix="/api/v1/webhooks/pulpo", tags=["pulpo"])
 
@@ -65,6 +65,8 @@ async def webhook_packing_order_created(
     payload = _parse_json(raw)
     async for db in get_db():
         result = await service.handle_packing_order_created(db, payload)
+        # Queue changed → rebuild affected machines' CW-Listen from the cache.
+        await cw_sync.sync_cw_lists_from_cache(db)
         await db.commit()
         return result
 
@@ -84,6 +86,8 @@ async def webhook_packing_order_finished(
     payload = _parse_json(raw)
     async for db in get_db():
         result = await service.handle_packing_order_finished(db, payload)
+        # Order left the queue → rebuild CW-Listen so it stops matching.
+        await cw_sync.sync_cw_lists_from_cache(db)
         await db.commit()
         return result
 

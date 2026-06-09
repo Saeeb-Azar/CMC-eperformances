@@ -37,6 +37,11 @@ class Machine(Base):
     max_width_mm: Mapped[int] = mapped_column(Integer, default=4000)
     max_height_mm: Mapped[int] = mapped_column(Integer, default=3000)
 
+    # Pulpo WMS pick-location code for this machine. When set, the machine's
+    # CW-Liste is derived automatically from the Pulpo packing queue at this
+    # origin_location_code (no manual barcode entry). Empty = no Pulpo sync.
+    pulpo_pick_location: Mapped[str] = mapped_column(String(100), default="", index=True)
+
     # Current state
     status: Mapped[str] = mapped_column(String(20), default="STOP")  # STOP, RUNNING, PAUSE, ERROR
     is_online: Mapped[bool] = mapped_column(Boolean, default=False)

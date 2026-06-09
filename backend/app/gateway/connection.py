@@ -29,6 +29,11 @@ ACTIVE_STATES = frozenset({"ASSIGNED", "INDUCTED", "SCANNED", "LABELED"})
 # Single-Order-Bestellungen vom selben Artikel ungehindert durchkommen.
 SCAN_GLITCH_WINDOW_S = 0.5
 
+# Name of the auto-managed CW-Liste that mirrors the Pulpo packing queue.
+# Lists with source="pulpo" are read-only in the UI and rebuilt by the
+# Pulpo sync — they are never edited by hand.
+PULPO_LIST_NAME = "Pulpo-Queue"
+
 
 class ActivePackageTracker:
     """In-memory mirror of active packages per machine.
@@ -335,6 +340,37 @@ class ConnectionManager:
         per_machine[name] = existing
         return self._serialize_cw_list(name, existing)
 
+    def is_pulpo_list(self, protocol_id: str, name: str) -> bool:
+        lst = self._cw_lists.get(protocol_id, {}).get(name)
+        return bool(lst and lst.get("source") == "pulpo")
+
+    def set_pulpo_cw_list(
+        self, protocol_id: str, barcode_quantities: dict[str, int], *, active: bool = True,
+    ) -> dict:
+        """Replace the auto-managed Pulpo CW-Liste for a machine with the
+        given barcode→expected-quantity map (derived from the Pulpo packing
+        queue). Marked source="pulpo" so it is read-only in the UI.
+
+        Existing `consumed` counts are preserved per barcode (capped to the
+        new expected) so an in-flight scan count survives a queue refresh.
+        """
+        per_machine = self._cw_lists.setdefault(protocol_id, {})
+        existing = per_machine.get(PULPO_LIST_NAME) or {}
+        old_items = existing.get("items", {})
+        new_items: dict[str, dict[str, int]] = {}
+        for barcode, expected in barcode_quantities.items():
+            bc = (barcode or "").strip()
+            if not bc or expected <= 0:
+                continue
+            old_consumed = old_items.get(bc, {}).get("consumed", 0)
+            new_items[bc] = {"expected": int(expected), "consumed": min(old_consumed, int(expected))}
+        per_machine[PULPO_LIST_NAME] = {
+            "active": active if not existing else bool(existing.get("active", active)),
+            "items": new_items,
+            "source": "pulpo",
+        }
+        return self._serialize_cw_list(PULPO_LIST_NAME, per_machine[PULPO_LIST_NAME])
+
     def reset_cw_consumed(self, protocol_id: str | None = None) -> int:
         """Setzt `consumed` aller Listen-Einträge zurück. Wird vom
         Dashboard-Leeren-Button mit aufgerufen, damit der nächste Scan
@@ -373,6 +409,7 @@ class ConnectionManager:
         return {
             "name": name,
             "active": bool(lst.get("active")),
+            "source": lst.get("source", "manual"),
             "items": rows,
             "total_expected": total_expected,
             "total_consumed": total_consumed,
