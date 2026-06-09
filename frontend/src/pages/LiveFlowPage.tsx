@@ -189,6 +189,9 @@ interface PackageRow {
   events: RawEvent[];
 }
 
+// Sentinel for the table filter meaning "across all CW-Listen".
+const ALL_CW_LISTS = '__ALL__';
+
 interface CWListItem {
   barcode: string;
   expected: number;
@@ -419,7 +422,8 @@ export default function LiveFlowPage() {
     let list = selectedMachine
       ? allPackages.filter((p) => p.machine_id === selectedMachine)
       : allPackages;
-    if (cwListFilter) list = list.filter((p) => p.cwList === cwListFilter);
+    if (cwListFilter === ALL_CW_LISTS) list = list.filter((p) => !!p.cwList);
+    else if (cwListFilter) list = list.filter((p) => p.cwList === cwListFilter);
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) =>
@@ -874,6 +878,24 @@ function MachineSidebar({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 360, overflowY: 'auto' }}>
+                  <button
+                    onClick={() => onCwListFilterChange(cwListFilter === ALL_CW_LISTS ? null : ALL_CW_LISTS)}
+                    title="Tabelle quer durch alle CW-Listen filtern"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 6, padding: '6px 8px', cursor: 'pointer',
+                      border: `1px solid ${cwListFilter === ALL_CW_LISTS ? '#3b82f6' : 'var(--clr-border)'}`,
+                      borderRadius: 4,
+                      background: cwListFilter === ALL_CW_LISTS ? '#3b82f6' : 'transparent',
+                      color: cwListFilter === ALL_CW_LISTS ? '#fff' : 'var(--clr-text)',
+                      fontSize: 11, fontWeight: 600, textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Filter size={11} /> Alle CW-Listen
+                    </span>
+                    <Filter size={10} style={{ opacity: cwListFilter === ALL_CW_LISTS ? 1 : 0.4 }} />
+                  </button>
                   {cwLists.map((lst) => {
                     const isFiltered = cwListFilter === lst.name;
                     return (
@@ -949,7 +971,7 @@ function MachineSidebar({
                     color: 'var(--clr-text-muted)',
                   }}
                 >
-                  Filter „{cwListFilter}" deaktivieren
+                  Filter „{cwListFilter === ALL_CW_LISTS ? 'Alle CW-Listen' : cwListFilter}" deaktivieren
                 </button>
               )}
             </>
