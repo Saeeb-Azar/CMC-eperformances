@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import Topbar from '../components/layout/Topbar';
 import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react';
@@ -9,7 +10,7 @@ import {
   Info, Server, ChevronRight, ChevronDown, Search,
   ExternalLink, Copy, Check, Boxes, Heart,
 } from 'lucide-react';
-import PackageStations, {
+import {
   type StationId, type StationStatus, STATIONS,
 } from '../components/simulator/PackageStations';
 import {
@@ -131,6 +132,7 @@ function pickNum(d: Record<string, unknown> | undefined, ...keys: string[]): num
 
 export default function SimulatorPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
@@ -434,14 +436,14 @@ export default function SimulatorPage() {
           ))}
           <div style={{
             background: 'var(--clr-bg-elevated, #fff)',
-            border: `1px solid ${connected ? '#a7f3d0' : 'var(--clr-border)'}`,
-            borderTop: `3px solid ${connected ? '#10b981' : '#cbd5e1'}`,
+            border: `1px solid ${hasSimulator ? '#a7f3d0' : 'var(--clr-border)'}`,
+            borderTop: `3px solid ${hasSimulator ? '#10b981' : '#cbd5e1'}`,
             borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14,
           }}>
-            {connected ? <Wifi size={26} className="text-emerald-500" /> : <WifiOff size={26} style={{ color: '#94a3b8' }} />}
+            {hasSimulator ? <Wifi size={26} className="text-emerald-500" /> : <WifiOff size={26} style={{ color: '#94a3b8' }} />}
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                {connected ? t('simulator.connected', 'Simulator verbunden') : t('common.disconnected')}
+                {hasSimulator ? t('simulator.simulatorConnected', 'Simulator verbunden') : (connected ? t('simulator.noSimulator', 'Wartet auf Simulator') : t('common.disconnected'))}
               </div>
               <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', marginTop: 2 }}>
                 {connectedMachines.length} {connectedMachines.length === 1 ? 'Maschine' : 'Maschinen'} · {stats.total} Empfänge gesamt
@@ -695,44 +697,39 @@ export default function SimulatorPage() {
 
           {/* Right: Connection + Package Flow + Setup */}
           <div className="stack-4">
-            {/* Connection Status */}
-            <div className="hero-panel">
-              <div className={`hero-panel__accent ${hasSimulator ? 'hero-panel__accent--success' : connected ? 'hero-panel__accent--active' : 'hero-panel__accent--danger'}`} />
-              <div className="flex items-center gap-4 px-8 py-5">
-                <div className={hasSimulator ? 'text-emerald-500' : connected ? 'text-blue-500' : 'text-gray-400'}>
-                  {hasSimulator ? <Wifi size={22} /> : <WifiOff size={22} />}
-                </div>
-                <div>
-                  <p className="text-lg font-semibold" style={{ color: 'var(--clr-text)' }}>
-                    {hasSimulator ? t('simulator.simulatorConnected') : connected ? t('simulator.backendConnected') : t('common.disconnected')}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {hasSimulator
-                      ? `${connectedMachines.length} Maschine(n) · ${stats.total} ${t('simulator.totalReceived')}`
-                      : connected ? t('simulator.noSimulator') : t('simulator.noConnection')}
-                  </p>
-                </div>
+            {/* Connected machines */}
+            <div className="panel">
+              <div className="panel__header">
+                <h3 className="panel__title">Verbundene Maschinen</h3>
+              </div>
+              <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {connectedMachines.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', textAlign: 'center', padding: '8px 0' }}>
+                    {t('common.disconnected')}
+                  </div>
+                ) : connectedMachines.map(m => (
+                  <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 99, background: '#10b981', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--clr-text)' }}>{m}</div>
+                      <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>CW1000 · CIS Simulator</div>
+                    </div>
+                    <ChevronRight size={16} style={{ color: '#cbd5e1' }} />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => navigate('/machines')}
+                  style={{
+                    width: '100%', height: 38, borderRadius: 8, border: '1px solid var(--clr-border)',
+                    background: '#fff', color: '#1d4ed8', fontSize: 13, fontWeight: 600,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer',
+                  }}
+                ><Server size={14} /> Maschine verwalten</button>
               </div>
             </div>
 
-            {/* Connected machines */}
-            {connectedMachines.length > 0 && (
-              <div className="panel">
-                <div className="panel__header">
-                  <h3 className="panel__title">Verbundene Maschinen</h3>
-                </div>
-                <div className="panel__body">
-                  {connectedMachines.map(m => (
-                    <div key={m} className="flex items-center gap-3 py-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span className="text-sm font-mono" style={{ color: 'var(--clr-text)' }}>{m}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Package Flow — shows lifecycle per reference_id */}
+            {/* Package flow — donut summary by lifecycle bucket */}
             <div className="panel">
               <div className="panel__header">
                 <div>
@@ -741,61 +738,42 @@ export default function SimulatorPage() {
                     {t('simulator.packageFlowDesc')}
                   </p>
                 </div>
-                {packages.length > 0 && (
-                  <span className="text-xs" style={{ color: 'var(--clr-text-muted)' }}>
-                    {packages.length}
-                  </span>
-                )}
               </div>
-              <div className="panel__body" style={{ maxHeight: 380, overflowY: 'auto', padding: 0 }}>
-                {packages.length === 0 ? (
-                  <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 12 }}>
-                    {t('simulator.noPackages')}
-                  </div>
-                ) : (
-                  packages.slice(0, 15).map(pkg => {
-                    const c = STATE_COLORS[pkg.state];
-                    return (
-                      <div
-                        key={pkg.ref}
-                        onClick={() => setTextFilter(pkg.ref)}
-                        style={{
-                          padding: '12px 16px',
-                          borderBottom: '1px solid var(--clr-border)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 10 }}>
-                          <code className="cell-mono" style={{ fontSize: 12, color: 'var(--clr-text)', flexShrink: 0 }}>
-                            {pkg.ref}
-                          </code>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 600,
-                              fontFamily: 'var(--font-mono)',
-                              padding: '2px 8px',
-                              borderRadius: 4,
-                              background: c.bg,
-                              color: c.fg,
-                              border: `1px solid ${c.border}`,
-                              letterSpacing: 0.3,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {t(`status.${pkg.state}`)}
-                          </span>
-                          <span
-                            className="tabular-nums"
-                            style={{ fontSize: 10, color: 'var(--clr-text-muted)', marginLeft: 'auto', flexShrink: 0 }}
-                          >
-                            {formatTime(pkg.lastSeen)}
-                          </span>
-                        </div>
-                        <PackageStations stations={pkg.stations} removed={pkg.removed} />
+              <div className="panel__body">
+                {(() => {
+                  const flow = { done: 0, prog: 0, err: 0, open: 0 };
+                  for (const p of packages) {
+                    const s = p.state;
+                    if (s === 'COMPLETED') flow.done++;
+                    else if (s === 'EJECTED' || s === 'FAILED') flow.err++;
+                    else if (s === 'ASSIGNED' || s === 'INDUCTED' || s === 'SCANNED' || s === 'LABELED') flow.prog++;
+                    else flow.open++;
+                  }
+                  const rows = [
+                    { label: 'Verarbeitet', value: flow.done, color: '#10b981' },
+                    { label: 'In Bearbeitung', value: flow.prog, color: '#3b82f6' },
+                    { label: 'Fehler', value: flow.err, color: '#ef4444' },
+                    { label: 'Offen', value: flow.open, color: '#cbd5e1' },
+                  ];
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                      <Donut segments={rows} />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                        {rows.map(r => (
+                          <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 99, background: r.color }} />
+                            <span style={{ flex: 1, color: 'var(--clr-text-secondary, #475569)' }}>{r.label}</span>
+                            <span style={{ fontWeight: 700, color: 'var(--clr-text)' }}>{r.value}</span>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })
+                    </div>
+                  );
+                })()}
+                {packages.length === 0 && (
+                  <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--clr-text-muted)', marginTop: 14 }}>
+                    {t('simulator.noPackages')}
+                  </p>
                 )}
               </div>
             </div>
@@ -1114,5 +1092,30 @@ function PacketDetailsTable(props: PacketTableProps) {
         </button>
       }
     />
+  );
+}
+
+function Donut({ segments }: { segments: { value: number; color: string }[] }) {
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  const r = 42;
+  const c = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg width={108} height={108} viewBox="0 0 110 110" style={{ flexShrink: 0 }}>
+      <circle cx="55" cy="55" r={r} fill="none" stroke="#eef2f6" strokeWidth={16} />
+      {total > 0 && segments.filter((s) => s.value > 0).map((s, i) => {
+        const dash = (s.value / total) * c;
+        const el = (
+          <circle
+            key={i} cx="55" cy="55" r={r} fill="none" stroke={s.color} strokeWidth={16}
+            strokeDasharray={`${dash} ${c - dash}`} strokeDashoffset={-offset}
+            transform="rotate(-90 55 55)"
+          />
+        );
+        offset += dash;
+        return el;
+      })}
+      <text x="55" y="59" textAnchor="middle" fontSize="20" fontWeight="700" fill="#0f172a">{total}</text>
+    </svg>
   );
 }
