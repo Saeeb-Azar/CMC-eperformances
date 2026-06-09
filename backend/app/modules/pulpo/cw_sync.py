@@ -27,6 +27,7 @@ from app.modules.machines.models import Machine
 
 from .client import PulpoError, pulpo
 from .models import PulpoOrderItem, PulpoPackingOrder
+from .runtime import pulpo_runtime
 
 
 async def build_cw_items_for_location(
@@ -114,6 +115,8 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
         logger.warning(f"Pulpo resync failed: {e} — keeping existing cache")
         return {"ok": False, "error": str(e)}
 
+    pulpo_runtime.last_sync_at = datetime.now(timezone.utc)
+    pulpo_runtime.last_sync_orders = len(orders)
     await sync_cw_lists_from_cache(db)
     return {"ok": True, "orders": len(orders)}
 

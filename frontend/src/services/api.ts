@@ -277,6 +277,10 @@ export const api = {
 
   // Pulpo settings — Test-Modus = no writes reach Pulpo
   getPulpoSettings: () => request<{ test_mode: boolean; write_enabled: boolean }>('/settings/pulpo'),
+  getPulpoStatus: () => request<{
+    test_mode: boolean; configured: boolean; last_sync_at: string | null;
+    open_orders: number; barcodes: number;
+  }>('/settings/pulpo/status'),
   setPulpoSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/pulpo', {
       method: 'PUT',

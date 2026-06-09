@@ -1,41 +1,33 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../../components/layout/Topbar';
-import { Building2, CreditCard, Boxes, ShieldCheck, Loader2 } from 'lucide-react';
+import {
+  Building2, CreditCard, Boxes, ShieldCheck, Loader2, Save, Copy,
+  Clock, ListChecks, ShoppingCart, Server, Users, Zap, ChevronRight, Check, Infinity as InfinityIcon,
+} from 'lucide-react';
 import { api, type UserRead, type TenantRead } from '../../services/api';
 
-const planFeatures: Record<string, string[]> = {
-  starter: ['1 Machine', 'Live Monitor only', '2 Users', 'Email support'],
-  pro: ['Up to 5 Machines', 'Full analytics + DB', '25 Users', 'Priority support'],
-  enterprise: ['Unlimited Machines', 'AI insights + API', 'Unlimited Users', 'Dedicated support'],
-};
+interface PulpoStatus {
+  test_mode: boolean; configured: boolean; last_sync_at: string | null;
+  open_orders: number; barcodes: number;
+}
+
+function relTime(iso: string | null): string {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return `vor ${Math.max(1, Math.round(diff / 1000))} Sekunden`;
+  if (diff < 3_600_000) return `vor ${Math.round(diff / 60_000)} Min`;
+  return `vor ${Math.round(diff / 3_600_000)} Std`;
+}
 
 export default function SettingsCompanyPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [me, setMe] = useState<UserRead | null>(null);
   const [tenant, setTenant] = useState<TenantRead | null>(null);
-  const [pulpoTestMode, setPulpoTestMode] = useState<boolean | null>(null);
-  const [pulpoSaving, setPulpoSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getPulpoSettings()
-      .then((s) => { if (!cancelled) setPulpoTestMode(s.test_mode); })
-      .catch(() => { /* default unknown */ });
-    return () => { cancelled = true; };
-  }, []);
-
-  const togglePulpoTestMode = async (next: boolean) => {
-    setPulpoSaving(true);
-    try {
-      const res = await api.setPulpoSettings(next);
-      setPulpoTestMode(res.test_mode);
-    } catch {
-      /* keep previous */
-    } finally {
-      setPulpoSaving(false);
-    }
-  };
+  const [status, setStatus] = useState<PulpoStatus | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,140 +37,223 @@ export default function SettingsCompanyPage() {
         setMe(u);
         try {
           const tenants = await api.listTenants();
-          if (!cancelled) setTenant(tenants.find((t) => t.id === u.tenant_id) ?? null);
-        } catch {
-          /* user may not have tenant list access */
-        }
+          if (!cancelled) setTenant(tenants.find((x) => x.id === u.tenant_id) ?? null);
+        } catch { /* no tenant list access */ }
       })
-      .catch(() => { /* not authenticated */ });
-    return () => { cancelled = true; };
+      .catch(() => { /* not authed */ });
+    const load = () => api.getPulpoStatus().then((s) => { if (!cancelled) setStatus(s); }).catch(() => {});
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
-  const plan = tenant?.plan ?? 'starter';
-  const features = planFeatures[plan] ?? planFeatures.starter;
-  const createdAt = tenant ? new Date(tenant.created_at).toLocaleDateString('de-DE') : '—';
+  const testMode = status ? status.test_mode : true;
+
+  const toggleTestMode = async (next: boolean) => {
+    setSaving(true);
+    try {
+      const res = await api.setPulpoSettings(next);
+      setStatus((s) => (s ? { ...s, test_mode: res.test_mode } : s));
+    } catch { /* keep */ } finally { setSaving(false); }
+  };
+
+  const plan = (tenant?.plan ?? 'starter');
+  const createdAt = tenant ? new Date(tenant.created_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
 
   return (
     <div>
       <Topbar title={t('settings.company.title')} subtitle={t('settings.company.subtitle')} />
       <div className="page-content">
-        <div className="page-header">
-          <div>
-            <h1 className="page-header__title">{t('settings.company.pageTitle')}</h1>
-            <p className="page-header__desc">{t('settings.company.pageDesc')}</p>
+        <div className="page-header" style={{ alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ width: 44, height: 44, borderRadius: 12, background: '#eef2ff', color: '#4338ca', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Building2 size={22} />
+            </span>
+            <div>
+              <h1 className="page-header__title">Firma</h1>
+              <p className="page-header__desc">Verwalte dein Firmenprofil, Abonnement und Integrationen.</p>
+            </div>
           </div>
+          <button className="modal-btn modal-btn--primary"><Save size={15} /> Speichern</button>
         </div>
 
-        <div className="grid-2-1 gap-6">
-          {/* Company Info */}
-          <div className="panel">
-            <div className="panel__header">
-              <div className="flex items-center gap-2">
-                <Building2 size={16} className="text-gray-500" />
-                <h3 className="panel__title">{t('settings.company.companyInfo')}</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20, alignItems: 'start' }}>
+          {/* LEFT */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <Card icon={<Building2 size={16} />} title="Firmenprofil">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <FieldText label="Firmenname" value={tenant?.name ?? ''} />
+                <FieldText label="Slug (URL)" value={tenant?.slug ?? ''} mono copy />
               </div>
-            </div>
-            <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div className="grid-2 gap-5">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5">{t('settings.company.companyName')}</label>
-                  <input type="text" defaultValue={tenant?.name ?? ''} className="input" key={tenant?.id ?? 'empty'} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5">{t('settings.company.slug')}</label>
-                  <input type="text" defaultValue={tenant?.slug ?? ''} className="input" style={{ fontFamily: 'var(--font-mono)' }} key={(tenant?.id ?? 'empty') + '-slug'} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">{t('settings.company.email')}</label>
-                <input type="email" defaultValue={me?.email ?? ''} className="input" key={me?.id ?? 'empty-email'} readOnly />
-              </div>
-              <div className="flex justify-end pt-2">
-                <button className="btn btn--primary">{t('common.saveChanges')}</button>
-              </div>
-            </div>
-          </div>
+              <FieldText label="E-Mail" value={me?.email ?? ''} readOnly />
+            </Card>
 
-          {/* Plan */}
-          <div className="stack-6">
-            <div className="panel">
-              <div className="panel__header">
-                <div className="flex items-center gap-2">
-                  <CreditCard size={16} className="text-gray-500" />
-                  <h3 className="panel__title">{t('settings.company.subscription')}</h3>
-                </div>
-              </div>
-              <div className="panel__body">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center mb-5">
-                  <p className="text-xs text-blue-600 font-medium uppercase tracking-wider">{t('settings.company.currentPlan')}</p>
-                  <p className="text-2xl font-bold text-blue-700 mt-1 capitalize">{plan}</p>
-                </div>
-                <ul className="space-y-2 mb-5">
-                  {features.map(f => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <button className="btn btn--secondary w-full">{t('settings.company.upgradePlan')}</button>
-              </div>
-            </div>
-
-            <div className="panel" style={{ textAlign: 'center' }}>
-              <div className="panel__body">
-                <p className="text-xs text-gray-400">{t('settings.company.memberSince')}</p>
-                <p className="text-sm font-semibold text-gray-900 mt-1">{createdAt}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Pulpo Test-Modus */}
-        <div className="panel" style={{ marginTop: 24 }}>
-          <div className="panel__header">
-            <div className="flex items-center gap-2">
-              <Boxes size={16} className="text-gray-500" />
-              <h3 className="panel__title">{t('settings.pulpo.title', 'Pulpo-Anbindung')}</h3>
-            </div>
-          </div>
-          <div className="panel__body">
-            <div
-              className="rounded-lg p-4 flex items-start justify-between gap-4"
-              style={{
-                border: '1px solid var(--clr-border)',
-                background: pulpoTestMode === false ? '#fff7ed' : '#f0fdf4',
-              }}
-            >
-              <div className="flex items-start gap-3">
-                <ShieldCheck size={18} className={pulpoTestMode === false ? 'text-orange-500' : 'text-emerald-600'} />
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {pulpoTestMode === false
-                      ? t('settings.pulpo.liveLabel', 'Live-Modus — Schreibvorgänge an Pulpo AKTIV')
-                      : t('settings.pulpo.testLabel', 'Test-Modus — keine Schreibvorgänge an Pulpo')}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1" style={{ maxWidth: 520, lineHeight: 1.5 }}>
-                    {t('settings.pulpo.desc',
-                      'Im Test-Modus werden Pulpo-Daten nur gelesen und angezeigt (CW-Listen). Bestellungen lassen sich abarbeiten, aber es wird nichts in Pulpo geändert, geschlossen oder gelöscht. Erst im Live-Modus gehen Schreibvorgänge an Pulpo.')}
+            <Card icon={<Boxes size={16} />} title="Pulpo-Anbindung">
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16 }}>
+                <div style={{
+                  padding: 16, borderRadius: 12,
+                  background: testMode ? '#ecfdf5' : '#fff7ed',
+                  border: `1px solid ${testMode ? '#a7f3d0' : '#fed7aa'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <ShieldCheck size={20} className={testMode ? 'text-emerald-600' : 'text-orange-500'} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+                      {status?.configured ? 'Pulpo verbunden' : 'Pulpo nicht konfiguriert'}
+                    </span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                      background: testMode ? '#d1fae5' : '#ffedd5', color: testMode ? '#047857' : '#c2410c',
+                    }}>{testMode ? 'Test-Modus aktiv' : 'Live'}</span>
+                  </div>
+                  <p style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
+                    {testMode
+                      ? 'Im Test-Modus werden Pulpo-Daten nur gelesen und angezeigt (CW-Listen). Bestellungen lassen sich abarbeiten, aber es wird nichts in Pulpo geändert.'
+                      : 'Live-Modus: Schreibvorgänge (accept/box/label/finish/close) gehen an Pulpo.'}
                   </p>
                 </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, justifyContent: 'center' }}>
+                  <Stat icon={<Clock size={15} />} label="Letzte Synchronisierung" value={relTime(status?.last_sync_at ?? null)} />
+                  <Stat icon={<ListChecks size={15} />} label="Barcodes (CW-Listen)" value={String(status?.barcodes ?? 0)} />
+                  <Stat icon={<ShoppingCart size={15} />} label="Offene Bestellungen" value={String(status?.open_orders ?? 0)} />
+                </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
-                {pulpoSaving && <Loader2 size={14} className="animate-spin text-gray-400" />}
-                <span className="text-xs font-medium text-gray-600">{t('settings.pulpo.testToggle', 'Test-Modus')}</span>
-                <input
-                  type="checkbox"
-                  checked={pulpoTestMode !== false}
-                  disabled={pulpoTestMode === null || pulpoSaving}
-                  onChange={(e) => togglePulpoTestMode(e.target.checked)}
-                  style={{ width: 18, height: 18, cursor: 'pointer' }}
-                />
+              <label style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '10px 14px', borderRadius: 10, border: '1px solid var(--clr-border)', cursor: 'pointer',
+              }}>
+                <span style={{ fontSize: 13, color: '#334155' }}>
+                  <strong>Test-Modus</strong> — Pulpo nur lesen, keine Schreibvorgänge
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {saving && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                  <input type="checkbox" checked={testMode} disabled={status === null || saving}
+                    onChange={(e) => toggleTestMode(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
+                </span>
               </label>
-            </div>
+            </Card>
+
+            <Card icon={<Zap size={16} />} title="Schnellzugriff">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <QuickLink icon={<Server size={16} />} title="Maschinen verwalten" sub="Alle Maschinen anzeigen" onClick={() => navigate('/machines')} />
+                <QuickLink icon={<ListChecks size={16} />} title="CW-Listen" sub="Im Dashboard anzeigen" onClick={() => navigate('/')} />
+                <QuickLink icon={<ShoppingCart size={16} />} title="Pulpo Einstellungen" sub="Verbindung & Optionen" onClick={() => navigate('/simulator')} />
+                <QuickLink icon={<Users size={16} />} title="Benutzer verwalten" sub="Benutzer & Rollen" onClick={() => navigate('/control/users')} />
+              </div>
+            </Card>
+          </div>
+
+          {/* RIGHT */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <Card icon={<CreditCard size={16} />} title="Abonnement">
+              <div style={{
+                borderRadius: 14, padding: 20, textAlign: 'center',
+                background: 'linear-gradient(180deg,#eff6ff,#eef2ff)', border: '1px solid #dbeafe',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#1d4ed8' }}>AKTUELLER PLAN</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: '#d1fae5', color: '#047857', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <Check size={11} /> Aktiv
+                  </span>
+                </div>
+                <div style={{ fontSize: 30, fontWeight: 800, color: '#1d4ed8', textTransform: 'capitalize', marginTop: 4 }}>{plan}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 16 }}>
+                  <Feature icon={<Server size={16} />} label="Maschinen" value={<InfinityIcon size={16} />} />
+                  <Feature icon={<Users size={16} />} label="Benutzer" value={<InfinityIcon size={16} />} />
+                  <Feature icon={<Zap size={16} />} label="AI Insights" value="Aktiv" />
+                  <Feature icon={<ShieldCheck size={16} />} label="Support" value="Premium" />
+                </div>
+              </div>
+              <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                {['Unlimited Machines', 'AI Insights + API', 'Unlimited Users', 'Dedicated Support'].map((f) => (
+                  <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569' }}>
+                    <Check size={15} className="text-emerald-500" /> {f}
+                  </li>
+                ))}
+              </ul>
+              <button className="modal-btn modal-btn--ghost" style={{ width: '100%', justifyContent: 'center' }}>Plan upgraden</button>
+            </Card>
+
+            <Card icon={<Clock size={16} />} title="Mitglied seit">
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>{createdAt}</div>
+            </Card>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Card({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="panel">
+      <div className="panel__header">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">{icon}</span>
+          <h3 className="panel__title">{title}</h3>
+        </div>
+      </div>
+      <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function FieldText({ label, value, mono, copy, readOnly }: { label: string; value: string; mono?: boolean; copy?: boolean; readOnly?: boolean }) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#6b7280', marginBottom: 6 }}>{label}</span>
+      <div style={{ position: 'relative' }}>
+        <input
+          type="text" defaultValue={value} readOnly={readOnly} key={value}
+          className="modal-input"
+          style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, paddingRight: copy ? 36 : undefined }}
+        />
+        {copy && (
+          <button type="button" onClick={() => navigator.clipboard?.writeText(value)}
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer' }}>
+            <Copy size={15} />
+          </button>
+        )}
+      </div>
+    </label>
+  );
+}
+
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ color: '#94a3b8' }}>{icon}</span>
+      <div>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({ icon, title, sub, onClick }: { icon: React.ReactNode; title: string; sub: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+      border: '1px solid var(--clr-border)', borderRadius: 12, background: '#fff', cursor: 'pointer', textAlign: 'left',
+    }}>
+      <span style={{ width: 36, height: 36, borderRadius: 10, background: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{title}</div>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>{sub}</div>
+      </div>
+      <ChevronRight size={16} style={{ color: '#cbd5e1' }} />
+    </button>
+  );
+}
+
+function Feature({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, padding: '10px 6px', textAlign: 'center', border: '1px solid #e0e7ff' }}>
+      <div style={{ color: '#6366f1', display: 'flex', justifyContent: 'center' }}>{icon}</div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>{value}</div>
     </div>
   );
 }

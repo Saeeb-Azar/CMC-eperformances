@@ -252,6 +252,40 @@ def get_pulpo_settings():
     return {"test_mode": pulpo_runtime.test_mode, "write_enabled": pulpo_runtime.write_enabled}
 
 
+@app.get("/api/v1/settings/pulpo/status")
+async def get_pulpo_status():
+    """Status card data for the settings page: connection mode, last resync,
+    and current queue counts from the cache."""
+    from sqlalchemy import func, select
+    from app.core.database import async_session
+    from app.modules.pulpo.client import pulpo
+    from app.modules.pulpo.models import PulpoOrderItem, PulpoPackingOrder
+
+    open_orders = 0
+    barcodes = 0
+    try:
+        async with async_session() as db:
+            open_orders = (await db.execute(
+                select(func.count()).select_from(PulpoPackingOrder)
+                .where(PulpoPackingOrder.state == "queue")
+            )).scalar() or 0
+            barcodes = (await db.execute(
+                select(func.count(func.distinct(PulpoOrderItem.ean)))
+                .join(PulpoPackingOrder, PulpoOrderItem.order_db_id == PulpoPackingOrder.id)
+                .where(PulpoPackingOrder.state == "queue", PulpoOrderItem.ean != "")
+            )).scalar() or 0
+    except Exception as e:
+        logger.warning(f"pulpo status counts failed: {e}")
+
+    return {
+        "test_mode": pulpo_runtime.test_mode,
+        "configured": pulpo.configured,
+        "last_sync_at": pulpo_runtime.last_sync_at.isoformat() if pulpo_runtime.last_sync_at else None,
+        "open_orders": open_orders,
+        "barcodes": barcodes,
+    }
+
+
 @app.put("/api/v1/settings/pulpo")
 async def set_pulpo_settings(body: dict):
     """Toggle Test-Modus. Body: {"test_mode": true|false}.

@@ -15,11 +15,16 @@ the tenant settings (DB) so the choice survives restarts.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 
 class PulpoRuntime:
     def __init__(self) -> None:
         # OFF by default = Test-Modus = no writes reach Pulpo.
         self.write_enabled: bool = False
+        # Last successful resync (for the settings status card).
+        self.last_sync_at: datetime | None = None
+        self.last_sync_orders: int = 0
 
     @property
     def test_mode(self) -> bool:
