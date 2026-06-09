@@ -66,7 +66,10 @@ async def build_cw_lists_by_location(
     with queued orders appear even if no barcode resolved yet (empty list)."""
     stmt = (
         select(PulpoPackingOrder)
-        .where(PulpoPackingOrder.tenant_id == tenant_id, PulpoPackingOrder.state == "queue")
+        .where(
+            PulpoPackingOrder.tenant_id == tenant_id,
+            PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
+        )
         .options(selectinload(PulpoPackingOrder.items))
     )
     if prefix:
@@ -115,6 +118,18 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     tenant_id = await _get_default_tenant_id(db)
     product_cache: dict[str, str] = {}
 
+    # Resolve origin_location_id → Lagerplatz code (e.g. 247 → "CW10").
+    loc_map: dict[str, str] = {}
+    try:
+        for loc in await pulpo.list_packing_locations():
+            lid = loc.get("id")
+            code = loc.get("code") or loc.get("name")
+            if lid is not None and code:
+                loc_map[str(lid)] = str(code)
+        logger.info(f"Pulpo locations: {len(loc_map)} (sample {list(loc_map.items())[:5]})")
+    except PulpoError as e:
+        logger.warning(f"Pulpo locations fetch failed: {e}")
+
     try:
         orders = await pulpo.list_queue_orders(None)  # whole packing queue
         logger.info(f"Pulpo resync: {len(orders)} packing-queue orders pulled")
@@ -122,14 +137,14 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
             import json as _json
             o0 = orders[0]
             logger.info(f"Pulpo sample order FULL: {_json.dumps(o0, default=str)[:2500]}")
-            logger.info(f"Pulpo sample order: keys={list(o0.keys())} loc={_extract_location_code(o0)!r}")
+            logger.info(f"Pulpo sample order: keys={list(o0.keys())} loc={_extract_location_code(o0, loc_map)!r}")
         pulled_ids: set[str] = set()
         for order in orders:
             oid = order.get("id")
             if oid is None:
                 continue
             pulled_ids.add(str(oid))
-            await _upsert_queue_order(db, tenant_id, order, product_cache)
+            await _upsert_queue_order(db, tenant_id, order, product_cache, loc_map)
 
         # Self-heal: close cached queue orders that are no longer in the queue.
         close_stmt = (
@@ -171,10 +186,10 @@ def _extract_cartbox(order: dict) -> str:
     return ""
 
 
-def _extract_location_code(order: dict) -> str:
+def _extract_location_code(order: dict, loc_map: dict[str, str] | None = None) -> str:
     """The packing location CODE (e.g. 'CW6', 'SACK05') — what Pulpo shows as
-    'Lagerplatz'. Tries the likely field names defensively (the resync FULL log
-    reveals the real one); falls back to the numeric origin_location_id."""
+    'Lagerplatz'. Tries explicit code fields, then resolves origin_location_id
+    via the locations map; falls back to the numeric id."""
     for k in ("origin_location_code", "location_code", "lagerplatz",
               "packing_location_code", "origin_location_name", "destination_location_code"):
         v = order.get(k)
@@ -186,18 +201,29 @@ def _extract_location_code(order: dict) -> str:
             code = v.get("code") or v.get("name")
             if code:
                 return str(code)
-    v = order.get("origin_location_id")
-    return str(v) if v is not None else ""
+    lid = order.get("origin_location_id")
+    if lid is not None:
+        if loc_map and str(lid) in loc_map:
+            return loc_map[str(lid)]
+        return str(lid)
+    return ""
 
 
 async def _resolve_ean(item: dict, cache: dict[str, str]) -> str:
-    """EAN for a packing item — directly from the item if present, else via the
-    product's first barcode (cached per run)."""
+    """EAN for a packing item. Webhook payloads embed the full product
+    (``item.product.barcodes`` = ['4005…', …]); GET responses carry only
+    ``product_id`` → resolved via a product lookup (cached per run)."""
     for key in ("ean", "gtin", "barcode"):
         v = item.get(key)
         if v:
             return str(v)
-    pid = item.get("product_id")
+    prod = item.get("product")
+    if isinstance(prod, dict):
+        barcodes = prod.get("barcodes")
+        if isinstance(barcodes, list) and barcodes:
+            first = barcodes[0]
+            return str(first.get("barcode") if isinstance(first, dict) else first)
+    pid = item.get("product_id") or (prod.get("id") if isinstance(prod, dict) else None)
     if pid is None:
         return ""
     pid = str(pid)
@@ -218,6 +244,7 @@ async def _resolve_ean(item: dict, cache: dict[str, str]) -> str:
 
 async def _upsert_queue_order(
     db: AsyncSession, tenant_id: str, order: dict, product_cache: dict[str, str],
+    loc_map: dict[str, str] | None = None,
 ) -> None:
     """Upsert one Pulpo queue order (+ its items, EANs resolved) into the cache."""
     pulpo_order_id = order.get("id")
@@ -234,7 +261,7 @@ async def _upsert_queue_order(
         row = PulpoPackingOrder(tenant_id=tenant_id, pulpo_order_id=str(pulpo_order_id))
         db.add(row)
     row.state = "queue"
-    row.pick_location = _extract_location_code(order)
+    row.pick_location = _extract_location_code(order, loc_map)
     row.cart_box_barcode = _extract_cartbox(order)
     row.raw_payload = order
     row.updated_at = datetime.now(timezone.utc)

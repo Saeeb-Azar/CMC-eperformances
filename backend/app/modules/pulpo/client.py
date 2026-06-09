@@ -204,14 +204,20 @@ class PulpoClient:
 
     @staticmethod
     def _as_list(result: Any) -> list[dict]:
-        """Pulpo list endpoints wrap results in {"data": [...]} or
-        {"items": [...]}, or sometimes return a bare list. Normalise."""
+        """Pulpo list endpoints wrap the array under a resource-named key
+        (e.g. ``packing_orders``, ``products``, ``locations``) alongside
+        ``total_results`` — not ``data``. Normalise to a plain list."""
         if isinstance(result, list):
             return result
         if isinstance(result, dict):
-            for key in ("data", "items", "results"):
+            for key in ("data", "items", "results", "packing_orders", "products",
+                        "locations", "cart_boxes", "cartboxes"):
                 if isinstance(result.get(key), list):
                     return result[key]
+            # Fallback: first list-valued field.
+            for v in result.values():
+                if isinstance(v, list):
+                    return v
         return []
 
     # ── Lookup paths (cmc-process-doc § 3) ─────────────────────────────
@@ -292,6 +298,11 @@ class PulpoClient:
         result = await self._request("GET", "/inventory/products", params={"id": product_id})
         products = self._as_list(result)
         return products[0] if products else None
+
+    async def list_packing_locations(self) -> list[dict]:
+        """All packing locations (id ↔ code/name like 'CW10'). Used to resolve
+        an order's origin_location_id to its Lagerplatz code."""
+        return self._as_list(await self._request("GET", "/packing/locations"))
 
     async def list_shipping_locations(self, order_id: int | str) -> list[dict]:
         """Valid shipping locations for a packing order — needed for close()."""

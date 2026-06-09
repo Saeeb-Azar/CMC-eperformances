@@ -117,12 +117,20 @@ async def handle_packing_order_created(db: AsyncSession, raw_payload: dict) -> d
     # falls Pulpo Items getrennt updatet werden wir das später handhaben)
     if is_new:
         for item in _extract_items(order_payload):
+            prod = item.get("product") if isinstance(item, dict) else None
+            prod = prod if isinstance(prod, dict) else {}
+            # Webhook payloads embed the product: item.product.barcodes = ['4005…'].
+            barcodes = prod.get("barcodes") if isinstance(prod.get("barcodes"), list) else []
+            ean = str(_first(item, "ean", "gtin", "barcode", default="") or "")
+            if not ean and barcodes:
+                first = barcodes[0]
+                ean = str(first.get("barcode") if isinstance(first, dict) else first)
             db.add(PulpoOrderItem(
                 order=order,
-                ean=str(_first(item, "ean", "gtin", "barcode", default="") or ""),
-                product_id=str(_first(item, "product_id", "sku", "id", default="") or ""),
-                product_name=str(_first(item, "name", "product_name", default="") or ""),
-                quantity=_safe_int(_first(item, "quantity", "qty", default=1)) or 1,
+                ean=ean,
+                product_id=str(_first(item, "product_id", default="") or prod.get("id") or prod.get("sku") or ""),
+                product_name=str(_first(item, "name", "product_name", default="") or prod.get("name") or ""),
+                quantity=_safe_int(_first(item, "requested_quantity", "quantity", "qty", default=1)) or 1,
                 raw_payload=item if isinstance(item, dict) else {},
             ))
 
