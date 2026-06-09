@@ -42,16 +42,24 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     # ── Pulpo WMS integration ─────────────────────────────────────────
-    # Aktiv sobald `pulpo_base_url` + `pulpo_api_key` gesetzt sind. Die
-    # exakten Endpoints stehen in modules/pulpo/client.py noch als TODOs
-    # — bis Pulpo-Doku vorliegt sind die Werte hier ungenutzt.
-    pulpo_base_url: str = ""
+    # Aktiv sobald base_url + username + password gesetzt sind. Pulpo nutzt
+    # OAuth2 Password-Flow: der Client holt sich per POST /api/v1/auth ein
+    # Bearer-Token (siehe modules/pulpo/client.py) und cached es bis zum
+    # Ablauf. Endpoints sind in client.py gegen die WMS-OpenAPI gemappt.
+    pulpo_base_url: str = "https://eu.pulpo.co"
+    pulpo_username: str = ""
+    pulpo_password: str = ""
+    # OAuth2-Scope laut WMS-Spec ("general" = Standard-User-Scope).
+    pulpo_scope: str = "general"
+    # Legacy/optional: statischer API-Key. Wird nicht mehr genutzt, seit der
+    # Client auf OAuth2 umgestellt ist — bleibt nur für Abwärtskompatibilität.
     pulpo_api_key: str = ""
     # HMAC-Secret zur Webhook-Verifikation. Leerlassen für lokale Tests
     # (akzeptiert dann alles, loggt eine Warnung). Produktiv setzen.
     pulpo_webhook_secret: str = ""
-    # Pick-Location-ID die unserer CMC1000-Maschine entspricht. Wird
-    # bei jedem ENQ-Lookup zur Filterung der Pulpo-Queue gebraucht.
+    # Pick-Location-Code der unserer CMC1000-Maschine entspricht. Wird
+    # bei jedem ENQ-Lookup zur Filterung der Pulpo-Queue gebraucht
+    # (origin_location_code in GET /packing/orders).
     pulpo_pick_location: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

@@ -10,7 +10,9 @@ Spiegelt die in cmc-process-doc § 3 + § 5 beschriebene Integration:
   die Pulpo-API-Calls die das Order-Lifecycle abschließen — und replayen
   sie erst nach erfolgreichem END (siehe cmc-process-doc § 5).
 
-Aktuell Scaffolding: Datenmodell + Webhook-Empfänger stehen, der
-Pulpo-API-Client hat Stub-Methoden mit klar markierten TODOs (echte
-URL-Pfade und Feldnamen kommen rein sobald Pulpo-API-Doku vorliegt).
+Stand: Datenmodell + Webhook-Empfänger stehen. Der Pulpo-API-Client
+(`client.py`) ist gegen die echte WMS-OpenAPI implementiert (OAuth2 +
+alle Lookup-/Deferred-Write-Endpoints, siehe `wms-openapi.json`) und
+unit-getestet, aber noch NICHT in den Gateway-/ENQ-/END-Flow eingehängt —
+das ist der nächste Schritt.
 """
