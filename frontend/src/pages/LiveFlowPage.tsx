@@ -1,4 +1,4 @@
-import { ChevronRight, ChevronLeft, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server, Clock, AlertCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
@@ -127,6 +127,35 @@ const BUCKET_COLORS: Record<Bucket, { bg: string; fg: string; border: string; do
   PROBLEM:     { bg: '#fef2f2', fg: '#991b1b', border: '#fecaca', dot: '#ef4444' },
   DONE:        { bg: '#eff6ff', fg: '#1e40af', border: '#bfdbfe', dot: '#3b82f6' },
 };
+const BUCKET_ICON: Record<Bucket, typeof Box> = {
+  IN_PROGRESS: Box,
+  WAITING:     Clock,
+  PROBLEM:     AlertCircle,
+  DONE:        CheckCircle2,
+};
+
+// Tiny inline SVG sparkline for the stat cards.
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  const w = 120, h = 32;
+  if (values.length < 2) {
+    return <svg width={w} height={h} style={{ display: 'block' }} />;
+  }
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const span = max - min || 1;
+  const step = w / (values.length - 1);
+  const pts = values.map((v, i) => {
+    const x = i * step;
+    const y = h - 2 - ((v - min) / span) * (h - 4);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  return (
+    <svg width={w} height={h} style={{ display: 'block' }} preserveAspectRatio="none">
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.75}
+        strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // "Aktuelle Station" — derived from state + last event
@@ -340,6 +369,7 @@ export default function LiveFlowPage() {
   const [pendingConnections, setPendingConnections] = useState(0);
   const [machineModes, setMachineModes] = useState<Record<string, string>>({});
   const [pulpoTestMode, setPulpoTestMode] = useState<boolean | null>(null);
+  const [countsHistory, setCountsHistory] = useState<Record<Bucket, number>[]>([]);
   const [cwLists, setCwLists] = useState<Record<string, CWList[]>>({});
   // refs that are scheduled for mid-flight eject — keyed by machine_id.
   // The Eject-Button puts the ref in here, the backend pops it once the
@@ -438,6 +468,11 @@ export default function LiveFlowPage() {
     for (const p of packages) c[BUCKET_OF[p.state]]++;
     return c;
   }, [packages]);
+
+  // Keep a short rolling history of the bucket counts for the card sparklines.
+  useEffect(() => {
+    setCountsHistory((prev) => [...prev, counts].slice(-40));
+  }, [counts]);
 
   // Machine list stats (for the left sidebar)
   const machineStats = useMemo(() => {
@@ -698,6 +733,8 @@ export default function LiveFlowPage() {
           machine={selectedMachine}
           packages={packages}
           counts={counts}
+          history={countsHistory}
+          cwLists={selectedMachine ? (cwLists[selectedMachine] ?? []) : []}
           search={search}
           onSearch={setSearch}
           selectedRef={selectedRef}
@@ -1271,6 +1308,8 @@ interface MainPaneProps {
   machine: string | null;
   packages: PackageRow[];
   counts: Record<Bucket, number>;
+  history: Record<Bucket, number>[];
+  cwLists: CWList[];
   search: string;
   onSearch: (s: string) => void;
   selectedRef: string | null;
@@ -1286,9 +1325,20 @@ interface MainPaneProps {
   onClearTable: () => void;
 }
 
+const PAGE_SIZE = 25;
+
 function MainPane(p: MainPaneProps) {
   const totalSingles = p.packages.filter((x) => detectType(x.barcode) === 'S').length;
   const totalMulti   = p.packages.filter((x) => detectType(x.barcode) === 'M').length;
+  const [tab, setTab] = useState<'orders' | 'cwlists'>('orders');
+  const [page, setPage] = useState(0);
+
+  const pageCount = Math.max(1, Math.ceil(p.packages.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageStart = safePage * PAGE_SIZE;
+  const pageRows = p.packages.slice(pageStart, pageStart + PAGE_SIZE);
+  // Reset to first page if the result set shrank below the current page.
+  useEffect(() => { if (page > pageCount - 1) setPage(0); }, [pageCount, page]);
 
   return (
     <section style={{ overflowY: 'auto', padding: '20px 28px' }}>
@@ -1379,39 +1429,81 @@ function MainPane(p: MainPaneProps) {
         </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {(['IN_PROGRESS', 'WAITING', 'PROBLEM', 'DONE'] as Bucket[]).map((b) => {
           const c = BUCKET_COLORS[b];
+          const Icon = BUCKET_ICON[b];
+          const series = p.history.map((h) => h[b]);
+          const delta = series.length > 1 ? series[series.length - 1] - series[0] : 0;
           return (
             <div key={b} style={{
-              padding: '14px 16px',
+              padding: '16px 18px 10px',
               background: 'var(--clr-bg-elevated, #fff)',
-              border: `1px solid var(--clr-border)`,
-              borderLeft: `3px solid ${c.dot}`,
-              borderRadius: 8,
+              border: '1px solid var(--clr-border)',
+              borderRadius: 12,
+              boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
             }}>
-              <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.1 }}>{p.counts[b]}</div>
-              <div style={{ fontSize: 11, color: c.fg, fontWeight: 600, marginTop: 4 }}>
-                {BUCKET_LABEL[b]}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 34, height: 34, borderRadius: 10, background: c.bg, color: c.fg,
+                }}><Icon size={17} /></span>
+                <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: 'var(--clr-text)' }}>{p.counts[b]}</span>
+              </div>
+              <div style={{ fontSize: 12, color: c.fg, fontWeight: 600, marginTop: 10 }}>{BUCKET_LABEL[b]}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--clr-text-muted)', marginTop: 2 }}>
+                {delta > 0 ? `+${delta}` : delta} zuletzt
+              </div>
+              <div style={{ marginTop: 6, marginLeft: -2 }}>
+                <Sparkline values={series} color={c.dot} />
               </div>
             </div>
           );
         })}
       </div>
 
-      <div style={{ background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)', borderRadius: 8, overflow: 'hidden' }}>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--clr-border)', marginBottom: 0 }}>
+        {([['orders', 'Aufträge', p.packages.length], ['cwlists', 'CW-Listen', p.cwLists.length]] as const).map(([key, label, n]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 2px', border: 'none', background: 'transparent', cursor: 'pointer',
+              fontSize: 14, fontWeight: 600,
+              color: tab === key ? '#1d4ed8' : 'var(--clr-text-muted)',
+              borderBottom: `2px solid ${tab === key ? '#1d4ed8' : 'transparent'}`,
+              marginBottom: -1,
+            }}
+          >
+            {label}
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
+              background: tab === key ? '#dbeafe' : 'var(--clr-bg-subtle, #f1f5f9)',
+              color: tab === key ? '#1d4ed8' : 'var(--clr-text-muted)',
+            }}>{n}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === 'cwlists' ? (
+        <CwListsTab cwLists={p.cwLists} />
+      ) : (
+      <div style={{
+        background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
+        borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden',
+      }}>
         {p.packages.length === 0 ? (
           <EmptyState connected={p.connected} hasSimulator={p.hasSimulator} />
         ) : (
+        <>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
             <thead>
               <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
                 <Th>Position</Th>
-                <Th>Typ</Th>
-                <Th>CW-Liste</Th>
-                <Th>Barcode / ID</Th>
-                <Th>Referenz</Th>
+                <Th>Ref / Barcode</Th>
                 <Th>Status</Th>
                 <Th>Aktuelle Station</Th>
                 <Th>Seit</Th>
@@ -1421,11 +1513,11 @@ function MainPane(p: MainPaneProps) {
               </tr>
             </thead>
             <tbody>
-              {p.packages.map((pkg, idx) => (
+              {pageRows.map((pkg, idx) => (
                 <TableRow
                   key={pkg.ref}
                   pkg={pkg}
-                  position={idx + 1}
+                  position={pageStart + idx + 1}
                   selected={pkg.ref === p.selectedRef}
                   onClick={() => p.onSelectRef(pkg.ref === p.selectedRef ? null : pkg.ref)}
                   nowTs={p.nowTs}
@@ -1437,9 +1529,85 @@ function MainPane(p: MainPaneProps) {
             </tbody>
           </table>
         </div>
+        {/* Pagination */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 16px', borderTop: '1px solid var(--clr-border)',
+          fontSize: 12, color: 'var(--clr-text-muted)',
+        }}>
+          <span>{pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, p.packages.length)} von {p.packages.length}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              onClick={() => setPage((x) => Math.max(0, x - 1))}
+              disabled={safePage === 0}
+              style={pagerBtn(safePage === 0)}
+            ><ChevronLeft size={14} /></button>
+            <span className="tabular-nums" style={{ padding: '0 8px' }}>{safePage + 1} / {pageCount}</span>
+            <button
+              onClick={() => setPage((x) => Math.min(pageCount - 1, x + 1))}
+              disabled={safePage >= pageCount - 1}
+              style={pagerBtn(safePage >= pageCount - 1)}
+            ><ChevronRight size={14} /></button>
+          </div>
+        </div>
+        </>
         )}
       </div>
+      )}
     </section>
+  );
+}
+
+function pagerBtn(disabled: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 28, height: 28, borderRadius: 6,
+    border: '1px solid var(--clr-border)', background: 'var(--clr-bg-elevated, #fff)',
+    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1,
+  };
+}
+
+// CW-Listen tab: compact read-only summary of the machine's lists.
+function CwListsTab({ cwLists }: { cwLists: CWList[] }) {
+  return (
+    <div style={{
+      background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
+      borderTop: 'none', borderRadius: '0 0 12px 12px', padding: cwLists.length ? 0 : '0',
+    }}>
+      {cwLists.length === 0 ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
+          Keine CW-Listen — Pulpo Pick-Location der Maschine in den Einstellungen setzen.
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
+              <Th>Liste</Th><Th>Quelle</Th><Th>Aktiv</Th><Th>Artikel</Th><Th>Verbraucht</Th><Th>Verbleibend</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {cwLists.map((l) => (
+              <tr key={l.name} style={{ borderBottom: '1px solid var(--clr-border)' }}>
+                <Td><span style={{ fontWeight: 600 }}>{l.name}</span></Td>
+                <Td>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+                    background: l.source === 'pulpo' ? '#dbeafe' : 'var(--clr-bg-subtle,#f1f5f9)',
+                    color: l.source === 'pulpo' ? '#1d4ed8' : 'var(--clr-text-muted)',
+                  }}>{l.source === 'pulpo' ? 'PULPO' : 'MANUELL'}</span>
+                </Td>
+                <Td>{l.active
+                  ? <span style={{ color: '#047857', fontWeight: 600 }}>● aktiv</span>
+                  : <span style={{ color: 'var(--clr-text-muted)' }}>aus</span>}</Td>
+                <Td className="tabular-nums">{l.items.length}</Td>
+                <Td className="tabular-nums">{l.total_consumed} / {l.total_expected}</Td>
+                <Td className="tabular-nums">{l.remaining}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -1498,28 +1666,30 @@ function TableRow({
     >
       <Td><span className="tabular-nums" style={{ color: 'var(--clr-text-muted)' }}>{position}</span></Td>
       <Td>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 22, height: 22, borderRadius: 4,
-          fontSize: 11, fontWeight: 700,
-          background: type === 'M' ? '#ede9fe' : '#dbeafe',
-          color:      type === 'M' ? '#5b21b6' : '#1e40af',
-        }}>{type}</span>
-      </Td>
-      <Td>
-        {pkg.cwList ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{
-            display: 'inline-block', padding: '2px 6px',
-            fontSize: 10, fontWeight: 600, letterSpacing: 0.3,
-            background: '#eff6ff', color: '#1d4ed8',
-            border: '1px solid #bfdbfe', borderRadius: 3,
-          }}>{pkg.cwList}</span>
-        ) : (
-          <span style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>—</span>
-        )}
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: 4, flexShrink: 0,
+            fontSize: 11, fontWeight: 700,
+            background: type === 'M' ? '#ede9fe' : '#dbeafe',
+            color:      type === 'M' ? '#5b21b6' : '#1e40af',
+          }}>{type}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{pkg.ref}</code>
+              {pkg.cwList && (
+                <span style={{
+                  fontSize: 9, fontWeight: 600, letterSpacing: 0.3, padding: '1px 5px',
+                  background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 3,
+                }}>{pkg.cwList}</span>
+              )}
+            </div>
+            <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--clr-text-muted)' }}>
+              {pkg.barcode ?? '—'}
+            </code>
+          </div>
+        </div>
       </Td>
-      <Td><code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pkg.barcode ?? '—'}</code></Td>
-      <Td><code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pkg.ref}</code></Td>
       <Td>
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -1585,9 +1755,9 @@ function TableRow({
   );
 }
 
-function Td({ children }: { children: React.ReactNode }) {
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <td style={{ padding: '10px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+    <td className={className} style={{ padding: '10px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
       {children}
     </td>
   );
