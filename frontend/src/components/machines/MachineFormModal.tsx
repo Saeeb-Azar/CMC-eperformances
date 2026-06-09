@@ -47,6 +47,12 @@ function fromMachine(m: MachineRead): MachineCreateInput {
   };
 }
 
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', fontSize: 13,
+  border: '1px solid var(--clr-border, #d1d5db)', borderRadius: 8,
+  background: '#fff', boxSizing: 'border-box',
+};
+
 export default function MachineFormModal({ open, onClose, onCreated, machine }: MachineFormModalProps) {
   const { t } = useTranslation();
   const isEdit = !!machine;
@@ -54,7 +60,6 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Reset/prefill form each time the modal opens.
   useEffect(() => {
     if (open) {
       setForm(machine ? fromMachine(machine) : DEFAULTS);
@@ -62,7 +67,6 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
     }
   }, [open, machine]);
 
-  // Close on Escape for keyboard users.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -99,109 +103,91 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)',
+      }}
     >
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden"
+        style={{
+          width: '100%', maxWidth: 720, background: '#fff', borderRadius: 16,
+          boxShadow: '0 20px 50px rgba(15,23,42,0.3)', overflow: 'hidden',
+          display: 'flex', flexDirection: 'column', maxHeight: '90vh',
+        }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-              <Server size={16} />
-            </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 22px', borderBottom: '1px solid #eef0f3',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10, background: '#0f172a',
+              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}><Server size={17} /></div>
             <div>
-              <h2 className="text-base font-semibold text-gray-900">{isEdit ? t('machines.form.editTitle', 'Maschine bearbeiten') : t('machines.form.title')}</h2>
-              <p className="text-xs text-gray-500">{t('machines.form.subtitle')}</p>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
+                {isEdit ? t('machines.form.editTitle', 'Maschine bearbeiten') : t('machines.form.title')}
+              </h2>
+              <p style={{ fontSize: 12, color: '#6b7280' }}>{t('machines.form.subtitle')}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center"
-            aria-label={t('common.cancel')}
-          >
-            <X size={16} />
+          <button type="button" onClick={onClose} aria-label={t('common.cancel')}
+            style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer' }}>
+            <X size={18} />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto bg-slate-50">
+        <div style={{
+          padding: '20px 22px', background: '#f8fafc', overflowY: 'auto',
+          display: 'flex', flexDirection: 'column', gap: 16,
+        }}>
           {error && (
-            <div className="px-3 py-2.5 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm">
+            <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13 }}>
               {error}
             </div>
           )}
 
           <Section icon={<Cpu size={15} />} title={t('machines.form.sectionBasics', 'Basisdaten')}>
-            <div className="grid grid-cols-2 gap-4">
+            <Grid2>
               <Field label={t('machines.form.machineId')} hint={t('machines.form.machineIdHint')}>
-                <input
-                  type="text"
-                  value={form.machine_id}
-                  onChange={(e) => update('machine_id', e.target.value)}
-                  className="input"
-                  required
-                  disabled={isEdit}
-                />
+                <input type="text" value={form.machine_id} onChange={(e) => update('machine_id', e.target.value)}
+                  style={{ ...inputStyle, opacity: isEdit ? 0.6 : 1 }} required disabled={isEdit} />
               </Field>
               <Field label={t('machines.form.name')}>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => update('name', e.target.value)}
-                  className="input"
-                  required
-                />
+                <input type="text" value={form.name} onChange={(e) => update('name', e.target.value)} style={inputStyle} required />
               </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            </Grid2>
+            <Grid2>
               <Field label={t('machines.form.model')}>
-                <select
-                  value={form.model ?? 'CW1000'}
-                  onChange={(e) => update('model', e.target.value)}
-                  className="input"
-                >
+                <select value={form.model ?? 'CW1000'} onChange={(e) => update('model', e.target.value)} style={inputStyle}>
                   <option value="CW1000">CW1000</option>
                   <option value="CW XS">CW XS</option>
                   <option value="CW XL">CW XL</option>
                 </select>
               </Field>
               <Field label={t('machines.form.tcpRole')}>
-                <select
-                  value={form.tcp_role}
-                  onChange={(e) => update('tcp_role', e.target.value as 'server' | 'client')}
-                  className="input"
-                >
+                <select value={form.tcp_role} onChange={(e) => update('tcp_role', e.target.value as 'server' | 'client')} style={inputStyle}>
                   <option value="server">{t('machines.form.roleServer')}</option>
                   <option value="client">{t('machines.form.roleClient')}</option>
                 </select>
               </Field>
-            </div>
+            </Grid2>
           </Section>
 
-          <div className="grid grid-cols-2 gap-4">
+          <Grid2>
             <Section icon={<Network size={15} />} title={t('machines.form.sectionNetwork', 'Netzwerk')}>
-              <div className="grid grid-cols-[1fr_96px] gap-3">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 12 }}>
                 <Field label={t('machines.form.tcpHost')}>
-                  <input
-                    type="text"
-                    value={form.tcp_host ?? ''}
-                    onChange={(e) => update('tcp_host', e.target.value)}
-                    className="input"
-                  />
+                  <input type="text" value={form.tcp_host ?? ''} onChange={(e) => update('tcp_host', e.target.value)} style={inputStyle} />
                 </Field>
                 <Field label={t('machines.form.tcpPort')}>
-                  <input
-                    type="number"
-                    value={form.tcp_port ?? 15001}
-                    onChange={(e) => update('tcp_port', Number(e.target.value))}
-                    className="input"
-                  />
+                  <input type="number" value={form.tcp_port ?? 15001} onChange={(e) => update('tcp_port', Number(e.target.value))} style={inputStyle} />
                 </Field>
               </div>
             </Section>
@@ -210,36 +196,28 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
                 label={t('machines.form.pulpoPickLocation', 'Pulpo Pick-Location')}
                 hint={t('machines.form.pulpoPickLocationHint', 'origin_location_code in Pulpo. Gesetzt = CW-Liste wird automatisch aus der Pulpo-Queue befüllt. Leer = keine Pulpo-Anbindung.')}
               >
-                <input
-                  type="text"
-                  value={form.pulpo_pick_location ?? ''}
-                  onChange={(e) => update('pulpo_pick_location', e.target.value)}
-                  className="input"
-                  placeholder="z.B. Standard"
-                />
+                <input type="text" value={form.pulpo_pick_location ?? ''} onChange={(e) => update('pulpo_pick_location', e.target.value)}
+                  style={inputStyle} placeholder="z.B. Standard" />
               </Field>
             </Section>
-          </div>
+          </Grid2>
 
           <Section icon={<Ruler size={15} />} title={t('machines.form.maxDimensions')}>
-            <div className="grid grid-cols-3 gap-3">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <Field label="L (mm)">
-                <input type="number" value={form.max_length_mm ?? 6000}
-                  onChange={(e) => update('max_length_mm', Number(e.target.value))} className="input" />
+                <input type="number" value={form.max_length_mm ?? 6000} onChange={(e) => update('max_length_mm', Number(e.target.value))} style={inputStyle} />
               </Field>
               <Field label="B (mm)">
-                <input type="number" value={form.max_width_mm ?? 4000}
-                  onChange={(e) => update('max_width_mm', Number(e.target.value))} className="input" />
+                <input type="number" value={form.max_width_mm ?? 4000} onChange={(e) => update('max_width_mm', Number(e.target.value))} style={inputStyle} />
               </Field>
               <Field label="H (mm)">
-                <input type="number" value={form.max_height_mm ?? 3000}
-                  onChange={(e) => update('max_height_mm', Number(e.target.value))} className="input" />
+                <input type="number" value={form.max_height_mm ?? 3000} onChange={(e) => update('max_height_mm', Number(e.target.value))} style={inputStyle} />
               </Field>
             </div>
           </Section>
 
           <Section icon={<Layers size={15} />} title={t('machines.form.stations')}>
-            <div className="grid grid-cols-3 gap-3">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <ToggleField checked={!!form.lab1_enabled} onChange={(v) => update('lab1_enabled', v)} label="LAB1" />
               <ToggleField checked={!!form.lab2_enabled} onChange={(v) => update('lab2_enabled', v)} label="LAB2" />
               <ToggleField checked={!!form.inv_enabled} onChange={(v) => update('inv_enabled', v)} label="INV" />
@@ -248,19 +226,21 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-white">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-10 px-4 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+          padding: '14px 22px', borderTop: '1px solid #eef0f3', background: '#fff',
+        }}>
+          <button type="button" onClick={onClose}
+            style={{ height: 40, padding: '0 16px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
             {t('common.cancel')}
           </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="h-10 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50"
-          >
+          <button type="submit" disabled={loading}
+            style={{
+              height: 40, padding: '0 18px', borderRadius: 8, border: 'none',
+              background: '#2563eb', color: '#fff', fontSize: 14, fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 8, cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.6 : 1,
+            }}>
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
             {loading ? t('common.loading') : isEdit ? t('common.save', 'Speichern') : t('machines.form.create')}
           </button>
@@ -270,48 +250,46 @@ export default function MachineFormModal({ open, onClose, onCreated, machine }: 
   );
 }
 
-function Section({
-  icon, title, children,
-}: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-      <div className="flex items-center gap-2 text-gray-900">
-        <span className="text-blue-500">{icon}</span>
-        <h3 className="text-sm font-semibold">{title}</h3>
+    <div style={{
+      background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 18,
+      display: 'flex', flexDirection: 'column', gap: 14,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ color: '#3b82f6', display: 'inline-flex' }}>{icon}</span>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{title}</h3>
       </div>
       {children}
     </div>
   );
 }
 
-function Field({
-  label, hint, children,
-}: { label: string; hint?: string; children: React.ReactNode }) {
+function Grid2({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>{children}</div>;
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="block">
-      <span className="block text-xs font-medium text-gray-600 mb-1.5">{label}</span>
+    <label style={{ display: 'block' }}>
+      <span style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#6b7280', marginBottom: 6 }}>{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-gray-400 mt-1">{hint}</span>}
+      {hint && <span style={{ display: 'block', fontSize: 11, color: '#9ca3af', marginTop: 5, lineHeight: 1.4 }}>{hint}</span>}
     </label>
   );
 }
 
-function ToggleField({
-  checked, onChange, label,
-}: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+function ToggleField({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <label
-      className={`flex items-center gap-2 px-3 h-10 rounded-lg border text-sm cursor-pointer transition-colors ${
-        checked ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-gray-200 text-gray-600'
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="accent-emerald-600"
-      />
-      <span className="font-mono text-xs">{label}</span>
+    <label style={{
+      display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', height: 40,
+      borderRadius: 8, cursor: 'pointer',
+      border: `1px solid ${checked ? '#a7f3d0' : '#e5e7eb'}`,
+      background: checked ? '#ecfdf5' : '#fff',
+      color: checked ? '#047857' : '#6b7280',
+    }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: '#059669', cursor: 'pointer' }} />
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{label}</span>
     </label>
   );
 }
