@@ -9,6 +9,8 @@
 @import "./styles/components/buttons.css";
 @import "./styles/components/cards.css";
 @import "./styles/components/ui.css";
+@import "./styles/components/modal.css";
+@import "./styles/components/table.css";
 
 /* Tailwind theme overrides using tokens */
 @theme {

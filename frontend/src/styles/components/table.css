@@ -1,0 +1,83 @@
+/* ═══════════════════════════════════════════════════════════════════
+   TABLE — one shared look for every data table in the app.
+
+   <div class="data-table__wrap">
+     <table class="data-table">
+       <thead><tr><th>…</th></tr></thead>
+       <tbody><tr><td>…</td></tr></tbody>
+     </table>
+     <div class="data-table__pagination"> … </div>
+   </div>
+   ═══════════════════════════════════════════════════════════════════ */
+
+.data-table__wrap {
+  background: var(--clr-bg-elevated, #fff);
+  border: 1px solid var(--clr-border, #e5e7eb);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.data-table__scroll { overflow-x: auto; }
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.data-table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--clr-text-muted, #6b7280);
+  white-space: nowrap;
+  background: var(--clr-bg-subtle, #fafafa);
+  border-bottom: 1px solid var(--clr-border, #e5e7eb);
+}
+
+.data-table tbody td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--clr-border, #eef0f3);
+}
+.data-table tbody tr { cursor: default; }
+.data-table tbody tr:hover { background: var(--clr-bg-subtle, #f8fafc); }
+.data-table tbody tr.is-selected { background: var(--clr-bg-subtle, #f4f6fa); }
+.data-table tbody tr.is-problem { background: #fef2f2; border-left: 3px solid #ef4444; }
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+.data-table__num { font-variant-numeric: tabular-nums; }
+.data-table__mono { font-family: var(--font-mono, monospace); }
+
+/* Status pill (dot + label) — reusable in any table cell */
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+}
+.pill__dot { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+
+/* Pagination footer */
+.data-table__pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid var(--clr-border, #e5e7eb);
+  font-size: 12px; color: var(--clr-text-muted, #6b7280);
+}
+.data-table__pager-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 1px solid var(--clr-border, #e5e7eb);
+  background: var(--clr-bg-elevated, #fff);
+  cursor: pointer;
+}
+.data-table__pager-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Empty state */
+.data-table__empty {
+  padding: 40px; text-align: center;
+  color: var(--clr-text-muted, #6b7280); font-size: 13px;
+}
