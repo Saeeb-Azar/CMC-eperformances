@@ -30,6 +30,14 @@ from .client import PulpoError, pulpo
 from .models import PulpoOrderItem, PulpoPackingOrder
 from .runtime import pulpo_runtime
 
+# Cross-run caches: Lagerplatz-Codes (origin_location_id → "CW10") und
+# Produkt-EANs (product_id → barcode) ändern sich praktisch nie. Über die
+# Resync-Läufe hinweg gecacht, damit der schnelle Sync-Loop (alle paar Sekunden)
+# Pulpo nur mit dem einen Queue-Aufruf belastet, nicht mit N Location/Produkt-
+# Lookups pro Durchlauf.
+_LOCATION_CACHE: dict[str, str] = {}
+_PRODUCT_CACHE: dict[str, str] = {}
+
 
 async def build_cw_items_for_location(
     db: AsyncSession, tenant_id: str, pick_location: str | None,
@@ -116,21 +124,25 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
 
     from .service import _get_default_tenant_id  # local import avoids a cycle
     tenant_id = await _get_default_tenant_id(db)
-    product_cache: dict[str, str] = {}
+    product_cache = _PRODUCT_CACHE  # cross-run cache (barcodes are stable)
 
     try:
         orders = await pulpo.list_queue_orders(None)  # whole packing queue
         logger.info(f"Pulpo resync: {len(orders)} packing-queue orders pulled")
 
         # Resolve each distinct origin_location_id → Lagerplatz code (e.g.
-        # 457127 → "CW10") via the warehouse-locations endpoint (cached).
-        loc_map: dict[str, str] = {}
+        # 457127 → "CW10"). Cached across runs, so only ids we've never seen hit
+        # the warehouse-locations endpoint.
+        loc_map: dict[str, str] = dict(_LOCATION_CACHE)
         for lid in {str(o.get("origin_location_id")) for o in orders if o.get("origin_location_id") is not None}:
+            if lid in loc_map:
+                continue
             try:
                 loc = await pulpo.get_location(lid)
                 code = (loc or {}).get("code") or (loc or {}).get("name")
                 if code:
                     loc_map[lid] = str(code)
+                    _LOCATION_CACHE[lid] = str(code)
             except PulpoError as e:
                 logger.warning(f"Pulpo location {lid} lookup failed: {e}")
         logger.info(f"Pulpo locations resolved: {list(loc_map.items())[:8]}")

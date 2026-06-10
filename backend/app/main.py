@@ -131,7 +131,8 @@ async def _cw_sync_loop() -> None:
 
     while True:
         try:
-            await asyncio.sleep(settings.cw_sync_interval_s)
+            # Sync first, then sleep — so a fresh deploy and every cycle reflect
+            # Pulpo's queue promptly (stale Lagerplätze drop off within one tick).
             async with async_session() as db:
                 await cw_sync.resync_cache_from_pulpo(db)   # no-op if Pulpo unconfigured
                 await cw_sync.sync_cw_lists_from_cache(db)
@@ -140,6 +141,10 @@ async def _cw_sync_loop() -> None:
             break
         except Exception as e:  # never let the loop die
             logger.warning(f"CW-sync loop iteration failed: {e}")
+        try:
+            await asyncio.sleep(settings.cw_sync_interval_s)
+        except asyncio.CancelledError:
+            break
 
 
 async def _retention_loop() -> None:

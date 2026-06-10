@@ -372,12 +372,15 @@ class ConnectionManager:
         return self._serialize_cw_list(PULPO_LIST_NAME, per_machine[PULPO_LIST_NAME])
 
     def set_pulpo_cw_lists(
-        self, protocol_id: str, lists: dict[str, dict[str, int]], *, active: bool = True,
+        self, protocol_id: str, lists: dict[str, dict[str, int]], *, active: bool = False,
     ) -> None:
         """Replace ALL Pulpo-sourced CW-Listen of a machine with one named list
         per Lagerplatz (e.g. "CW1", "CW6", "CW10"). Each maps barcode→expected.
         Existing `consumed` is preserved per barcode; Pulpo lists no longer
-        present are removed (manual lists are untouched)."""
+        present are removed (manual lists are untouched).
+
+        New lists arrive **inactive** (active=False) so the operator opts in by
+        ticking the box — we never auto-select a freshly synced Lagerplatz."""
         per_machine = self._cw_lists.setdefault(protocol_id, {})
         # Drop Pulpo lists that are no longer in the queue.
         for name in [n for n, l in list(per_machine.items())

@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     pulpo_pick_location: str = ""
     # Intervall (Sekunden) des Hintergrund-Tasks, der die CW-Listen aus der
     # Pulpo-Queue neu aufbaut (Self-Heal für verpasste Webhooks).
-    cw_sync_interval_s: int = 30
+    cw_sync_interval_s: int = 8
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
