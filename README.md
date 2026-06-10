@@ -58,3 +58,11 @@ export PULPO_WEBHOOK_SECRET="<selbst-vergeben>"  # = ?secret=… in der Pulpo-We
 
 > **Test-Modus** ist Default: es wird nur aus Pulpo gelesen, **nichts geschrieben**.
 > Umschaltbar unter Einstellungen → Pulpo-Anbindung.
+
+## Dokumentation
+
+- [`docs/TECHNISCHE_DOKUMENTATION.md`](docs/TECHNISCHE_DOKUMENTATION.md) — Was die Software kann, technische Umsetzung, API, Deployment, Build-Schritte
+- [`docs/PFLICHTENHEFT.md`](docs/PFLICHTENHEFT.md) — Anforderungen (FA/NFA), Schnittstellen, Abnahmekriterien, Umsetzungsstand
+- [`docs/ANWENDERHANDBUCH.md`](docs/ANWENDERHANDBUCH.md) — Ausführliche Bedienungsanleitung (Operator + Admin)
+- [`docs/PROJECT.md`](docs/PROJECT.md) — Entwickler-Referenz (Code-Struktur im Detail)
+- [`docs/ENTSCHEIDUNGEN.md`](docs/ENTSCHEIDUNGEN.md) — Architektur-Entscheidungen & Begründungen
