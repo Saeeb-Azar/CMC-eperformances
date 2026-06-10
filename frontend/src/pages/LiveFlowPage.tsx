@@ -735,6 +735,8 @@ export default function LiveFlowPage() {
           counts={counts}
           history={countsHistory}
           cwLists={selectedMachine ? (cwLists[selectedMachine] ?? []) : []}
+          cwListFilter={cwListFilter}
+          onCwListFilterChange={setCwListFilter}
           search={search}
           onSearch={setSearch}
           selectedRef={selectedRef}
@@ -785,7 +787,7 @@ interface MachineSidebarProps {
 
 function MachineSidebar({
   machines, stats, selected, onSelect, connectedIds, open, onToggle,
-  cwLists, onUpsertCwList, onDeleteCwList, cwListFilter, onCwListFilterChange,
+  cwLists, onUpsertCwList, onDeleteCwList,
 }: MachineSidebarProps) {
   // CW-Listen come exclusively from Pulpo now — no manual creation/editing.
   const [editingList, setEditingList] = useState<string | null>(null);
@@ -915,26 +917,7 @@ function MachineSidebar({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 360, overflowY: 'auto' }}>
-                  <button
-                    onClick={() => onCwListFilterChange(cwListFilter === ALL_CW_LISTS ? null : ALL_CW_LISTS)}
-                    title="Tabelle quer durch alle CW-Listen filtern"
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      gap: 6, padding: '6px 8px', cursor: 'pointer',
-                      border: `1px solid ${cwListFilter === ALL_CW_LISTS ? '#3b82f6' : 'var(--clr-border)'}`,
-                      borderRadius: 4,
-                      background: cwListFilter === ALL_CW_LISTS ? '#3b82f6' : 'transparent',
-                      color: cwListFilter === ALL_CW_LISTS ? '#fff' : 'var(--clr-text)',
-                      fontSize: 11, fontWeight: 600, textAlign: 'left',
-                    }}
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Filter size={11} /> Alle CW-Listen
-                    </span>
-                    <Filter size={10} style={{ opacity: cwListFilter === ALL_CW_LISTS ? 1 : 0.4 }} />
-                  </button>
                   {cwLists.map((lst) => {
-                    const isFiltered = cwListFilter === lst.name;
                     return (
                       <div
                         key={lst.name}
@@ -943,9 +926,7 @@ function MachineSidebar({
                           padding: '6px 8px',
                           border: `1px solid ${lst.active ? '#3b82f6' : 'var(--clr-border)'}`,
                           borderRadius: 4,
-                          background: lst.active
-                            ? '#eff6ff'
-                            : isFiltered ? 'var(--clr-bg-subtle, #f4f6fa)' : 'transparent',
+                          background: lst.active ? '#eff6ff' : 'transparent',
                         }}
                       >
                         <input
@@ -980,36 +961,10 @@ function MachineSidebar({
                               : ''}
                           </div>
                         </button>
-                        <button
-                          onClick={() => onCwListFilterChange(isFiltered ? null : lst.name)}
-                          title={isFiltered ? 'Filter aus' : 'Tabelle nach dieser Liste filtern'}
-                          style={{
-                            padding: '2px 6px', fontSize: 9, fontWeight: 600,
-                            border: `1px solid ${isFiltered ? '#3b82f6' : 'var(--clr-border)'}`,
-                            background: isFiltered ? '#3b82f6' : 'transparent',
-                            color: isFiltered ? '#fff' : 'var(--clr-text-muted)',
-                            borderRadius: 3, cursor: 'pointer',
-                          }}
-                        >
-                          <Filter size={10} />
-                        </button>
                       </div>
                     );
                   })}
                 </div>
-              )}
-              {cwListFilter && (
-                <button
-                  onClick={() => onCwListFilterChange(null)}
-                  style={{
-                    width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 10,
-                    border: '1px dashed var(--clr-border)', borderRadius: 4,
-                    background: 'transparent', cursor: 'pointer',
-                    color: 'var(--clr-text-muted)',
-                  }}
-                >
-                  Filter „{cwListFilter === ALL_CW_LISTS ? 'Alle CW-Listen' : cwListFilter}" deaktivieren
-                </button>
               )}
             </>
           )}
@@ -1310,6 +1265,8 @@ interface MainPaneProps {
   counts: Record<Bucket, number>;
   history: Record<Bucket, number>[];
   cwLists: CWList[];
+  cwListFilter: string | null;
+  onCwListFilterChange: (next: string | null) => void;
   search: string;
   onSearch: (s: string) => void;
   selectedRef: string | null;
@@ -1461,13 +1418,31 @@ function MainPane(p: MainPaneProps) {
         })}
       </div>
 
-      {/* Aufträge — gefiltert über die CW-Listen-Auswahl in der Sidebar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px 12px' }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1d4ed8' }}>Aufträge</h3>
-        <span style={{
-          fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
-          background: '#dbeafe', color: '#1d4ed8',
-        }}>{p.packages.length}</span>
+      {/* Aufträge + CW-Filter direkt über der Tabelle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 2px 12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>Aufträge</h3>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
+            background: '#dbeafe', color: '#1d4ed8',
+          }}>{p.packages.length}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginLeft: 8 }}>
+          {(() => {
+            const active = p.cwListFilter == null || p.cwListFilter === ALL_CW_LISTS;
+            return (
+              <button onClick={() => p.onCwListFilterChange(null)}
+                style={chipStyle(active)}>Alle CW-Listen</button>
+            );
+          })()}
+          {p.cwLists.map((l) => (
+            <button key={l.name} onClick={() => p.onCwListFilterChange(p.cwListFilter === l.name ? null : l.name)}
+              style={chipStyle(p.cwListFilter === l.name)}>
+              {l.name}
+              <span style={{ marginLeft: 5, opacity: 0.7, fontWeight: 600 }}>{l.total_consumed}/{l.total_expected}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{
@@ -1535,6 +1510,16 @@ function MainPane(p: MainPaneProps) {
       </div>
     </section>
   );
+}
+
+function chipStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: '3px 10px', fontSize: 12, fontWeight: 600, borderRadius: 99, cursor: 'pointer',
+    border: `1px solid ${active ? '#1d4ed8' : 'var(--clr-border)'}`,
+    background: active ? '#1d4ed8' : '#fff',
+    color: active ? '#fff' : 'var(--clr-text-muted)',
+    whiteSpace: 'nowrap',
+  };
 }
 
 function pagerBtn(disabled: boolean): React.CSSProperties {
