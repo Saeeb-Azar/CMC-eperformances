@@ -96,6 +96,40 @@ Die Queue dreht sich schnell — CW-Listen erscheinen und verschwinden, je nachd
 
 > Für die Pulpo-CW-Listen: Pick-Location auf **`CW`** setzen (nur die zwei Buchstaben).
 
+### 6.2 Neue Maschine anbinden (Schritt für Schritt)
+
+So bindest du eine **neue** CW1000 (oder einen weiteren Simulator) an:
+
+**Schritt 1 — Maschine in der App anlegen**
+Navigation → **Maschinen → „+ Maschine hinzufügen"**:
+- **Maschine-ID** = die 4-stellige CIS-ID der Maschine (z. B. `0002`). **Muss exakt der ID entsprechen, die die Maschine in ihren Frames sendet** — sonst wird sie nicht zugeordnet.
+- **Name** frei wählbar (z. B. „CW-Linie 2").
+- **TCP-Rolle** = **Server (Maschine verbindet sich)** — die Maschine wählt zu uns.
+- **TCP-Host/Port** = `0.0.0.0` / `15001` (Standard, unverändert lassen).
+- **Pulpo Pick-Location** = `CW` (Präfix), falls sie aus der Pulpo-Queue gefüttert werden soll.
+- **Aktive Stationen** (LAB1/LAB2/INV) passend zur Linie.
+„Speichern".
+
+**Schritt 2 — Verbindungsadresse (Railway-TCP-Proxy) holen**
+Das Backend lauscht intern auf Port **15001**. Von außen erreichbar über den Railway-TCP-Proxy:
+Railway → **CMC Backend → Settings → Networking → TCP Proxy** → dort steht eine Adresse wie `metro.proxy.rlwy.net:XXXXX`. Diese (Host **und** Port) brauchst du im nächsten Schritt.
+
+**Schritt 3 — Maschine/Simulator konfigurieren**
+Am **CW1000 CIS Simulator** (oder der echten Steuerung):
+- Modus auf **„Client"** stellen (die Maschine wählt aktiv raus).
+- **IP-Adresse + Port** der Proxy-Adresse eintragen. Da der Simulator nur eine **numerische IP** akzeptiert: in der App unter **Simulator → „Simulator verbinden" → „Auflösen"** die Proxy-Adresse (`…proxy.rlwy.net:XXXXX`) einfügen → du bekommst die IP zum Kopieren (ersetzt das manuelle `nslookup`).
+- Auf **„OPEN" / Verbinden** klicken.
+
+**Schritt 4 — Verbindung prüfen**
+- Im **Simulator** sollten **HBT (Heartbeat)** und „Simulator verbunden" erscheinen.
+- Auf der **Maschinen-Seite** wird die Maschine jetzt **„Online"** angezeigt (Live-Status), die Karten „Online/Verbindungen" zählen hoch.
+- Im **Dashboard** taucht die Maschine in der Liste auf (grüner Punkt).
+
+**Schritt 5 — CW-Listen (optional, bei Pulpo)**
+Mit gesetzter Pick-Location `CW` füllen sich nach ~30 s die CW-Listen aus der Pulpo-Queue (eine pro Lagerplatz). Voraussetzung: Pulpo-Env-Vars + Webhook sind eingerichtet (siehe §10).
+
+> **Hinweis:** Eine Maschine erscheint erst, wenn sie ihr **erstes Frame** (HBT/ENQ) gesendet hat. „Gestoppt"/„offline" auf der Maschinen-Seite bei vorhandener Verbindung bedeutet i. d. R., dass noch keine Verbindung besteht — Proxy-Adresse/Port und die Maschinen-ID prüfen.
+
 ---
 
 ## 7. Simulator-Seite
