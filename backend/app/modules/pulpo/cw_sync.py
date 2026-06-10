@@ -160,12 +160,18 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
             pulled_ids.add(str(oid))
             await _upsert_queue_order(db, tenant_id, order, product_cache, loc_map)
 
-        # Self-heal: close cached queue orders that are no longer in the queue.
+        # Self-heal: close EVERY non-terminal cached order that the live queue
+        # pull no longer returned. The pull is the whole packing queue, so a
+        # cached order that's absent has left the queue — regardless of which
+        # non-terminal state it currently sits in (queue/taken/draft/locked).
+        # (Closing only state=="queue" let orders that a webhook had marked
+        # "taken" linger forever, so e.g. CW2/CW9 stayed in the sidebar even
+        # though Pulpo only had CW10.)
         close_stmt = (
             update(PulpoPackingOrder)
             .where(
                 PulpoPackingOrder.tenant_id == tenant_id,
-                PulpoPackingOrder.state == "queue",
+                PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
             )
             .values(state="closed", updated_at=datetime.now(timezone.utc))
         )

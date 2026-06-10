@@ -213,6 +213,12 @@ class ConnectionManager:
         # Operator (manuelle Eject-Button) oder später durch automatische
         # Soll-/Ist-Checks befüllt.
         self._pending_ejections: dict[str, set[str]] = {}
+        # Welche CW-Liste hat ein ENQ-Ref einen Slot abgebucht? protocol_id →
+        # ref → (list_name, barcode). Damit können wir den Slot **zurückgeben**,
+        # wenn der Auftrag ejected/abgelehnt wird (EJECTED/DELETED/REM), und ihn
+        # **behalten**, wenn er sauber durchläuft (COMPLETED). So verzählt sich
+        # die Liste nicht, wenn ein Paket ausgeworfen und neu aufgelegt wird.
+        self._cw_consumption: dict[str, dict[str, tuple[str, str]]] = {}
 
     def get_mode(self, protocol_id: str) -> str | None:
         return self._machine_modes.get(protocol_id)
@@ -293,6 +299,38 @@ class ConnectionManager:
             return False
         entry["consumed"] += 1
         return True
+
+    def record_cw_consumption(self, protocol_id: str, ref: str, list_name: str, barcode: str) -> None:
+        """Merkt sich, dass ``ref`` einen Slot von ``list_name`` abgebucht hat —
+        Grundlage für eine spätere Rückgabe bei Eject."""
+        if not (protocol_id and ref and list_name and barcode):
+            return
+        self._cw_consumption.setdefault(protocol_id, {})[ref] = (list_name, barcode)
+
+    def release_cw_for_ref(self, protocol_id: str, ref: str) -> bool:
+        """Gibt den von ``ref`` belegten CW-Slot zurück (consumed −1). Wird bei
+        EJECTED/DELETED/REM aufgerufen, damit ein erneut aufgelegtes Paket den
+        Slot sauber neu verbrauchen kann. True, wenn wirklich zurückgegeben."""
+        per_machine = self._cw_consumption.get(protocol_id)
+        if not per_machine:
+            return False
+        entry = per_machine.pop(ref, None)
+        if not entry:
+            return False
+        list_name, barcode = entry
+        lst = self._cw_lists.get(protocol_id, {}).get(list_name)
+        item = (lst or {}).get("items", {}).get(barcode) if lst else None
+        if item and item["consumed"] > 0:
+            item["consumed"] -= 1
+            return True
+        return False
+
+    def finalize_cw_for_ref(self, protocol_id: str, ref: str) -> None:
+        """Auftrag sauber abgeschlossen (COMPLETED): Slot bleibt verbraucht,
+        nur die Buchführung wird aufgeräumt."""
+        per_machine = self._cw_consumption.get(protocol_id)
+        if per_machine:
+            per_machine.pop(ref, None)
 
     def is_scan_glitch(self, protocol_id: str, barcode: str, *, now: float) -> bool:
         """True wenn derselbe Barcode innerhalb des Glitch-Fensters
@@ -463,11 +501,13 @@ class ConnectionManager:
             cleared_ejections = sum(len(s) for s in self._pending_ejections.values())
             self._pending_ejections.clear()
             self._last_scan.clear()
+            self._cw_consumption.clear()
         else:
             s = self._pending_ejections.pop(protocol_id, None)
             if s:
                 cleared_ejections = len(s)
             self._last_scan.pop(protocol_id, None)
+            self._cw_consumption.pop(protocol_id, None)
         cleared_consumed = self.reset_cw_consumed(protocol_id)
         return {
             "packages": cleared_packages,
@@ -650,6 +690,7 @@ class ConnectionManager:
                         # Scan-Memo) bleiben hier in der Connection-Schicht.
                         is_duplicate = False
                         is_unknown_barcode = False
+                        is_resume = False
                         matched_cw_list: str | None = None
                         filter_passed = True
                         if msg_type == "ENQ" and conn.protocol_id:
@@ -659,6 +700,18 @@ class ConnectionManager:
                                 conn.protocol_id, barcode, now=now_ts,
                             ):
                                 is_duplicate = True
+                            elif barcode and self._tracker.is_active_barcode(machine_id, barcode):
+                                # Wiederaufnahme: dasselbe Paket läuft erneut über
+                                # den Scanner (z.B. ausgeworfen und neu aufgelegt,
+                                # bevor der erste Durchlauf terminiert ist). Wir
+                                # akzeptieren es, buchen aber KEINEN neuen Slot ab
+                                # (der ist schon vom noch aktiven Auftrag belegt)
+                                # und weisen es nicht als Doppel-Scan ab.
+                                is_resume = True
+                                matched_cw_list, _fp, _ha = (
+                                    self.evaluate_cw_for_enq(conn.protocol_id, barcode)
+                                )
+                                filter_passed = True
                             else:
                                 matched_cw_list, filter_passed, _has_active = (
                                     self.evaluate_cw_for_enq(conn.protocol_id, barcode)
@@ -701,8 +754,14 @@ class ConnectionManager:
                                 and response.get("result") == 1
                             ):
                                 bc = str(msg_data.get("barcode", "") or "").strip()
-                                if matched_cw_list and filter_passed:
-                                    self.consume_cw_entry(conn.protocol_id, matched_cw_list, bc)
+                                # Wiederaufnahme verbraucht keinen neuen Slot.
+                                if matched_cw_list and filter_passed and not is_resume:
+                                    if self.consume_cw_entry(conn.protocol_id, matched_cw_list, bc):
+                                        self.record_cw_consumption(
+                                            conn.protocol_id,
+                                            str(response.get("reference_id", "") or ""),
+                                            matched_cw_list, bc,
+                                        )
                                 self.record_scan(conn.protocol_id, bc, now=time.monotonic())
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
@@ -745,6 +804,8 @@ class ConnectionManager:
                             rejection = response.get("rejection_reason")
                             if rejection:
                                 msg_data["rejection_reason"] = rejection
+                            if is_resume:
+                                msg_data["resumed"] = True
                             # Welche CW-Liste hat den Scan „gefangen"? Wird
                             # an die Bestellung gehängt, damit die Tabelle
                             # die Spalte rendern und filtern kann.
@@ -755,10 +816,24 @@ class ConnectionManager:
                         # Keep the in-memory tracker in sync with the latest
                         # event so future ENQ duplicate-checks see the truth.
                         if response and isinstance(msg_data, dict):
-                            self._tracker.apply(
-                                machine_id, msg_type, msg_data,
-                                response.get("reference_id", ""),
-                            )
+                            term_ref = str(response.get("reference_id", "") or "")
+                            self._tracker.apply(machine_id, msg_type, msg_data, term_ref)
+                            # CW-Slot-Buchführung: bei sauberem Abschluss behalten,
+                            # bei Auswurf/Ablehnung zurückgeben — damit ein neu
+                            # aufgelegtes Paket den Slot korrekt neu verbraucht.
+                            if conn.protocol_id and term_ref:
+                                pid = conn.protocol_id
+                                if msg_type == "END":
+                                    if str(msg_data.get("status")) in ("1",):
+                                        self.finalize_cw_for_ref(pid, term_ref)
+                                    else:
+                                        self.release_cw_for_ref(pid, term_ref)
+                                elif msg_type == "REM":
+                                    self.release_cw_for_ref(pid, term_ref)
+                                elif msg_type == "ACK" and msg_data.get("good") not in (1, "1", True, "true"):
+                                    self.release_cw_for_ref(pid, term_ref)
+                                elif eject_now:
+                                    self.release_cw_for_ref(pid, term_ref)
 
                         # Sequence-based ejection (cmc-process-doc § 7 #1):
                         # when END fires, any older active state on the same
@@ -773,6 +848,11 @@ class ConnectionManager:
                             if current_seq > 0:
                                 ejected = self._tracker.eject_stale_predecessors(machine_id, current_seq)
                                 for stale in ejected:
+                                    # Verloren am Band → Slot zurückgeben.
+                                    if conn.protocol_id:
+                                        self.release_cw_for_ref(
+                                            conn.protocol_id, str(stale.get("reference_id", "") or ""),
+                                        )
                                     asyncio.create_task(ws_manager.broadcast({
                                         "type": "EJECT",
                                         "severity": "warning",
