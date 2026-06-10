@@ -1330,7 +1330,6 @@ const PAGE_SIZE = 25;
 function MainPane(p: MainPaneProps) {
   const totalSingles = p.packages.filter((x) => detectType(x.barcode) === 'S').length;
   const totalMulti   = p.packages.filter((x) => detectType(x.barcode) === 'M').length;
-  const [tab, setTab] = useState<'orders' | 'cwlists'>('orders');
   const [page, setPage] = useState(0);
 
   const pageCount = Math.max(1, Math.ceil(p.packages.length / PAGE_SIZE));
@@ -1462,37 +1461,18 @@ function MainPane(p: MainPaneProps) {
         })}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--clr-border)', marginBottom: 0 }}>
-        {([['orders', 'Aufträge', p.packages.length], ['cwlists', 'CW-Listen', p.cwLists.length]] as const).map(([key, label, n]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '10px 2px', border: 'none', background: 'transparent', cursor: 'pointer',
-              fontSize: 14, fontWeight: 600,
-              color: tab === key ? '#1d4ed8' : 'var(--clr-text-muted)',
-              borderBottom: `2px solid ${tab === key ? '#1d4ed8' : 'transparent'}`,
-              marginBottom: -1,
-            }}
-          >
-            {label}
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
-              background: tab === key ? '#dbeafe' : 'var(--clr-bg-subtle, #f1f5f9)',
-              color: tab === key ? '#1d4ed8' : 'var(--clr-text-muted)',
-            }}>{n}</span>
-          </button>
-        ))}
+      {/* Aufträge — gefiltert über die CW-Listen-Auswahl in der Sidebar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px 12px' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1d4ed8' }}>Aufträge</h3>
+        <span style={{
+          fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
+          background: '#dbeafe', color: '#1d4ed8',
+        }}>{p.packages.length}</span>
       </div>
 
-      {tab === 'cwlists' ? (
-        <CwListsTab cwLists={p.cwLists} />
-      ) : (
       <div style={{
         background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
-        borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden',
+        borderRadius: 12, overflow: 'hidden',
       }}>
         {p.packages.length === 0 ? (
           <EmptyState connected={p.connected} hasSimulator={p.hasSimulator} />
@@ -1553,7 +1533,6 @@ function MainPane(p: MainPaneProps) {
         </>
         )}
       </div>
-      )}
     </section>
   );
 }
@@ -1567,49 +1546,6 @@ function pagerBtn(disabled: boolean): React.CSSProperties {
   };
 }
 
-// CW-Listen tab: compact read-only summary of the machine's lists.
-function CwListsTab({ cwLists }: { cwLists: CWList[] }) {
-  return (
-    <div style={{
-      background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
-      borderTop: 'none', borderRadius: '0 0 12px 12px', padding: cwLists.length ? 0 : '0',
-    }}>
-      {cwLists.length === 0 ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
-          Keine CW-Listen — Pulpo Pick-Location der Maschine in den Einstellungen setzen.
-        </div>
-      ) : (
-        <table className="data-table">
-          <thead>
-            <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
-              <Th>Liste</Th><Th>Quelle</Th><Th>Aktiv</Th><Th>Artikel</Th><Th>Verbraucht</Th><Th>Verbleibend</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {cwLists.map((l) => (
-              <tr key={l.name} style={{ borderBottom: '1px solid var(--clr-border)' }}>
-                <Td><span style={{ fontWeight: 600 }}>{l.name}</span></Td>
-                <Td>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
-                    background: l.source === 'pulpo' ? '#dbeafe' : 'var(--clr-bg-subtle,#f1f5f9)',
-                    color: l.source === 'pulpo' ? '#1d4ed8' : 'var(--clr-text-muted)',
-                  }}>{l.source === 'pulpo' ? 'PULPO' : 'MANUELL'}</span>
-                </Td>
-                <Td>{l.active
-                  ? <span style={{ color: '#047857', fontWeight: 600 }}>● aktiv</span>
-                  : <span style={{ color: 'var(--clr-text-muted)' }}>aus</span>}</Td>
-                <Td className="tabular-nums">{l.items.length}</Td>
-                <Td className="tabular-nums">{l.total_consumed} / {l.total_expected}</Td>
-                <Td className="tabular-nums">{l.remaining}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
 
 // Header/cell styling now comes from the shared table.css (.data-table).
 function Th({ children }: { children: React.ReactNode }) {
