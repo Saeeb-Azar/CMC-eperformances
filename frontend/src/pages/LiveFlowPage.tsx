@@ -222,6 +222,19 @@ interface PackageRow {
 // Sentinel for the table filter meaning "across all CW-Listen".
 const ALL_CW_LISTS = '__ALL__';
 
+// Natural sort for Lagerplatz codes: CW1 < CW2 < CW6 < CW10 < CW28 (numeric
+// part compared as a number, not lexically), so the sidebar/filter list stays
+// in an obvious order instead of CW1, CW10, CW13, CW2, …
+function naturalCw(a: string, b: string): number {
+  const na = parseInt(a.replace(/\D+/g, ''), 10);
+  const nb = parseInt(b.replace(/\D+/g, ''), 10);
+  const pa = a.replace(/\d+/g, '');
+  const pb = b.replace(/\d+/g, '');
+  if (pa !== pb) return pa.localeCompare(pb);            // group by prefix (CW vs SACK)
+  if (Number.isNaN(na) || Number.isNaN(nb)) return a.localeCompare(b);
+  return na - nb;
+}
+
 interface CWListItem {
   barcode: string;
   expected: number;
@@ -469,7 +482,7 @@ export default function LiveFlowPage() {
     const machinePkgs = selectedMachine
       ? allPackages.filter((p) => p.machine_id === selectedMachine)
       : allPackages;
-    return Array.from(new Set(machinePkgs.map((p) => p.cwList).filter(Boolean) as string[])).sort();
+    return Array.from(new Set(machinePkgs.map((p) => p.cwList).filter(Boolean) as string[])).sort(naturalCw);
   }, [allPackages, selectedMachine]);
 
   // Bucket counts for the cards
@@ -928,7 +941,7 @@ function MachineSidebar({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {cwLists.map((lst) => {
+                  {[...cwLists].sort((a, b) => naturalCw(a.name, b.name)).map((lst) => {
                     return (
                       <div
                         key={lst.name}

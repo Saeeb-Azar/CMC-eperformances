@@ -230,7 +230,7 @@ class PulpoClient:
         return self._as_list(result)
 
     async def list_queue_orders(
-        self, pick_location: str | None = None, *, page_size: int = 200, max_total: int = 5000,
+        self, pick_location: str | None = None, *, page_size: int = 100, max_total: int = 5000,
     ) -> list[dict]:
         """ALL packing orders in ``queue`` state (the WHOLE packing queue, or one
         ``origin_location_code`` if given). Paginates via limit/offset and uses

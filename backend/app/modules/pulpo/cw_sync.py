@@ -171,8 +171,12 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
         )
         if pulled_ids:
             close_stmt = close_stmt.where(PulpoPackingOrder.pulpo_order_id.notin_(pulled_ids))
-        await db.execute(close_stmt)
+        closed = await db.execute(close_stmt)
         await db.flush()
+        logger.info(
+            f"Pulpo resync self-heal: {closed.rowcount} cached order(s) closed "
+            f"(no longer in queue); {len(pulled_ids)} still queued"
+        )
     except PulpoError as e:
         logger.warning(f"Pulpo resync failed: {e} — keeping existing cache")
         return {"ok": False, "error": str(e)}
