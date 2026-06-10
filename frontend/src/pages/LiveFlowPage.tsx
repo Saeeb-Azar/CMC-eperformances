@@ -926,7 +926,7 @@ function MachineSidebar({
                   Keine Pulpo-Queue — Pick-Location der Maschine in den Einstellungen setzen
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 360, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   {cwLists.map((lst) => {
                     return (
                       <div
