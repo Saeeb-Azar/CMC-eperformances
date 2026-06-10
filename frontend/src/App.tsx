@@ -9,6 +9,7 @@ import MachinesPage from './pages/MachinesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AuditPage from './pages/AuditPage';
 import SimulatorPage from './pages/SimulatorPage';
+import ProtokollPage from './pages/ProtokollPage';
 
 // Settings (Tenant Admin)
 import SettingsCompanyPage from './pages/settings/SettingsCompanyPage';
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/simulator" element={<SimulatorPage />} />
+            <Route path="/protokoll" element={<ProtokollPage />} />
 
             {/* Settings (Tenant Admin) */}
             <Route path="/settings/company" element={<SettingsCompanyPage />} />
