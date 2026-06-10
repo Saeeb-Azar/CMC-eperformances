@@ -286,6 +286,42 @@ async def get_pulpo_status():
     }
 
 
+@app.get("/api/v1/settings/pulpo/debug")
+async def get_pulpo_debug(limit: int = 80):
+    """Inspection snapshot of the Pulpo cache — ALL locations (not just CW),
+    incl. recently closed orders, so the fast queue turnover doesn't matter.
+    Open in the browser to verify location + barcodes are coming through right."""
+    from sqlalchemy import desc, select
+    from sqlalchemy.orm import selectinload
+    from app.core.database import async_session
+    from app.modules.pulpo.models import PulpoPackingOrder
+
+    out = []
+    async with async_session() as db:
+        rows = (await db.execute(
+            select(PulpoPackingOrder)
+            .options(selectinload(PulpoPackingOrder.items))
+            .order_by(desc(PulpoPackingOrder.updated_at))
+            .limit(limit)
+        )).scalars().all()
+        for r in rows:
+            raw = r.raw_payload if isinstance(r.raw_payload, dict) else {}
+            out.append({
+                "pulpo_order_id": r.pulpo_order_id,
+                "sequence_number": raw.get("sequence_number"),
+                "state": r.state,
+                "location": r.pick_location,
+                "cart_box_barcode": r.cart_box_barcode or None,
+                "items": [
+                    {"ean": it.ean or None, "product_name": it.product_name, "quantity": it.quantity}
+                    for it in r.items
+                ],
+            })
+    # Distinct locations seen (quick overview of CW vs SACK vs Pack…).
+    locations = sorted({o["location"] for o in out if o["location"]})
+    return {"count": len(out), "locations": locations, "orders": out}
+
+
 @app.put("/api/v1/settings/pulpo")
 async def set_pulpo_settings(body: dict):
     """Toggle Test-Modus. Body: {"test_mode": true|false}.
