@@ -7,6 +7,7 @@ Port 15001 as per CMC CIS protocol.
 """
 
 import asyncio
+import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -15,6 +16,31 @@ from app.core.logging import logger
 from app.gateway.parser import parse_message, build_response, serialize_response
 from app.gateway.persistence import persist_event
 from app.gateway.websocket import ws_manager
+
+
+def sanitize_barcode(raw: str) -> str:
+    """Resolve a (possibly multi-)barcode read into the ONE code we route on.
+
+    The scanner can deliver several codes in a single read (semicolon- or
+    whitespace-separated). A multi-order parcel carries an alphanumeric
+    cart-box label (e.g. ``M319991``) AND the plain EANs of the articles
+    inside it. **As soon as an M-/letter code is present it ALWAYS wins and
+    the numeric EANs are ignored** — the parcel must be processed as the
+    multi-order cart box, not as one of its contained single articles.
+
+    Empty input and a ``NOREAD`` token are passed through (NOREAD keeps its
+    letters → handled as no-read downstream)."""
+    if not raw:
+        return ""
+    tokens = [t.strip() for t in re.split(r"[;\s]+", raw) if t.strip()]
+    if not tokens:
+        return ""
+    # Alphanumeric (cart-box / multi-order) codes take priority over EANs.
+    alnum = [t for t in tokens if any(c.isalpha() for c in t)]
+    if alnum:
+        m_codes = [t for t in alnum if t.upper().startswith("M")]
+        return (m_codes or alnum)[0]
+    return tokens[0]
 
 
 # Active states per cmc-process-doc Section 4 / Section 7 "Order Reservation
@@ -694,7 +720,16 @@ class ConnectionManager:
                         matched_cw_list: str | None = None
                         filter_passed = True
                         if msg_type == "ENQ" and conn.protocol_id:
-                            barcode = str(msg_data.get("barcode", "") or "").strip()
+                            raw_bc = str(msg_data.get("barcode", "") or "")
+                            barcode = sanitize_barcode(raw_bc)
+                            # Resolved code flows through the whole pipeline
+                            # (filter, multi_only reject, consume, persistence,
+                            # UI). Keep the raw read for traceability if a
+                            # multi-read was collapsed (e.g. "M319991;406…").
+                            if isinstance(msg_data, dict):
+                                if barcode != raw_bc.strip():
+                                    msg_data["barcode_raw"] = raw_bc.strip()
+                                msg_data["barcode"] = barcode
                             now_ts = time.monotonic()
                             if barcode and self.is_scan_glitch(
                                 conn.protocol_id, barcode, now=now_ts,

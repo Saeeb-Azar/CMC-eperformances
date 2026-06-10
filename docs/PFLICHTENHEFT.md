@@ -74,7 +74,7 @@ Einsatzumgebung: Browser (Desktop), Backend in der Cloud (Railway), Maschine/Sim
 | FA-26 | Persistente Aufträge-/Audit-Historie | Mechanik vorhanden, per Flag aus | 🟡 |
 | FA-27 | Manueller Fallback `box_closed` Skip-Logik | Webhook empfangen + geloggt | 🟡 |
 | FA-28 | Multi-Maschinen-Übersicht (KPIs über alle) | — | ❌ |
-| FA-29 | Multi-Barcode-Split (Semikolon, M-Priorität) | — | ❌ |
+| FA-29 | Multi-Barcode-Split (Semikolon, M-Priorität): M-/CartBox-Code gewinnt, EANs werden ignoriert | `sanitize_barcode()` im ENQ-Pfad | ✅ |
 
 ---
 
@@ -141,7 +141,7 @@ Ein Backend-Prozess (FastAPI/asyncio) mit integriertem TCP-Gateway, Postgres-Dat
 
 - **Vollständig**: Maschinen-Protokoll & Lebenszyklus, Live-UI, CW-Listen aus Pulpo (lesend), Test-Modus, Auth/Tenant, Protokoll (live), Deployment.
 - **Teilweise/vorbereitet**: persistente Historie (Flag), schreibender Pulpo-Rückfluss (Deferred Writes), box_closed-Reconcile.
-- **Offen**: Multi-Maschinen-KPIs, Multi-Barcode-Split.
+- **Offen**: Multi-Maschinen-KPIs.
 
 ---
 
@@ -151,4 +151,3 @@ Ein Backend-Prozess (FastAPI/asyncio) mit integriertem TCP-Gateway, Postgres-Dat
 2. Schreibenden Pulpo-Flow (Deferred Writes bei END) implementieren und kontrolliert scharfschalten.
 3. `box_closed`-Skip-Logik (Doppel-Label-Schutz bei manuellem Packen).
 4. Multi-Maschinen-Übersicht.
-5. Multi-Barcode-Split + ACK-Mid-Flight-Reject.
