@@ -132,6 +132,42 @@ Mit gesetzter Pick-Location `CW` füllen sich nach ~30 s die CW-Listen aus der P
 
 ---
 
+### 6.3 Echte Maschine anbinden — direkt zur Cloud (CW1000 CIS)
+
+Während §6.2 den Simulator beschreibt, geht es hier um die **echte CW1000-Steuerung**, die sich **direkt** mit unserem Cloud-Gateway (Railway) verbindet. Bezugspunkt ist der **CIS Connection Manager** der Maschine (das HMI mit der Verbindungsliste „PLC / Incoming BC / Data Manager / CheckWeight / Label BC …").
+
+**Grundprinzip (Rollen & Protokoll)**
+- Unsere Software ist der **CIS / „Data Server"** und **lauscht** (Server-Modus) auf TCP-Port **15001**. Die **Maschine ist Client** und wählt zu uns raus.
+- Ablauf je Paket: `ENQ` (Barcode gescannt) → unsere Antwort (Auftrag/Label) → `IND → ACK → LAB1/LAB2 → END` (oder `REM`), dazwischen `HBT` (Heartbeat).
+
+**Voraussetzung (Netzwerk-Pfad: direkt zur Cloud)**
+Das Maschinennetz braucht **ausgehenden Internet-Zugang** zum Railway-TCP-Proxy. Hinweis: die Proxy-**IP kann sich ändern** und das HMI akzeptiert teils nur **numerische IPs** — vor jedem Go-Live die aktuelle IP neu auflösen (siehe Schritt 2).
+
+**Schritt 1 — Maschine in der App anlegen** (wie §6.2)
+- **Maschine-ID** = exakt die ID aus den Frames der Steuerung. Noch unbekannt? Erst Schritt 2–4 verbinden, dann im **Protokoll** das erste `HBT`/`ENQ` ablesen und die ID hier eintragen.
+- **TCP-Rolle** = `Server (Maschine verbindet sich)`, **Port** `15001`, **Pulpo Pick-Location** = `CW`, Stationen passend zur Linie.
+
+**Schritt 2 — Cloud-Adresse holen & auflösen**
+Railway → **CMC Backend → Settings → Networking → TCP Proxy** → Adresse `xxx.proxy.rlwy.net:PORT`. Da das HMI eine **IP** braucht: in der App unter **Simulator → „Verbinden" → „Auflösen"** die Proxy-Adresse einfügen → **IP + Port** zum Kopieren.
+
+**Schritt 3 — CIS Connection Manager der Maschine einstellen**
+1. **Data Origin** auf **`External (Data Server)`** stellen (auf dem Beispiel-Screen bereits gesetzt). Damit holt die Maschine die Auftragsdaten vom externen Server (= uns) statt vom internen Handscanner.
+2. In der Zeile, die die **Data-Server-/Auftragsdaten-Verbindung** trägt (höchstwahrscheinlich **„Data Manager"** — mit CMC/Integrator bestätigen, welches Feld die Data-Server-Adresse hält), die **aufgelöste IP : Port** aus Schritt 2 eintragen.
+3. **„Reset"** auf dieser Verbindung drücken → sie verbindet neu, Status soll **ACTIVE** (grün) werden.
+4. **„Send HeatBeat"** drücken → bei uns muss ein `HBT` ankommen.
+
+**Schritt 4 — Verbindung prüfen**
+- Im **Protokoll** erscheinen `HBT`/`ENQ`; auf der **Maschinen-Seite** wird sie **„Online"**.
+- Ein Test-Paket scannen → der Verlauf `ENQ → IND → ACK → LAB → END` muss durchlaufen.
+- Mit Pick-Location `CW` füllen sich die CW-Listen aus der Pulpo-Queue (eine pro Lagerplatz).
+
+**Schritt 5 — 🔒 Sicherheit**
+Der **Test-Modus / Pulpo-Write-Guard bleibt AN**: wir **lesen** aus Pulpo (Queue/CW-Listen), **schreiben nichts** zurück. So lässt sich die echte Maschine voll testen, ohne dass in Pulpo etwas verändert/geschlossen wird. Live-Schreiben erst bewusst in **Einstellungen → Pulpo-Anbindung** freigeben (§10.3).
+
+> **Troubleshooting:** Keine Verbindung → Proxy-IP neu auflösen (kann gewechselt haben), Firewall/Internet-Ausgang des Maschinennetzes prüfen, richtige Zeile (Data Server) erwischt? Maschine bleibt „offline" trotz grüner Zeile am HMI → Maschinen-ID in der App stimmt nicht mit der gesendeten ID überein.
+
+---
+
 ## 7. Simulator-Seite
 
 Zum Testen ohne echte Maschine.
