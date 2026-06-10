@@ -17,17 +17,22 @@ const formatHeartbeat = (iso: string | null): string => {
 
 export default function MachinesPage() {
   const { t } = useTranslation();
-  const [machines, setMachines] = useState<MachineRead[]>([]);
+  const [machinesDb, setMachines] = useState<MachineRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MachineRead | null>(null);
   const [search, setSearch] = useState('');
   const [filterState, setFilterState] = useState<FilterState>({ online: [], status: [] });
+  const [connectedIds, setConnectedIds] = useState<string[]>([]);
 
-  const reload = () =>
+  const reload = () => {
     api.listMachines()
       .then((m) => { setMachines(m); setLoading(false); })
       .catch(() => { setMachines([]); setLoading(false); });
+    api.getGatewayStatus()
+      .then((g) => setConnectedIds(g.connected_machines ?? []))
+      .catch(() => { /* gateway not reachable */ });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +44,14 @@ export default function MachinesPage() {
     const interval = setInterval(load, 5000);
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
+
+  // Overlay the LIVE TCP connection status (in-memory gateway) onto the DB
+  // records, so a connected machine shows online even without DB persistence.
+  const machines = useMemo(() => machinesDb.map((m) =>
+    connectedIds.includes(m.machine_id)
+      ? { ...m, is_online: true, status: m.status === 'STOP' || m.status === 'ERROR' ? 'RUNNING' : m.status }
+      : m,
+  ), [machinesDb, connectedIds]);
 
   const statuses = useMemo(() => Array.from(new Set(machines.map((m) => m.status))).sort(), [machines]);
 

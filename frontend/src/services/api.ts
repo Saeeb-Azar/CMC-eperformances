@@ -274,6 +274,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),
+  getGatewayStatus: () => request<{ listening: boolean; port: number; connected_machines: string[] }>('/gateway/status'),
 
   // Pulpo settings — Test-Modus = no writes reach Pulpo
   getPulpoSettings: () => request<{ test_mode: boolean; write_enabled: boolean }>('/settings/pulpo'),
