@@ -1,4 +1,4 @@
-import { ChevronRight, ChevronLeft, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server, Clock, AlertCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, ChevronDown, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server, Clock, AlertCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
@@ -462,6 +462,15 @@ export default function LiveFlowPage() {
     );
   }, [allPackages, selectedMachine, search, cwListFilter]);
 
+  // CW-Listen-Filteroptionen = nur die CWs, die als Auftrag vorkommen
+  // (aus den aktuellen Aufträgen der Maschine), nicht alle Pulpo-Listen.
+  const cwOptions = useMemo(() => {
+    const machinePkgs = selectedMachine
+      ? allPackages.filter((p) => p.machine_id === selectedMachine)
+      : allPackages;
+    return Array.from(new Set(machinePkgs.map((p) => p.cwList).filter(Boolean) as string[])).sort();
+  }, [allPackages, selectedMachine]);
+
   // Bucket counts for the cards
   const counts = useMemo(() => {
     const c: Record<Bucket, number> = { IN_PROGRESS: 0, WAITING: 0, PROBLEM: 0, DONE: 0 };
@@ -737,6 +746,7 @@ export default function LiveFlowPage() {
           cwLists={selectedMachine ? (cwLists[selectedMachine] ?? []) : []}
           cwListFilter={cwListFilter}
           onCwListFilterChange={setCwListFilter}
+          cwOptions={cwOptions}
           search={search}
           onSearch={setSearch}
           selectedRef={selectedRef}
@@ -1267,6 +1277,7 @@ interface MainPaneProps {
   cwLists: CWList[];
   cwListFilter: string | null;
   onCwListFilterChange: (next: string | null) => void;
+  cwOptions: string[];
   search: string;
   onSearch: (s: string) => void;
   selectedRef: string | null;
@@ -1288,6 +1299,7 @@ function MainPane(p: MainPaneProps) {
   const totalSingles = p.packages.filter((x) => detectType(x.barcode) === 'S').length;
   const totalMulti   = p.packages.filter((x) => detectType(x.barcode) === 'M').length;
   const [page, setPage] = useState(0);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const pageCount = Math.max(1, Math.ceil(p.packages.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -1355,15 +1367,49 @@ function MainPane(p: MainPaneProps) {
               }}
             />
           </div>
-          <button style={{
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '6px 10px', fontSize: 12,
-            border: '1px solid var(--clr-border)', borderRadius: 6,
-            background: 'var(--clr-bg-elevated, #fff)',
-            cursor: 'pointer',
-          }}>
-            <Filter size={13} /> Filter
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setFilterOpen((v) => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '6px 10px', fontSize: 12,
+                border: `1px solid ${p.cwListFilter ? '#1d4ed8' : 'var(--clr-border)'}`,
+                borderRadius: 6,
+                background: p.cwListFilter ? '#eff6ff' : 'var(--clr-bg-elevated, #fff)',
+                color: p.cwListFilter ? '#1d4ed8' : 'var(--clr-text)',
+                cursor: 'pointer', fontWeight: p.cwListFilter ? 600 : 400,
+              }}
+            >
+              <Filter size={13} /> {p.cwListFilter && p.cwListFilter !== ALL_CW_LISTS ? p.cwListFilter : 'Filter'}
+              <ChevronDown size={13} />
+            </button>
+            {filterOpen && (
+              <>
+                <div onClick={() => setFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                <div style={{
+                  position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 31,
+                  minWidth: 200, maxHeight: 320, overflowY: 'auto',
+                  background: '#fff', border: '1px solid var(--clr-border)', borderRadius: 8,
+                  boxShadow: '0 10px 30px rgba(15,23,42,0.15)', padding: 4,
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--clr-text-muted)', padding: '6px 8px' }}>
+                    Nach CW-Liste filtern
+                  </div>
+                  <FilterRow label="Alle CW-Listen" active={!p.cwListFilter}
+                    onClick={() => { p.onCwListFilterChange(null); setFilterOpen(false); }} />
+                  {p.cwOptions.length === 0 ? (
+                    <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', padding: '8px', textAlign: 'center' }}>
+                      Noch keine CW-Aufträge
+                    </div>
+                  ) : p.cwOptions.map((name) => (
+                    <FilterRow key={name} label={name} active={p.cwListFilter === name}
+                      count={p.packages.filter((x) => x.cwList === name).length}
+                      onClick={() => { p.onCwListFilterChange(name); setFilterOpen(false); }} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={p.onClearTable}
             disabled={p.packages.length === 0}
@@ -1418,31 +1464,22 @@ function MainPane(p: MainPaneProps) {
         })}
       </div>
 
-      {/* Aufträge + CW-Filter direkt über der Tabelle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 2px 12px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>Aufträge</h3>
-          <span style={{
-            fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
-            background: '#dbeafe', color: '#1d4ed8',
-          }}>{p.packages.length}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginLeft: 8 }}>
-          {(() => {
-            const active = p.cwListFilter == null || p.cwListFilter === ALL_CW_LISTS;
-            return (
-              <button onClick={() => p.onCwListFilterChange(null)}
-                style={chipStyle(active)}>Alle CW-Listen</button>
-            );
-          })()}
-          {p.cwLists.map((l) => (
-            <button key={l.name} onClick={() => p.onCwListFilterChange(p.cwListFilter === l.name ? null : l.name)}
-              style={chipStyle(p.cwListFilter === l.name)}>
-              {l.name}
-              <span style={{ marginLeft: 5, opacity: 0.7, fontWeight: 600 }}>{l.total_consumed}/{l.total_expected}</span>
+      {/* Aufträge (CW-Filter sitzt im „Filter"-Button oben rechts) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px 12px' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>Aufträge</h3>
+        <span style={{
+          fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
+          background: '#dbeafe', color: '#1d4ed8',
+        }}>{p.packages.length}</span>
+        {p.cwListFilter && p.cwListFilter !== ALL_CW_LISTS && (
+          <span style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
+            · gefiltert: <strong style={{ color: '#1d4ed8' }}>{p.cwListFilter}</strong>
+            <button onClick={() => p.onCwListFilterChange(null)}
+              style={{ marginLeft: 6, border: 'none', background: 'transparent', color: 'var(--clr-text-muted)', cursor: 'pointer', textDecoration: 'underline' }}>
+              zurücksetzen
             </button>
-          ))}
-        </div>
+          </span>
+        )}
       </div>
 
       <div style={{
@@ -1512,14 +1549,23 @@ function MainPane(p: MainPaneProps) {
   );
 }
 
-function chipStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: '3px 10px', fontSize: 12, fontWeight: 600, borderRadius: 99, cursor: 'pointer',
-    border: `1px solid ${active ? '#1d4ed8' : 'var(--clr-border)'}`,
-    background: active ? '#1d4ed8' : '#fff',
-    color: active ? '#fff' : 'var(--clr-text-muted)',
-    whiteSpace: 'nowrap',
-  };
+function FilterRow({ label, active, count, onClick }: { label: string; active: boolean; count?: number; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        width: '100%', padding: '7px 8px', fontSize: 13, cursor: 'pointer', textAlign: 'left',
+        border: 'none', borderRadius: 6,
+        background: active ? '#eff6ff' : 'transparent',
+        color: active ? '#1d4ed8' : 'var(--clr-text)',
+        fontWeight: active ? 600 : 400,
+      }}
+    >
+      <span>{label}</span>
+      {count != null && <span style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>{count}</span>}
+    </button>
+  );
 }
 
 function pagerBtn(disabled: boolean): React.CSSProperties {
