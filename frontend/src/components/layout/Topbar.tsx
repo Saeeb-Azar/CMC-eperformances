@@ -1,6 +1,7 @@
-import { Eye, Code, Bell } from 'lucide-react';
+import { Eye, Code } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import NotificationBell from './NotificationBell';
 
 interface TopbarProps {
   title: string;
@@ -64,9 +65,7 @@ export default function Topbar({ title, subtitle, liveStatus, showViewToggle = f
           <span className={`segmented__item ${i18n.language === 'en' ? 'segmented__item--active' : ''}`} style={{ padding: '4px 8px', fontSize: 11 }}>EN</span>
         </button>
 
-        <button className="btn-icon" aria-label="Notifications">
-          <Bell size={18} />
-        </button>
+        <NotificationBell />
       </div>
     </div>
   );

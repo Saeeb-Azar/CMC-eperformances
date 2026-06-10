@@ -31,6 +31,9 @@ class OrderState(Base):
     # State lifecycle
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="ASSIGNED", index=True)
     previous_state_before_delete: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # True, wenn im Test-Modus erzeugt (Pulpo read-only). Werden in den echten
+    # Auftrags-Ansichten ausgeblendet, aber trotzdem gespeichert/geloggt.
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     # Sequence for ordering and auto-ejection
     enq_sequence: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

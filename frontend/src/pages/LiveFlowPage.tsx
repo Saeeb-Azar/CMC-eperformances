@@ -1,4 +1,5 @@
-import { ChevronRight, ChevronLeft, ChevronDown, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Bell, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server, Clock, AlertCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, ChevronDown, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server, Clock, AlertCircle } from 'lucide-react';
+import NotificationBell from '../components/layout/NotificationBell';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
@@ -1427,7 +1428,7 @@ function MainPane(p: MainPaneProps) {
           >
             <Trash2 size={13} /> Leeren
           </button>
-          <Bell size={15} style={{ color: 'var(--clr-text-muted)' }} />
+          <NotificationBell />
         </div>
       </header>
 

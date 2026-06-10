@@ -213,6 +213,7 @@ async def _apply_event(
             return existing, existing.state
         # Bump ENQ sequence on the machine
         machine.enq_sequence = (machine.enq_sequence or 0) + 1
+        from app.modules.pulpo.runtime import pulpo_runtime
         order = OrderState(
             tenant_id=machine.tenant_id,
             machine_db_id=machine.id,
@@ -223,6 +224,7 @@ async def _apply_event(
             state="ASSIGNED",
             enq_sequence=machine.enq_sequence,
             enq_at=now,
+            is_test=pulpo_runtime.test_mode,
         )
         db.add(order)
         return order, None

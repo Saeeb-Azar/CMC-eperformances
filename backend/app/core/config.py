@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     # the in-memory ring buffer for the live dashboard. order_states and
     # audit_logs receive no writes. Flip to True once long-term storage is
     # actually wanted.
-    events_persist_enabled: bool = False
+    events_persist_enabled: bool = True
+    # Aufbewahrungsdauer persistierter Aufträge/Logs in Tagen. Danach werden sie
+    # vom Retention-Task automatisch gelöscht (Glocke warnt vorher).
+    retention_days: int = 30
 
     # CORS
     cors_origins: list[str] = ["http://localhost:5173"]

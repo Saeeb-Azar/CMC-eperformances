@@ -66,9 +66,12 @@ async def get_order_by_reference(db: AsyncSession, reference_id: str) -> OrderSt
     return result.scalar_one_or_none()
 
 
-async def list_orders(db: AsyncSession, tenant_id: str, filters: OrderFilterParams) -> list[OrderState]:
+async def list_orders(db: AsyncSession, tenant_id: str, filters: OrderFilterParams, *, include_test: bool = False) -> list[OrderState]:
     query = select(OrderState).where(OrderState.tenant_id == tenant_id)
 
+    if not include_test:
+        # Test-Aufträge sind gespeichert, aber standardmäßig ausgeblendet.
+        query = query.where(OrderState.is_test.is_(False))
     if filters.state:
         query = query.where(OrderState.state == filters.state)
     if filters.machine_id:

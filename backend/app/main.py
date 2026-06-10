@@ -76,11 +76,13 @@ async def lifespan(app: FastAPI):
     # local cache, and (if Pulpo is configured) pull the live queue first as a
     # self-heal for missed webhooks. Defensive — never crashes the app.
     cw_sync_task = asyncio.create_task(_cw_sync_loop())
+    retention_task = asyncio.create_task(_retention_loop())
 
     yield
 
     logger.info("Shutting down")
     cw_sync_task.cancel()
+    retention_task.cancel()
     try:
         await connection_manager.shutdown()
     except Exception:
@@ -138,6 +140,35 @@ async def _cw_sync_loop() -> None:
             break
         except Exception as e:  # never let the loop die
             logger.warning(f"CW-sync loop iteration failed: {e}")
+
+
+async def _retention_loop() -> None:
+    """Daily cleanup: delete persisted orders + audit logs older than the
+    retention window (warned via the bell beforehand)."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import delete
+    from app.core.database import async_session
+    from app.modules.orders.models import OrderState
+    from app.modules.audit.models import AuditLog
+
+    while True:
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=settings.retention_days)
+            async with async_session() as db:
+                r1 = await db.execute(delete(OrderState).where(OrderState.created_at < cutoff))
+                r2 = await db.execute(delete(AuditLog).where(AuditLog.timestamp < cutoff))
+                audit_deleted = r2.rowcount or 0
+                await db.commit()
+                if (r1.rowcount or 0) or audit_deleted:
+                    logger.info(f"Retention: deleted {r1.rowcount} orders, {audit_deleted} audit rows older than {settings.retention_days}d")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"Retention loop iteration failed: {e}")
+        try:
+            await asyncio.sleep(6 * 3600)  # alle 6 Stunden prüfen
+        except asyncio.CancelledError:
+            break
 
 
 app = FastAPI(
@@ -284,6 +315,50 @@ async def get_pulpo_status():
         "open_orders": open_orders,
         "barcodes": barcodes,
     }
+
+
+@app.get("/api/v1/notifications")
+async def get_notifications():
+    """Hinweise für die Glocke. Aktuell: Retention-Countdown — warnt, wenn
+    gespeicherte Aufträge bald (≤ 14 Tage) automatisch gelöscht werden, mit
+    steigender Dringlichkeit (info → warning → critical)."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import func, select
+    from app.core.database import async_session
+    from app.modules.orders.models import OrderState
+
+    notices: list[dict] = []
+    retention = settings.retention_days
+    try:
+        async with async_session() as db:
+            oldest = (await db.execute(select(func.min(OrderState.created_at)))).scalar()
+            if oldest is not None:
+                if oldest.tzinfo is None:
+                    oldest = oldest.replace(tzinfo=timezone.utc)
+                age_days = (datetime.now(timezone.utc) - oldest).days
+                days_left = max(0, retention - age_days)
+                if days_left <= 14:
+                    warn_cutoff = datetime.now(timezone.utc) - timedelta(days=retention - 14)
+                    affected = (await db.execute(
+                        select(func.count()).select_from(OrderState)
+                        .where(OrderState.created_at < warn_cutoff)
+                    )).scalar() or 0
+                    severity = "critical" if days_left <= 1 else "warning" if days_left <= 7 else "info"
+                    del_date = (datetime.now(timezone.utc) + timedelta(days=days_left)).strftime("%d.%m.%Y")
+                    notices.append({
+                        "id": "retention",
+                        "severity": severity,
+                        "days_left": days_left,
+                        "title": "Automatische Datenlöschung",
+                        "message": (
+                            f"{affected} Auftrags-/Log-Einträge werden in {days_left} "
+                            f"Tag{'en' if days_left != 1 else ''} (am {del_date}) gelöscht. "
+                            f"Aufbewahrung: {retention} Tage."
+                        ),
+                    })
+    except Exception as e:
+        logger.warning(f"notifications failed: {e}")
+    return {"count": len(notices), "notifications": notices}
 
 
 @app.get("/api/v1/settings/pulpo/debug")
