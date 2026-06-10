@@ -140,7 +140,8 @@ Ein Backend-Prozess (FastAPI/asyncio) mit integriertem TCP-Gateway, Postgres-Dat
 ## 9. Umsetzungsstand (Zusammenfassung)
 
 - **Vollständig**: Maschinen-Protokoll & Lebenszyklus, Live-UI, CW-Listen aus Pulpo (lesend), Test-Modus, Auth/Tenant, Protokoll (live), Deployment.
-- **Teilweise/vorbereitet**: persistente Historie (Flag), schreibender Pulpo-Rückfluss (Deferred Writes), box_closed-Reconcile.
+- **Vollständig (Nachtrag)**: persistente Historie aktiv (Aufträge/Audit, `is_test`-Flag im Test-Modus, 30-Tage-Retention + Glocken-Hinweise), Multi-Barcode-Split (FA-29).
+- **Teilweise/vorbereitet**: schreibender Pulpo-Rückfluss (Deferred Writes vorhanden, nicht verdrahtet), box_closed-Reconcile, DHL/Carrier-Label (Konzept: `DHL_LABEL_KONZEPT.md`).
 - **Offen**: Multi-Maschinen-KPIs.
 
 ---

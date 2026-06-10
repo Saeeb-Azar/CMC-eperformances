@@ -163,9 +163,11 @@ WebSocket und SSE sind weiter im Code drin (`/ws/simulator`, `/api/v1/events/str
 
 ---
 
-## 5. Warum Persistenz aus?
+## 5. Warum Persistenz aus? (überholt)
 
-Per Default ist `EVENTS_PERSIST_ENABLED=false`. Hintergrund:
+> **Update Juni 2026:** Persistenz ist inzwischen **standardmäßig an** (`EVENTS_PERSIST_ENABLED=true`) — inkl. `is_test`-Flag im Test-Modus, 30-Tage-Retention (`RETENTION_DAYS`) und Glocken-Hinweisen. Der folgende Abschnitt dokumentiert die ursprüngliche Entscheidung (Demo-Phase).
+
+Per Default war `EVENTS_PERSIST_ENABLED=false`. Hintergrund:
 
 - Während wir am Testen waren, wollten wir nicht, dass die DB sich mit jeder Demo-Session füllt — speziell mit Doppelt-Scans und Test-Refs.
 - Die Live-Ansicht braucht die DB sowieso nicht; sie liest aus dem In-Memory-Ringbuffer.

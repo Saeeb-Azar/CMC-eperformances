@@ -203,7 +203,7 @@ Der CW1000-Simulator (Windows) verbindet sich als **Client** an die Railway-TCP-
 - **Tabelle**: Zeit, Typ, Kategorie (farbig), Nachricht (+ Referenz + Ablehnungsgrund), Maschine. Zeile aufklappen → Roh-Daten/JSON.
 - **Probleme** = Ablehnungen (NOREAD/UNKNOWN/Duplicate…), Auswürfe (EJECT), Fehler. **Erfolg** = abgeschlossene Prozesse. Heartbeats sind ausgeblendet.
 
-> Aktuell ist es ein **Live-Session-Log** (im Speicher). Für ein **dauerhaftes** Protokoll mit Historie muss die Persistenz aktiviert werden (Admin/Go-Live).
+> Die **Persistenz ist standardmäßig aktiv**: Aufträge/Ereignisse werden gespeichert (im Test-Modus mit `is_test`-Markierung, in echten Aufträgen ausgeblendet) und nach **30 Tagen automatisch gelöscht** — die Glocke oben zeigt 2 Wochen vorher Hinweise und zählt in der letzten Woche täglich herunter. Eine eigene Historie-Seite ist in Vorbereitung.
 
 ---
 
@@ -231,7 +231,7 @@ Bestehende Webhooks (zu anderen Systemen) **nicht** anfassen. In **WEBHOOKLOGS**
 
 ### 10.3 Go-Live (aus dem Test-Modus)
 - Erst wenn der schreibende Pulpo-Flow gebaut/getestet ist, in **Einstellungen → Pulpo-Anbindung** den **Test-Modus ausschalten**.
-- Für dauerhafte Protokolle: `EVENTS_PERSIST_ENABLED=true` auf dem Backend.
+- Persistenz ist bereits standardmäßig an (`EVENTS_PERSIST_ENABLED=true`); Aufbewahrung über `RETENTION_DAYS` (Default 30).
 
 ---
 

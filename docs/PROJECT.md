@@ -34,7 +34,7 @@ Drei Besonderheiten unseres Setups:
 
 1. **Ein Prozess macht beides.** Das Backend bedient HTTPS für den Browser und einen TCP-Listener für die Maschine im selben FastAPI/asyncio-Eventloop. Die beiden Welten teilen sich In-Memory-State (Singleton `connection_manager`).
 
-2. **Persistenz ist standardmäßig aus.** Events leben nur im In-Memory-Ringbuffer (max. 500 Stück). Wenn das Backend redeployed wird, ist die Live-Ansicht leer bis neue Events reinkommen. Schalter dafür: `EVENTS_PERSIST_ENABLED` in den Settings. Es gibt ein Reset-Skript (`backend/scripts/reset_events.py`), das bereits geschriebene Zeilen wegräumt.
+2. **Persistenz ist standardmäßig AN** (`EVENTS_PERSIST_ENABLED` Default `true`). Aufträge/Audit werden gespeichert; im Test-Modus mit `is_test`-Flag (in echten Aufträgen ausgeblendet), 30-Tage-Retention (`RETENTION_DAYS`) + Glocken-Hinweise. Zusätzlich gibt es weiterhin den In-Memory-Ringbuffer (max. 500) für die Live-Ansicht. Reset-Skript: `backend/scripts/reset_events.py`.
 
 3. **Das Frontend pollt.** Statt WebSocket-Verbindung (die hinter Railways Proxy gerne mal stirbt) fragt die UI jede Sekunde `/api/v1/events/recent?since=<id>` ab und bekommt die neuen Events seit der letzten Abfrage. WebSocket und SSE sind als Fallback vorhanden, aber Polling ist die robusteste Variante.
 
@@ -215,7 +215,7 @@ Die Funktion `persist_event(event_type, payload)` macht zwei Dinge wenn aktiv:
 1. **OrderState upserten** — eine Zeile pro Paket, die alle Stations-Daten (Maße, Gewicht, Zeitstempel) akkumuliert. Der State entwickelt sich durch alle Events (ENQ → ASSIGNED, IND → INDUCTED, ACK → SCANNED oder DELETED je nach `good`-Flag, ...).
 2. **AuditLog anhängen** — eine Zeile pro Event mit JSON-Payload und menschenlesbarem Text. HBT/STS werden übersprungen, damit die Tabelle lesbar bleibt.
 
-Aktiviert wird das mit `EVENTS_PERSIST_ENABLED=true` in den Settings. Default: aus.
+Gesteuert über `EVENTS_PERSIST_ENABLED` in den Settings. **Default: an.**
 
 Außerdem enthält die Datei `bootstrap_defaults()` (legt Default-Tenant + Admin an) und `_eject_stale_predecessors()` (DB-seitige Variante der Sequence-based Cleanup, wird parallel zur In-Memory-Variante im Tracker ausgeführt wenn Persistenz an ist).
 
@@ -247,7 +247,7 @@ Jedes Modul folgt dem gleichen Muster: `router.py` (FastAPI-Routes), `models.py`
 | `cmc_actions` | Live-Aktionen aus dem Dashboard | `POST /packages/{ref}/resolve|retry|delete` |
 | `simulator` | Test-Verbindungen | nur für interne Tests |
 
-Persistierte Endpunkte sind nur sinnvoll wenn `EVENTS_PERSIST_ENABLED=true` ist. Sonst sind `orders` und `audit` leer.
+Persistierte Endpunkte (`orders`, `audit`) sind standardmäßig befüllt (`EVENTS_PERSIST_ENABLED` Default `true`).
 
 ---
 
@@ -590,7 +590,7 @@ Die **Datenbank** liegt extern bei **Supabase** (Managed Postgres); das Backend 
 - `SECRET_KEY` — JWT-Secret, MUSS produktiv überschrieben werden
 - `CORS_ORIGINS` — kommaseparierte Liste der Frontend-Domains
 - `CMC_TCP_PORT` — default 15001
-- `EVENTS_PERSIST_ENABLED` — `true` aktiviert DB-Writes
+- `EVENTS_PERSIST_ENABLED` — DB-Writes (Default `true`); `RETENTION_DAYS` — Aufbewahrung (Default 30)
 - `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` — Override für Default-Admin
 - `PORT` — Railway setzt das automatisch für HTTP
 
@@ -622,9 +622,9 @@ Simulator (Windows-Anwendung von CMC) verbindet sich gegen `localhost:15001`.
 
 ## 9. Bekannte Einschränkungen
 
-### 9.1 Persistenz aktuell aus
+### 9.1 Persistenz aktiv (Default an)
 
-`EVENTS_PERSIST_ENABLED=false` ist der Default. Damit fehlen historische Daten in `OrdersPage`, `AuditPage`, `AnalyticsPage` — die zeigen nur leere Tabellen. Solange wir mit dem Simulator testen ist das egal, für eine erste echte Pilot-Installation müsste der Schalter umgelegt werden.
+`EVENTS_PERSIST_ENABLED=true` ist inzwischen der Default. `OrdersPage`, `AuditPage`, `AnalyticsPage` werden befüllt. Im **Test-Modus** werden Aufträge mit `is_test=true` gespeichert (in echten Aufträgen ausgeblendet); eine **30-Tage-Retention** (`RETENTION_DAYS`) löscht alte Daten automatisch, mit Glocken-Hinweisen 2 Wochen vorher. Offen ist nur noch eine dedizierte **Aufträge-Historie-Seite**.
 
 ### 9.2 Multi-Maschinen-UX
 
@@ -709,7 +709,7 @@ Dieser Abschnitt hält den Stand fest, der nach der ursprünglichen Doku dazukam
 - Quelle ist die **Packing-Queue** (`GET /packing/orders?state=queue`), **nicht** Picking.
 - Der **Lagerplatz**-Code unterscheidet: `CW1`/`CW6`/`CW10` = CartonWrap, `SACK*` = Sack-Packen.
 - Die Maschine hat ein Feld **`pulpo_pick_location`** = **Präfix** (z.B. `CW`) → matcht `CW%`, schließt `SACK*` aus. Leer = ganze Queue.
-- Auto-Befüllung: **Webhooks** (`packing_order_created/finished`) + **periodischer Resync** (`CW_SYNC_INTERVAL_S`, Default 30s, mit Self-Heal). Die CW-Liste ist `source="pulpo"` → im UI **read-only**.
+- Auto-Befüllung: **Webhooks** (`packing_order_created/finished`) + **periodischer Resync** (`CW_SYNC_INTERVAL_S`, Default 8s, paginiert + Self-Heal). Die CW-Liste ist `source="pulpo"` → im UI **read-only**.
 - Items tragen SKU/`product_id`, nicht zwingend EAN → `_resolve_ean` löst per Produkt-Lookup auf.
 
 ### 12.4 Webhooks
@@ -728,7 +728,7 @@ GET  /api/v1/machines/{id}, PATCH /api/v1/machines/{id}  (jetzt inkl. pulpo_pick
 ### 12.6 Neue Env-Variablen (Backend)
 ```
 PULPO_BASE_URL (Default https://eu.pulpo.co) · PULPO_USERNAME · PULPO_PASSWORD · PULPO_SCOPE (general)
-PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (30)
+PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (8) · RETENTION_DAYS (30)
 ```
 `PULPO_API_KEY` ist Legacy/ungenutzt (seit OAuth2).
 

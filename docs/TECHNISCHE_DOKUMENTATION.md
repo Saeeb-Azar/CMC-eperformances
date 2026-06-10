@@ -102,7 +102,7 @@ backend/app/
 
 ### 3.4 Persistenz (`gateway/persistence.py`)
 
-- `persist_event` (opt-in via `EVENTS_PERSIST_ENABLED`): upsert `OrderState` (ein Datensatz je Paket, akkumuliert Stationsdaten) + `AuditLog` (ein Datensatz je Event mit Schweregrad). HBT/STS werden übersprungen.
+- `persist_event` (**standardmäßig aktiv**, `EVENTS_PERSIST_ENABLED` Default `true`): upsert `OrderState` (ein Datensatz je Paket, akkumuliert Stationsdaten) + `AuditLog` (ein Datensatz je Event mit Schweregrad). HBT/STS werden übersprungen. Im **Test-Modus** werden Aufträge mit `is_test=true` markiert (in echten Aufträgen ausgeblendet). **30-Tage-Retention** (`RETENTION_DAYS`) löscht alte Daten automatisch; Glocken-Hinweise zählen 2 Wochen vorher herunter.
 - `bootstrap_defaults`: Default-Tenant + Admin (`admin@eperformances.de` / `admin123`).
 
 ---
@@ -157,7 +157,7 @@ ENQ (Scan), IND (Induction), ACK (3D-Vermessung), INV (Rechnung), LAB1/LAB2 (Eti
 - Der **Lagerplatz-Code** (CW1/CW6/CW10 = CartonWrap, SACK/Pack = andere) wird über `GET /warehouses/locations/{id}` aus `origin_location_id` aufgelöst.
 - **EANs** liegen unter `items[].product.barcodes[]` → daraus werden die scannbaren Barcodes gebaut.
 - Eine **CW-Liste pro Lagerplatz**; gefiltert über das **Präfix** `pulpo_pick_location` der Maschine (z. B. „CW" matcht CW%, schließt SACK aus).
-- Befüllung: **Webhooks** (`packing_order_created/finished`) + **periodischer Resync** (`CW_SYNC_INTERVAL_S`, Default 30 s) mit **Self-Heal** (Orders, die die Queue verlassen, werden geschlossen).
+- Befüllung: **Webhooks** (`packing_order_created/finished`) + **periodischer Resync** (`CW_SYNC_INTERVAL_S`, Default 8 s, paginiert die ganze Queue) mit **Self-Heal** (jeder nicht-terminale Auftrag, den die Live-Queue nicht mehr liefert, wird geschlossen → fällt aus der Liste).
 - Listen sind `source="pulpo"` → im UI read-only.
 
 ### 6.4 Webhooks (`router.py`)
@@ -207,9 +207,9 @@ GET  /api/v1/settings/pulpo/debug                   Cache-Snapshot (alle Lagerpl
 **Backend-Env:**
 ```
 DATABASE_URL · SECRET_KEY · CORS_ORIGINS · PORT (Railway setzt automatisch)
-CMC_TCP_PORT (15001) · EVENTS_PERSIST_ENABLED (Default false)
+CMC_TCP_PORT (15001) · EVENTS_PERSIST_ENABLED (Default true) · RETENTION_DAYS (30)
 PULPO_BASE_URL (https://eu.pulpo.co) · PULPO_USERNAME · PULPO_PASSWORD · PULPO_SCOPE (general)
-PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (30)
+PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (8)
 ```
 **Frontend-Env:** `VITE_API_URL` (Backend-URL, zur Laufzeit in `window.__ENV__` injiziert).
 
@@ -246,6 +246,6 @@ PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (30)
 ## 11. Bekannte Grenzen / offene Punkte
 
 - **Deferred-Writes-Flow** (Schreiben bei END an Pulpo) ist vorbereitet, aber noch nicht verdrahtet — „Test-Modus aus" hat erst dann Schreib-Wirkung.
-- **Persistenz** standardmäßig aus → Protokoll/Orders/Analytics zeigen nur Live-Daten, bis `EVENTS_PERSIST_ENABLED=true`.
+- **Persistenz** ist standardmäßig **an** (Aufträge/Audit werden gespeichert, 30-Tage-Retention). Im Test-Modus mit `is_test`-Flag. Eine dedizierte **Aufträge-Historie-Seite** fehlt noch.
 - **Multi-Maschinen-KPIs** auf einer Übersichtsseite fehlen noch.
 - Exakte Pulpo-Feldnamen sind defensiv gemappt und gegen Live-Daten verifiziert.
