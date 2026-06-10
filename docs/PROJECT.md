@@ -577,15 +577,16 @@ POST   /api/v1/tenants                                 (SUPER_ADMIN)
 
 ### 8.1 Railway-Struktur
 
-Drei Services im Railway-Projekt:
-- **CMC DB** (Postgres)
+Zwei Services im Railway-Projekt (Compute/Hosting):
 - **CMC Backend** — `backend/`-Verzeichnis, Dockerfile, auto-deploy auf Push zu `main`
 - **CMC Frontend** — `frontend/`-Verzeichnis, multi-stage Build, auto-deploy auf Push zu `main`
+
+Die **Datenbank** liegt extern bei **Supabase** (Managed Postgres); das Backend verbindet sich darüber per `DATABASE_URL`.
 
 ### 8.2 Wichtige Env-Variablen
 
 **Backend:**
-- `DATABASE_URL` — Postgres-URL, Railway injiziert sie aus dem Postgres-Service
+- `DATABASE_URL` — Postgres-URL der **Supabase**-Instanz (Connection-String aus dem Supabase-Projekt)
 - `SECRET_KEY` — JWT-Secret, MUSS produktiv überschrieben werden
 - `CORS_ORIGINS` — kommaseparierte Liste der Frontend-Domains
 - `CMC_TCP_PORT` — default 15001

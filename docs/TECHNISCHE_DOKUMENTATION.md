@@ -45,7 +45,7 @@ Die Anwendung sitzt zwischen drei Welten:
 | Schicht | Technologie |
 |---|---|
 | Backend | Python 3.12, FastAPI, asyncio, SQLAlchemy 2 (async), Alembic, httpx, python-jose (JWT), passlib/bcrypt |
-| Datenbank | PostgreSQL (Produktiv, Railway) · SQLite (lokale Demo) |
+| Datenbank | PostgreSQL — **Supabase (Managed Postgres)** produktiv · SQLite (lokale Demo) |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4 + eigenes Token/CSS-System, React Router 7, i18next (DE/EN), Recharts, Lucide-Icons |
 | Deployment | Railway (Docker-Container, Auto-Deploy auf Push zu `main`), TCP-Proxy für Port 15001 |
 | Protokoll | CMC CIS rel 4.0 (Pipe-delimited, STX/ETX-Framing) |
@@ -201,7 +201,8 @@ GET  /api/v1/settings/pulpo/debug                   Cache-Snapshot (alle Lagerpl
 
 ## 8. Deployment & Konfiguration
 
-**Railway**: 3 Services — CMC DB (Postgres), CMC Backend (Dockerfile, Auto-Deploy `main`), CMC Frontend (Multi-Stage-Build + `serve`). TCP-Port 15001 über Railway-TCP-Proxy.
+**Railway** (Compute/Hosting): 2 Services — CMC Backend (Dockerfile, Auto-Deploy `main`), CMC Frontend (Multi-Stage-Build + `serve`). TCP-Port 15001 über Railway-TCP-Proxy.
+**Datenbank**: extern bei **Supabase** (Managed Postgres) — das Backend verbindet sich per `DATABASE_URL` (Supabase-Connection-String). Die Anwendung ist DB-agnostisch; jeder Postgres hinter `DATABASE_URL` funktioniert.
 
 **Backend-Env:**
 ```
