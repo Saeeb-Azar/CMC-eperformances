@@ -229,16 +229,41 @@ class PulpoClient:
         result = await self._request("GET", "/inventory/products", params={"barcode": barcode})
         return self._as_list(result)
 
-    async def list_queue_orders(self, pick_location: str | None = None, *, limit: int = 2000) -> list[dict]:
-        """Packing orders in ``queue`` state. With no ``pick_location`` this
-        returns the WHOLE packing queue (all CW orders for this tenant); with
-        one it filters by origin_location_code. Basis for the CW-Liste / EAN
-        matching and the § 3 self-heal resync."""
-        params: dict[str, Any] = {"state": "queue", "limit": limit}
+    async def list_queue_orders(
+        self, pick_location: str | None = None, *, page_size: int = 200, max_total: int = 5000,
+    ) -> list[dict]:
+        """ALL packing orders in ``queue`` state (the WHOLE packing queue, or one
+        ``origin_location_code`` if given). Paginates via limit/offset and uses
+        the response's ``total_results`` to keep going — a single huge ``limit``
+        is unreliable (Pulpo may cap it), and a partial pull would make the
+        CW-Liste self-heal close orders that are actually still queued.
+
+        Basis for the CW-Liste / EAN matching and the § 3 self-heal resync."""
+        base: dict[str, Any] = {"state": "queue"}
         if pick_location:
-            params["origin_location_code"] = pick_location
-        result = await self._request("GET", "/packing/orders", params=params)
-        return self._as_list(result)
+            base["origin_location_code"] = pick_location
+        out: list[dict] = []
+        offset = 0
+        while offset < max_total:
+            result = await self._request(
+                "GET", "/packing/orders",
+                params={**base, "limit": page_size, "offset": offset},
+            )
+            batch = self._as_list(result)
+            if not batch:
+                break
+            out.extend(batch)
+            offset += len(batch)
+            total = result.get("total_results") if isinstance(result, dict) else None
+            if total is not None:
+                # Authoritative count — keep paging by offset even if Pulpo
+                # capped the page below page_size.
+                if offset >= int(total):
+                    break
+            elif len(batch) < page_size:
+                # No total_results → conventional "short page = last page".
+                break
+        return out
 
     async def sample_queue(self, *, limit: int = 25) -> list[dict]:
         """Diagnostic: a sample of queue packing orders WITHOUT any location
