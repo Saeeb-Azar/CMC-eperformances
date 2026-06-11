@@ -502,6 +502,27 @@ export default function LiveFlowPage() {
     return () => clearInterval(id);
   }, []);
 
+  // Angelegte Maschinen (Registry) — das Dashboard zeigt NUR diese. Eine
+  // verbundene, aber nicht angelegte Maschine taucht hier bewusst NICHT auf
+  // (sie wird auf der Maschinen-Seite zum Anlegen angeboten). So zeigt das
+  // Dashboard nie eine Maschine, die der Nutzer gar nicht (mehr) verwaltet.
+  const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    const token = localStorage.getItem('access_token');
+    const load = () => fetch(`${API_BASE}/api/v1/machines`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((ms: Array<{ machine_id: string }>) => {
+        if (!cancelled && Array.isArray(ms)) setRegisteredIds(new Set(ms.map((m) => m.machine_id)));
+      })
+      .catch(() => {});
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   // Persistierte Aufträge (DB) als Basis der Tabelle — gefiltert nach dem
   // aktuellen Modus: Test-Modus zeigt NUR Test-Aufträge, Produktiv NUR echte.
   const [dbPackages, setDbPackages] = useState<PackageRow[]>([]);
@@ -535,25 +556,30 @@ export default function LiveFlowPage() {
     );
   }, [events, dbPackages, pulpoTestMode]);
 
-  // Build a synthetic machine list: any machine we've seen events from,
-  // plus those reported as connected by the gateway.
-  const machineList = useMemo(() => {
-    const ids = new Set<string>();
-    for (const m of connectedMachines) ids.add(m);
-    for (const p of allPackages) if (p.machine_id) ids.add(p.machine_id);
-    return Array.from(ids).sort();
-  }, [allPackages, connectedMachines]);
+  // Dashboard zeigt nur ANGELEGTE Maschinen. Aufträge nicht-registrierter
+  // (z.B. gelöschter, aber noch verbundener) Maschinen werden ausgeblendet.
+  const visiblePackages = useMemo(
+    () => allPackages.filter((p) => p.machine_id && registeredIds.has(p.machine_id)),
+    [allPackages, registeredIds],
+  );
 
-  // Auto-select first machine once we have one.
+  const machineList = useMemo(() => Array.from(registeredIds).sort(), [registeredIds]);
+
+  // Auto-select first machine once we have one; Auswahl räumen, wenn die
+  // gewählte Maschine nicht mehr angelegt ist (z.B. gerade gelöscht).
   useEffect(() => {
-    if (!selectedMachine && machineList.length > 0) setSelectedMachine(machineList[0]);
-  }, [machineList, selectedMachine]);
+    if (selectedMachine && !registeredIds.has(selectedMachine)) {
+      setSelectedMachine(machineList[0] ?? null);
+    } else if (!selectedMachine && machineList.length > 0) {
+      setSelectedMachine(machineList[0]);
+    }
+  }, [machineList, selectedMachine, registeredIds]);
 
   // Packages for the focused machine, filtered by search and CW-Liste.
   const packages = useMemo(() => {
     let list = selectedMachine
-      ? allPackages.filter((p) => p.machine_id === selectedMachine)
-      : allPackages;
+      ? visiblePackages.filter((p) => p.machine_id === selectedMachine)
+      : visiblePackages;
     if (cwListFilter === ALL_CW_LISTS) list = list.filter((p) => !!p.cwList);
     else if (cwListFilter) list = list.filter((p) => p.cwList === cwListFilter);
     const q = search.trim().toLowerCase();
@@ -562,16 +588,16 @@ export default function LiveFlowPage() {
       p.ref.toLowerCase().includes(q) ||
       (p.barcode ?? '').toLowerCase().includes(q),
     );
-  }, [allPackages, selectedMachine, search, cwListFilter]);
+  }, [visiblePackages, selectedMachine, search, cwListFilter]);
 
   // CW-Listen-Filteroptionen = nur die CWs, die als Auftrag vorkommen
   // (aus den aktuellen Aufträgen der Maschine), nicht alle Pulpo-Listen.
   const cwOptions = useMemo(() => {
     const machinePkgs = selectedMachine
-      ? allPackages.filter((p) => p.machine_id === selectedMachine)
-      : allPackages;
+      ? visiblePackages.filter((p) => p.machine_id === selectedMachine)
+      : visiblePackages;
     return Array.from(new Set(machinePkgs.map((p) => p.cwList).filter(Boolean) as string[])).sort(naturalCw);
-  }, [allPackages, selectedMachine]);
+  }, [visiblePackages, selectedMachine]);
 
   // Bucket counts for the cards
   const counts = useMemo(() => {
@@ -588,7 +614,7 @@ export default function LiveFlowPage() {
   // Machine list stats (for the left sidebar)
   const machineStats = useMemo(() => {
     const stats = new Map<string, { total: number; singles: number; multi: number }>();
-    for (const p of allPackages) {
+    for (const p of visiblePackages) {
       if (!p.machine_id) continue;
       const s = stats.get(p.machine_id) ?? { total: 0, singles: 0, multi: 0 };
       s.total++;
@@ -597,7 +623,7 @@ export default function LiveFlowPage() {
       stats.set(p.machine_id, s);
     }
     return stats;
-  }, [allPackages]);
+  }, [visiblePackages]);
 
   const selectedPackage = useMemo(
     () => packages.find((p) => p.ref === selectedRef) ?? null,
