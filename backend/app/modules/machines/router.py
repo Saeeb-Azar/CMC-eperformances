@@ -80,6 +80,14 @@ async def update_machine(
     machine = await service.update_machine(db, machine_id, data)
     if not machine:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Machine not found")
+    # Stationsflags-Cache der aktiven TCP-Verbindung invalidieren, damit ein
+    # frisch gesetztes LAB1-Häkchen sofort beim nächsten ENQ greift (sonst
+    # sendet die Connection noch ewig die alten gecachten Flags weiter).
+    try:
+        from app.gateway.connection import connection_manager
+        connection_manager.invalidate_station_flags(machine.machine_id)
+    except Exception:
+        pass  # Best-effort — Cache kommt beim nächsten Reconnect ohnehin neu
     return machine
 
 

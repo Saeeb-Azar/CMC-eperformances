@@ -75,14 +75,12 @@ class Settings(BaseSettings):
     # Pulpo-Queue neu aufbaut (Self-Heal für verpasste Webhooks).
     cw_sync_interval_s: int = 8
 
-    # ENQ-Antwort: feeders-Bitmask = welche physischen Pappe-Bahnen die
-    # Maschine zur Kartonbildung nutzen DARF (8 Zeichen, je Bit eine Bahn).
-    # MUSS zur tatsächlichen Hardware-Konfig (CW.INI) der Maschine passen:
-    #   • zu breit gewählt → "CardBoard Channel Selected = 0" (ungültig)
-    #   • einzelne falsche Bahn → "Out of Format (W2/W1)"
-    # Per Env überschreibbar, damit der korrekte Wert ohne Code-Deploy
-    # gefunden werden kann (z.B. "11000000" = Bahn 1+2 erlaubt).
-    cmc_enq_feeders: str = "11111111"
+    # ENQ-Antwort, Feld "Feeders": Maschine erwartet hier eine EINZELNE
+    # Ziffer = welche Karton-/Pappe-Bahn benutzt werden soll (siehe HMI-
+    # Dekodierung "Feeders=1 InvSel=0 Lab1Sel=…"). 0 = Maschine wählt
+    # selbst, 1-8 = expliziter Feeder. Per Env überschreibbar, damit der
+    # korrekte Wert vor Ort ohne Code-Deploy gefunden werden kann.
+    cmc_enq_feeders: str = "1"
 
     # ----- weclapp ERP (Produkt-Stammdaten per EAN) ---------------------
     # Read-only Anbindung: liefert Name/SKU/Beschreibung/Bild zu einem EAN

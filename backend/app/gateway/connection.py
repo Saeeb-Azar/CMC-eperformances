@@ -672,6 +672,18 @@ class ConnectionManager:
                 return c
         return None
 
+    def invalidate_station_flags(self, protocol_id: str) -> None:
+        """Cache der Stationsflags für die angegebene Maschine löschen, damit
+        beim nächsten Frame frisch aus der DB gelesen wird. Wird vom Maschinen-
+        Edit-Endpunkt aufgerufen, wenn lab1/lab2/inv geändert wurden — sonst
+        würde eine bestehende Verbindung noch ewig die alten Flags senden."""
+        for conn in self._connections.values():
+            if conn.protocol_id == protocol_id:
+                conn.station_flags = None
+                # Sofort neu laden, damit der nächste Hot-Path-Frame schon den
+                # neuen Wert hat.
+                asyncio.create_task(self._load_station_flags(conn))
+
     async def _load_station_flags(self, conn: "MachineConnection") -> None:
         """Lab1/Lab2/Inv-Flags der Maschine aus der DB nachladen.
 

@@ -322,7 +322,7 @@ def build_response(
             # wählt anhand der 3D-Messung selbst die richtige Karton-Größe.
             # (Default "01000000" hatte den CIS-Simulator zudem "incorrect
             # feeders value!" werfen lassen.)
-            "feeders": (get_settings().cmc_enq_feeders or "11111111"),
+            "feeders": (get_settings().cmc_enq_feeders or "1"),
             # Internal hints — stripped before wire serialisation, used by
             # connection.py to annotate the broadcast event for the dashboard.
             "rejection_reason": rejection_reason,
@@ -398,15 +398,17 @@ def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> b
         "END": ["event", "reference_id", "result"],
         "INV": ["event", "reference_id", "result", "match_barcode"],
         "ENQ": [
-            # CW1000 CIS rel 4.0: Reihenfolge nach Soll-Antwort des CMC-CIS-
-            # Simulators ("|enq|event|ref|item_validated|label_match|lab1|
-            # lab2|lab3|inv|sorter|feeders"). KEIN description-Feld in der
-            # Wire-Antwort — sonst rutschen alle Werte um einen Slot, die
-            # echte Maschine wirft das Item als "Wrong enq / Out of Format"
-            # aus (siehe Maschinen-HMI-Logs 11.06.).
+            # ECHTE CW1000-Reihenfolge (hergeleitet aus HMI-Dekodierung
+            # "Feeders=… InvSel=… Lab1Sel=… Lab2Sel=… Lab3Sel=…"):
+            #   feeders KOMMT VOR den Station-Flags, dann inv, dann lab1/2/3.
+            # Vorherige Reihenfolge (lab1|lab2|lab3|inv|…|feeders) hatte
+            # dazu geführt, dass unser lab1_enabled im feeders-Slot landete
+            # und der echte Lab1Sel-Slot dauerhaft 0 war → die Maschine warf
+            # jedes Item als "No Labeller selected → INVALID" aus.
             "event", "reference_id", "item_validated",
-            "label_match", "lab1_enabled", "lab2_enabled", "lab3_enabled",
-            "inv_enabled", "sorter", "feeders",
+            "label_match",
+            "feeders", "inv_enabled", "lab1_enabled", "lab2_enabled", "lab3_enabled",
+            "sorter",
         ],
         "ACK": ["event", "reference_id", "result", "item_validated", "flag"],
         "LAB1": ["event", "reference_id", "result", "match_barcode", "label_url", "status"],
