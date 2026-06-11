@@ -46,13 +46,19 @@ async def _pulpo_fallback(db: AsyncSession, ean: str) -> dict | None:
         return None
     return {
         "ean": ean, "article_id": "", "name": str(name), "sku": "",
-        "description": "", "unit": "", "has_image": False, "source": "pulpo",
+        "description": "", "unit": "", "has_image": False, "image_id": "",
+        "source": "pulpo",
     }
 
 
 def _with_image_url(p: dict) -> dict:
     p = dict(p)
-    p["image_url"] = f"/api/v1/products/{p['ean']}/image" if p.get("has_image") else None
+    # Für jeden weclapp-Artikel eine Bild-URL anbieten — die Listen-Response
+    # lässt articleImages teils weg, also entscheidet erst der Proxy (und das
+    # <img onError> im Frontend), ob wirklich ein Bild existiert.
+    p["image_url"] = (
+        f"/api/v1/products/{p['ean']}/image" if p.get("article_id") else None
+    )
     return p
 
 
@@ -83,9 +89,11 @@ async def product_image(ean: str):
     nicht setzen). 404 wenn unbekannt oder ohne Bild."""
     try:
         product = await weclapp.get_article_by_ean(ean)
-        if not product or not product.get("has_image"):
+        if not product or not product.get("article_id"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no image")
-        image = await weclapp.get_article_image(product["article_id"])
+        image = await weclapp.get_article_image(
+            product["article_id"], product.get("image_id") or ""
+        )
     except WeclappError as e:
         logger.warning(f"weclapp image {ean} failed: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no image") from e

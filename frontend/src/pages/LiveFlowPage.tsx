@@ -1218,19 +1218,21 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                   {product ? (
                     <>
                       <ProductThumb ean={it.barcode} hasImage={!!product.image_url} />
+                      {/* EAN prominent oben — der Operator muss sehen, welcher
+                          Code als nächstes drankommt. Name darunter. */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
-                          fontSize: 12, fontWeight: 600, color: '#0f172a',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }} title={product.description || product.name}>
-                          {product.name}
-                        </div>
-                        <div style={{
-                          fontSize: 10, color: 'var(--clr-text-muted)',
-                          fontFamily: 'var(--font-mono)',
+                          fontSize: 13, fontWeight: 700, color: '#0f172a',
+                          fontFamily: 'var(--font-mono)', letterSpacing: 0.2,
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>
-                          {product.sku ? `${product.sku} · ` : ''}{it.barcode}
+                          {it.barcode}
+                        </div>
+                        <div style={{
+                          fontSize: 11, color: 'var(--clr-text-muted)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }} title={product.description || product.name}>
+                          {product.name}{product.sku ? ` · ${product.sku}` : ''}
                         </div>
                       </div>
                     </>

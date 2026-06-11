@@ -116,6 +116,9 @@ class WeclappClient:
     @staticmethod
     def _normalize(a: dict, ean: str) -> dict:
         images = a.get("articleImages") or []
+        first_image_id = ""
+        if images and isinstance(images[0], dict):
+            first_image_id = str(images[0].get("id") or "")
         return {
             "ean": ean,
             "article_id": str(a.get("id") or ""),
@@ -125,31 +128,60 @@ class WeclappClient:
                 a.get("shortDescription1") or a.get("description") or ""
             )[:500],
             "unit": str(a.get("unitName") or ""),
+            # Die LISTEN-Response von weclapp lässt articleImages teils weg —
+            # has_image=False heißt also nur "nicht in dieser Response", nicht
+            # "hat kein Bild". Der Bild-Proxy probiert es trotzdem.
             "has_image": bool(images),
+            "image_id": first_image_id,
             "source": "weclapp",
         }
 
     # ----- Bild -------------------------------------------------------
 
-    async def get_article_image(self, article_id: str) -> tuple[bytes, str] | None:
+    async def _try_download_image(self, article_id: str, image_id: str = "") -> tuple[bytes, str] | None:
+        """Ein Download-Versuch; None bei 404/Nicht-Bild-Antwort."""
+        params = {"articleImageId": image_id} if image_id else None
+        try:
+            resp = await self._get(f"/article/id/{article_id}/downloadArticleImage", params=params)
+        except WeclappError as e:
+            if e.status_code not in (400, 404):
+                logger.warning(f"weclapp image {article_id} (img={image_id or '-'}) failed: {e}")
+            return None
+        ctype = resp.headers.get("content-type", "")
+        if not resp.content or not ctype.startswith("image/"):
+            return None
+        return (resp.content, ctype)
+
+    async def get_article_image(self, article_id: str, image_id: str = "") -> tuple[bytes, str] | None:
         """(bytes, content_type) of the article's primary image, or None.
-        Cached cross-run with a size cap."""
+
+        Robust gegen die Eigenheiten der weclapp-API: erst Download mit der
+        bekannten ``articleImageId``, dann ohne Param (Primärbild), zuletzt
+        Artikel-Detail laden (die Listen-Response lässt ``articleImages``
+        teils weg) und mit dessen erster Bild-ID erneut versuchen.
+        Cached cross-run mit Size-Cap."""
         article_id = (article_id or "").strip()
         if not article_id or not self.configured:
             return None
         if article_id in _IMAGE_CACHE:
             return _IMAGE_CACHE[article_id]
-        try:
-            resp = await self._get(f"/article/id/{article_id}/downloadArticleImage")
-            result: tuple[bytes, str] | None = (
-                resp.content,
-                resp.headers.get("content-type", "image/jpeg"),
-            )
-        except WeclappError as e:
-            # 404 = Artikel hat kein Bild — kein Fehler, nur cachen.
-            if e.status_code != 404:
-                logger.warning(f"weclapp image {article_id} failed: {e}")
-            result = None
+
+        result = None
+        if image_id:
+            result = await self._try_download_image(article_id, image_id)
+        if result is None:
+            result = await self._try_download_image(article_id)
+        if result is None:
+            # Detail-Lookup: GET /article/id/{id} liefert articleImages voll.
+            try:
+                detail = (await self._get(f"/article/id/{article_id}")).json() or {}
+                images = detail.get("articleImages") or []
+                detail_image_id = str(images[0].get("id") or "") if images and isinstance(images[0], dict) else ""
+                if detail_image_id and detail_image_id != image_id:
+                    result = await self._try_download_image(article_id, detail_image_id)
+            except WeclappError as e:
+                logger.warning(f"weclapp article detail {article_id} failed: {e}")
+
         if len(_IMAGE_CACHE) >= _IMAGE_CACHE_MAX:
             _IMAGE_CACHE.pop(next(iter(_IMAGE_CACHE)))
         _IMAGE_CACHE[article_id] = result

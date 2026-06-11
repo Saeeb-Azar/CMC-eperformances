@@ -55,7 +55,8 @@ async def test_lookup_by_ean_normalizes_and_sends_auth_header():
         "ean": "4005240002681", "article_id": "4711",
         "name": "Hundefutter Adult 2kg", "sku": "HF-2000",
         "description": "Trockenfutter für ausgewachsene Hunde",
-        "unit": "Stk", "has_image": True, "source": "weclapp",
+        "unit": "Stk", "has_image": True, "image_id": "img1",
+        "source": "weclapp",
     }
 
 
@@ -132,15 +133,54 @@ async def test_http_error_raises_weclapp_error():
 @pytest.mark.asyncio
 async def test_image_download_and_404_cached_as_none():
     def handler(request: httpx.Request) -> httpx.Response:
-        if "downloadArticleImage" in str(request.url):
-            if "/article/id/4711/" in str(request.url):
+        url = str(request.url)
+        if "downloadArticleImage" in url:
+            if "/article/id/4711/" in url:
                 return httpx.Response(200, content=b"\x89PNG", headers={"content-type": "image/png"})
             return httpx.Response(404)
+        if "/article/id/9999" in url:  # Detail-Lookup im Fallback
+            return httpx.Response(200, json={"id": "9999", "articleImages": []})
         return httpx.Response(200, json={"result": [ARTICLE]})
 
     c = make_client(handler)
-    img = await c.get_article_image("4711")
+    img = await c.get_article_image("4711", "img1")
     assert img == (b"\x89PNG", "image/png")
     assert (await c.get_article_image("9999")) is None
-    # 404 ist gecacht
+    # Miss ist gecacht
     assert weclapp_client._IMAGE_CACHE["9999"] is None
+
+
+@pytest.mark.asyncio
+async def test_image_falls_back_to_detail_lookup():
+    """Listen-Response ohne articleImages → Bild kommt erst über den
+    Detail-Lookup (GET /article/id/{id}) + articleImageId-Param."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        calls.append(url)
+        if "downloadArticleImage" in url:
+            # Nur der Versuch MIT der richtigen articleImageId liefert ein Bild.
+            if request.url.params.get("articleImageId") == "deep42":
+                return httpx.Response(200, content=b"JPG", headers={"content-type": "image/jpeg"})
+            return httpx.Response(404)
+        if "/article/id/4711" in url:
+            return httpx.Response(200, json={"id": "4711", "articleImages": [{"id": "deep42"}]})
+        return httpx.Response(200, json={"result": []})
+
+    c = make_client(handler)
+    img = await c.get_article_image("4711")  # ohne bekannte image_id
+    assert img == (b"JPG", "image/jpeg")
+    assert any("/article/id/4711" in u and "download" not in u for u in calls)
+
+
+@pytest.mark.asyncio
+async def test_non_image_response_treated_as_missing():
+    """200 mit JSON-Body (kein Bild) darf nicht als Bild durchgehen."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "downloadArticleImage" in str(request.url):
+            return httpx.Response(200, json={"error": "no image"})
+        return httpx.Response(200, json={"id": "4711", "articleImages": []})
+
+    c = make_client(handler)
+    assert (await c.get_article_image("4711", "img1")) is None
