@@ -1028,6 +1028,61 @@ interface ProductCard {
   source: 'weclapp' | 'pulpo'; image_url: string | null;
 }
 
+// ── Modulweiter Produkt-Cache ────────────────────────────────────────────
+// Einmal aufgelöste EANs (auch Misses = null) teilen sich CW-Listen-Modal,
+// Aufträge-Tabelle und Fokus-Panel. Einzelanfragen aus vielen Zeilen werden
+// 50ms gesammelt und als EIN Batch-Request geschickt.
+const productCache: Record<string, ProductCard | null> = {};
+const productListeners = new Set<() => void>();
+let productQueue = new Set<string>();
+let productFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function fetchProducts(eans: string[]): Promise<void> {
+  const missing = eans.filter((e) => e && !(e in productCache));
+  if (missing.length === 0) return;
+  try {
+    const token = localStorage.getItem('access_token');
+    const res = await fetch(`${API_BASE}/api/v1/products/lookup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ eans: missing }),
+    });
+    const data = res.ok ? await res.json() : null;
+    for (const e of missing) productCache[e] = data?.products?.[e] ?? null;
+  } catch {
+    // Karten sind Komfort — beim nächsten Bedarf wird erneut versucht.
+  }
+  productListeners.forEach((l) => l());
+}
+
+function queueProductLookup(ean: string): void {
+  if (!ean || ean in productCache) return;
+  productQueue.add(ean);
+  if (productFlushTimer) return;
+  productFlushTimer = setTimeout(() => {
+    const batch = [...productQueue];
+    productQueue = new Set();
+    productFlushTimer = null;
+    void fetchProducts(batch);
+  }, 50);
+}
+
+/** Produkt zu einem EAN aus dem geteilten Cache (löst bei Bedarf nach). */
+function useProduct(ean: string | null | undefined): ProductCard | null {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!ean || ean in productCache) return;
+    queueProductLookup(ean);
+    const listener = () => force((x) => x + 1);
+    productListeners.add(listener);
+    return () => { productListeners.delete(listener); };
+  }, [ean]);
+  return ean ? (productCache[ean] ?? null) : null;
+}
+
 function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
   const [draft, setDraft] = useState('');
   const [items, setItems] = useState<CWListItem[]>(list.items);
@@ -1043,18 +1098,14 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
   useEffect(() => {
     const eans = barcodesKey ? barcodesKey.split(',') : [];
     if (eans.length === 0) return;
-    const token = localStorage.getItem('access_token');
-    fetch(`${API_BASE}/api/v1/products/lookup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ eans }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.products) setProducts(data.products); })
-      .catch(() => { /* Karten sind Komfort — Liste funktioniert auch ohne */ });
+    let cancelled = false;
+    void fetchProducts(eans).then(() => {
+      if (cancelled) return;
+      const next: Record<string, ProductCard | null> = {};
+      for (const e of eans) next[e] = productCache[e] ?? null;
+      setProducts(next);
+    });
+    return () => { cancelled = true; };
   }, [barcodesKey]);
 
   const totalExpected = items.reduce((s, x) => s + x.expected, 0);
@@ -1333,12 +1384,12 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
 /** Artikelbild-Thumbnail mit Fallback aufs Paket-Icon. Das Bild kommt über
  *  den Backend-Proxy (weclapp braucht einen Auth-Header, <img> kann den
  *  nicht setzen). */
-function ProductThumb({ ean, hasImage }: { ean: string; hasImage: boolean }) {
+function ProductThumb({ ean, hasImage, size = 34 }: { ean: string; hasImage: boolean; size?: number }) {
   const [failed, setFailed] = useState(false);
   const showImg = hasImage && !failed;
   return (
     <span style={{
-      width: 34, height: 34, flexShrink: 0, borderRadius: 6,
+      width: size, height: size, flexShrink: 0, borderRadius: size >= 48 ? 10 : 6,
       background: '#fff', border: '1px solid var(--clr-border)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       overflow: 'hidden',
@@ -1350,7 +1401,7 @@ function ProductThumb({ ean, hasImage }: { ean: string; hasImage: boolean }) {
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
       ) : (
-        <PackageIcon size={16} style={{ color: '#cbd5e1' }} />
+        <PackageIcon size={Math.round(size * 0.45)} style={{ color: '#cbd5e1' }} />
       )}
     </span>
   );
@@ -1693,6 +1744,7 @@ function TableRow({
   const station = currentStation(pkg.state);
   const StationIcon = STATION_ICONS[station];
   const type = detectType(pkg.barcode);
+  const product = useProduct(pkg.barcode ?? null);
   const dims = (pkg.length_mm || pkg.width_mm || pkg.height_mm)
     ? `${pkg.length_mm ?? '?'}×${pkg.width_mm ?? '?'}×${pkg.height_mm ?? '?'}`
     : '—';
@@ -1724,6 +1776,9 @@ function TableRow({
             background: type === 'M' ? '#ede9fe' : '#dbeafe',
             color:      type === 'M' ? '#5b21b6' : '#1e40af',
           }}>{type}</span>
+          {product && pkg.barcode && (
+            <ProductThumb ean={pkg.barcode} hasImage={!!product.image_url} size={28} />
+          )}
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{pkg.ref}</code>
@@ -1734,9 +1789,13 @@ function TableRow({
                 }}>{pkg.cwList}</span>
               )}
             </div>
-            <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--clr-text-muted)' }}>
-              {pkg.barcode ?? '—'}
-            </code>
+            <div style={{
+              fontSize: 10.5, color: 'var(--clr-text-muted)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260,
+            }}>
+              <code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.barcode ?? '—'}</code>
+              {product?.name ? <span> · {product.name}</span> : null}
+            </div>
           </div>
         </div>
       </Td>
@@ -1835,6 +1894,8 @@ interface FocusPanelProps {
 }
 
 function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
+  // Hook MUSS vor dem Early-Return stehen (rules of hooks).
+  const product = useProduct(pkg?.barcode ?? null);
   if (!pkg) {
     // Grid column is 0px wide in this state — render nothing instead of an
     // overflowing empty aside.
@@ -1894,6 +1955,37 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
           <dt style={{ color: 'var(--clr-text-muted)' }}>Gewicht</dt>
           <dd className="tabular-nums">{weight}</dd>
         </dl>
+
+        {product && (
+          <div style={{
+            marginTop: 14, display: 'flex', gap: 12, padding: 12,
+            borderRadius: 10, border: '1px solid var(--clr-border)',
+            background: 'linear-gradient(180deg,#f8fafc,#f1f5f9)',
+          }}>
+            <ProductThumb ean={pkg.barcode!} hasImage={!!product.image_url} size={56} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6, color: '#94a3b8', marginBottom: 2 }}>
+                PRODUKT{product.source === 'pulpo' ? ' · PULPO' : ''}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
+                {product.name}
+              </div>
+              {product.sku && (
+                <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                  SKU {product.sku}
+                </div>
+              )}
+              {product.description && (
+                <div style={{
+                  fontSize: 11, color: '#475569', marginTop: 6, lineHeight: 1.45,
+                  display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>
+                  {product.description}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: 20, borderBottom: '1px solid var(--clr-border)' }}>
