@@ -844,6 +844,25 @@
         "pulpoSettingsSub": "Verbindung & Optionen",
         "users": "Benutzer verwalten",
         "usersSub": "Benutzer & Rollen"
+      },
+      "dhl": {
+        "cardTitle": "Versand · DHL Parcel DE",
+        "connected": "DHL verbunden",
+        "notConfigured": "DHL nicht konfiguriert",
+        "testModeActive": "Test-Modus aktiv",
+        "live": "Live",
+        "testModeDesc": "Im Test-Modus werden KEINE echten DHL-Labels erstellt — nur Mock-Trackingnummern. Sobald produktiv geschaltet wird, kostet jede Sendung Geld.",
+        "liveDesc": "Live-Modus: Bei LAB1 wird ein echtes DHL-Label erzeugt (kostenpflichtig). Tracking + ZPL/PDF werden gespeichert.",
+        "lastLabel": "Letztes Label",
+        "shipmentsLive": "Sendungen (live)",
+        "shipmentsTotal": "Sendungen gesamt",
+        "testLabel": "Test-Label erstellen",
+        "testing": "Erstelle …",
+        "mockTracking": "Mock-Tracking",
+        "liveTracking": "Live-Tracking",
+        "errorTitle": "Letzter DHL-Fehler",
+        "testModeLabel": "Test-Modus",
+        "testModeLabelDesc": "kein echtes DHL-Label, nur Mock-Tracking"
       }
     },
     "team": {

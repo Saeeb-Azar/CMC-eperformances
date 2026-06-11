@@ -1,6 +1,45 @@
-# Konzept: DHL-/Carrier-Label-Anbindung (externer Versand-Service)
+# Konzept & Stand: DHL-Anbindung (Parcel DE Business Shipment, B2C)
 
-> Status: **Entwurf / zur Abstimmung** · Juni 2026 · Grundlage: `cmc-process-documentation.pdf` §5–6, `Kommunikation CartonWrap.pdf` (CIS External Mode), aktueller Code-Stand.
+> Status: **Grundgerüst gebaut, LAB1-Trigger noch nicht verdrahtet** · Juni 2026 · Grundlage: `cmc-process-documentation.pdf` §5–6, `Kommunikation CartonWrap.pdf` (CIS External Mode), DHL-Developer-Portal (Parcel DE Shipping v2), aktueller Code-Stand.
+
+## Aktueller Umsetzungsstand
+
+**Backend** (`app/modules/dhl/`)
+- Client (`client.py`) gegen `POST {base}/orders` der Parcel-DE-Shipment-API v2, Auth über HTTP-Basic + `dhl-api-key`-Header
+- Service (`service.py`) — Label erzeugen + persistieren, idempotent über `order_state_id`
+- DB-Tabelle `shipments` (Alembic 0005): Tracking, Empfänger-Snapshot, Maße, Label-Base64 (ZPL2/PDF), `is_test`-Flag
+- Runtime-Schalter `dhl_runtime.write_enabled` analog Pulpo (Default Test-Modus, persistiert pro Tenant)
+- Endpunkte: `GET /api/v1/settings/dhl/status`, `PUT /api/v1/settings/dhl`, `POST /api/v1/shipments/test-label`
+- 6 Tests (Auth-Header, Body-Layout, Mock-im-Test-Modus, Fehlerbehandlung, refNo-Truncation)
+
+**Frontend** — Karte „Versand · DHL Parcel DE" auf der Firma-Einstellungen-Seite: Status, Test-Modus-Toggle, „Test-Label erstellen"-Button, letzter Erfolg/Fehler, DE/EN-Übersetzung
+
+**Settings** (`config.py`) — alle Felder mit sinnvollen Defaults:
+- `DHL_BASE_URL` (Default Production-EU), `DHL_API_KEY`, `DHL_USERNAME`, `DHL_PASSWORD`, `DHL_BILLING_NUMBER` (EKP + Verfahren + Teilnahme)
+- `DHL_DEFAULT_PRODUCT` (V01PAK = DHL Paket National)
+- Absender-Defaults (`DHL_SENDER_NAME`/`_STREET`/`_STREET_NO`/`_ZIP`/`_CITY`/`_COUNTRY`)
+- `DHL_LABEL_FORMAT` (ZPL2 für Thermo-Druck am CW1000)
+
+## Was als Nächstes (vor Live-Schaltung) noch fehlt
+
+1. **LAB1-Hook im Gateway** (`connection.py`): bei LAB1 → `create_label_for_order` aufrufen, Tracking + Label-Base64 in die LAB1-Antwort an die Maschine zurückgeben. Wartet auf den Stationsflags-Fix (LAB1 erst aktivieren, wenn die echte Hardware einen Labeler hat).
+2. **Empfänger-Adress-Resolver**: aus `pulpo_packing_orders.sales_order_id` die Lieferadresse via Pulpo-API holen (oder Webhook-Payload erweitern). Aktuell wird die Adresse nur am Test-Endpunkt explizit übergeben.
+3. **Deferred-Writes-Replay an Pulpo**: nach erfolgreichem `END status=1` Tracking + Label an Pulpo hochladen (`accept → create_box → attach_label → finish → close`) — Skelett existiert in `pulpo/client.py`, ist noch nicht verdrahtet.
+
+## ENV-Variablen, die du in Railway eintragen kannst (parat halten)
+```
+DHL_API_KEY=…              # aus DHL Developer-Portal
+DHL_USERNAME=…             # GK-Portal-Login
+DHL_PASSWORD=…
+DHL_BILLING_NUMBER=…       # EKP+Verfahren+Teilnahme, z.B. "33333333330102"
+DHL_SENDER_NAME=…          # eure Firma
+DHL_SENDER_STREET=…
+DHL_SENDER_STREET_NO=…
+DHL_SENDER_ZIP=…
+DHL_SENDER_CITY=…
+# DHL_BASE_URL optional — Default = Production EU
+```
+**Test-Modus bleibt AN**, bis du in den Einstellungen aktiv umschaltest — keine Sendung kostet Geld, bevor du es willst.
 
 Dieses Dokument beschreibt, **wie die Erzeugung echter Versandlabels (DHL u. a.) angebunden wird** — was die maßgebliche Prozess-Doku vorgibt, was heute fehlt, und welche Bausteine/Entscheidungen nötig sind. **Es wird noch nichts gebaut**, bis das Konzept abgenommen ist.
 

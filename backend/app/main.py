@@ -21,6 +21,7 @@ from app.modules.machines import models as _machine_models  # noqa: F401
 from app.modules.orders import models as _order_models  # noqa: F401
 from app.modules.audit import models as _audit_models  # noqa: F401
 from app.modules.pulpo import models as _pulpo_models  # noqa: F401
+from app.modules.dhl import models as _dhl_models  # noqa: F401
 
 # Import routers from all modules
 from app.modules.auth.router import router as auth_router
@@ -34,6 +35,8 @@ from app.modules.cmc_actions.router import router as cmc_actions_router
 from app.modules.pulpo.router import router as pulpo_router
 from app.modules.pulpo.runtime import pulpo_runtime
 from app.modules.weclapp.router import router as products_router
+from app.modules.dhl.router import router as dhl_router
+from app.modules.dhl.router import load_persisted_test_mode as _load_dhl_test_mode
 
 settings = get_settings()
 
@@ -61,6 +64,7 @@ async def lifespan(app: FastAPI):
 
     # Load the persisted Pulpo Test-Modus (default = safe / writes blocked).
     await _load_pulpo_test_mode()
+    await _load_dhl_test_mode()
 
     # TCP gateway — try to start, but never crash the app
     tcp_port = settings.cmc_tcp_port
@@ -254,6 +258,8 @@ app.include_router(cmc_actions_router, prefix=API_PREFIX)
 app.include_router(pulpo_router)
 # Produkt-Stammdaten (weclapp + Pulpo-Fallback) — voller Prefix im Router.
 app.include_router(products_router)
+# DHL Parcel DE — Versandlabel-Anbindung (Test-Modus standardmäßig AN).
+app.include_router(dhl_router)
 
 
 @app.websocket("/ws/simulator")

@@ -5,7 +5,7 @@ import Topbar from '../../components/layout/Topbar';
 import {
   Building2, CreditCard, Boxes, ShieldCheck, Loader2, Save, Copy,
   Clock, ListChecks, ShoppingCart, Server, Users, Zap, ChevronRight, Check, Infinity as InfinityIcon,
-  RefreshCw, AlertTriangle, MapPin,
+  RefreshCw, AlertTriangle, MapPin, Truck, Send,
 } from 'lucide-react';
 import { api, type UserRead, type TenantRead } from '../../services/api';
 import type { TFunction } from 'i18next';
@@ -166,6 +166,8 @@ export default function SettingsCompanyPage() {
               </label>
             </Card>
 
+            <DhlShippingCard t={t} />
+
             <Card icon={<Zap size={16} />} title={t('settings.company.quickAccess.title')}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <QuickLink icon={<Server size={16} />} title={t('settings.company.quickAccess.machines')} sub={t('settings.company.quickAccess.machinesSub')} onClick={() => navigate('/machines')} />
@@ -219,6 +221,141 @@ export default function SettingsCompanyPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** DHL Versandlabel-Karte: Status, Test-Modus-Toggle, Test-Label-Button.
+ *  Komplett analog zur Pulpo-Karte oben — Test-Modus AN heißt Mock-Tracking
+ *  ohne API-Call, Test-Modus AUS schickt echte Sendungen (kostet Geld). */
+function DhlShippingCard({ t }: { t: TFunction }) {
+  type Status = Awaited<ReturnType<typeof api.getDhlStatus>>;
+  const [status, setStatus] = useState<Status | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [lastTest, setLastTest] = useState<{ tracking: string; is_test: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => api.getDhlStatus().then((s) => { if (!cancelled) setStatus(s); }).catch(() => {});
+    load();
+    const id = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const testMode = status ? status.test_mode : true;
+  const toggle = async (next: boolean) => {
+    setSaving(true);
+    try {
+      const res = await api.setDhlSettings(next);
+      setStatus((s) => (s ? { ...s, test_mode: res.test_mode } : s));
+    } catch { /* lassen */ } finally { setSaving(false); }
+  };
+  const runTest = async () => {
+    setTesting(true);
+    setLastTest(null);
+    try {
+      const r = await api.createTestLabel({
+        weight_g: 500, length_mm: 200, width_mm: 150, height_mm: 80,
+        order_ref: 'TEST-' + Date.now(),
+      });
+      setLastTest({ tracking: r.tracking_number, is_test: r.is_test });
+      const s = await api.getDhlStatus();
+      setStatus(s);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLastTest({ tracking: msg, is_test: true });
+    } finally { setTesting(false); }
+  };
+
+  return (
+    <Card icon={<Truck size={16} />} title={t('settings.company.dhl.cardTitle', 'Versand · DHL Parcel DE')}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16 }}>
+        <div style={{
+          padding: 16, borderRadius: 12,
+          background: testMode ? '#ecfdf5' : '#fff7ed',
+          border: `1px solid ${testMode ? '#a7f3d0' : '#fed7aa'}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <ShieldCheck size={20} className={testMode ? 'text-emerald-600' : 'text-orange-500'} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+              {status?.configured
+                ? t('settings.company.dhl.connected', 'DHL verbunden')
+                : t('settings.company.dhl.notConfigured', 'DHL nicht konfiguriert')}
+            </span>
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+              background: testMode ? '#d1fae5' : '#ffedd5', color: testMode ? '#047857' : '#c2410c',
+            }}>
+              {testMode
+                ? t('settings.company.dhl.testModeActive', 'Test-Modus aktiv')
+                : t('settings.company.dhl.live', 'Live')}
+            </span>
+          </div>
+          <p style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
+            {testMode
+              ? t('settings.company.dhl.testModeDesc', 'Im Test-Modus werden KEINE echten DHL-Labels erstellt — nur Mock-Trackingnummern. Sobald produktiv geschaltet wird, kostet jede Sendung Geld.')
+              : t('settings.company.dhl.liveDesc', 'Live-Modus: Bei LAB1 wird ein echtes DHL-Label erzeugt (kostenpflichtig). Tracking + ZPL/PDF werden gespeichert.')}
+          </p>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, justifyContent: 'center' }}>
+          <Stat icon={<Clock size={15} />} label={t('settings.company.dhl.lastLabel', 'Letztes Label')} value={relTime(status?.last_label_at ?? null, t)} />
+          <Stat icon={<ListChecks size={15} />} label={t('settings.company.dhl.shipmentsLive', 'Sendungen (live)')} value={String(status?.shipments_live ?? 0)} />
+          <Stat icon={<ShoppingCart size={15} />} label={t('settings.company.dhl.shipmentsTotal', 'Sendungen gesamt')} value={String(status?.shipments_total ?? 0)} />
+          <button type="button" className="modal-btn modal-btn--ghost" onClick={runTest} disabled={testing}
+            style={{ justifyContent: 'center', gap: 6 }}>
+            {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            {testing
+              ? t('settings.company.dhl.testing', 'Erstelle …')
+              : t('settings.company.dhl.testLabel', 'Test-Label erstellen')}
+          </button>
+        </div>
+      </div>
+
+      {lastTest && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 10,
+          background: lastTest.is_test ? '#eff6ff' : '#ecfdf5',
+          border: `1px solid ${lastTest.is_test ? '#bfdbfe' : '#a7f3d0'}`,
+        }}>
+          <div style={{ fontSize: 12, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Truck size={14} />
+            <strong>{lastTest.is_test
+              ? t('settings.company.dhl.mockTracking', 'Mock-Tracking')
+              : t('settings.company.dhl.liveTracking', 'Live-Tracking')}:</strong>
+            <code style={{ fontFamily: 'var(--font-mono)' }}>{lastTest.tracking}</code>
+          </div>
+        </div>
+      )}
+
+      {status?.last_error && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
+          borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca',
+        }}>
+          <AlertTriangle size={16} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>
+            <strong>{t('settings.company.dhl.errorTitle', 'Letzter DHL-Fehler')}</strong>
+            {' '}({relTime(status.last_error_at, t)})
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, marginTop: 4, wordBreak: 'break-all' }}>{status.last_error}</div>
+          </div>
+        </div>
+      )}
+
+      <label style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        padding: '10px 14px', borderRadius: 10, border: '1px solid var(--clr-border)', cursor: 'pointer',
+      }}>
+        <span style={{ fontSize: 13, color: '#334155' }}>
+          <strong>{t('settings.company.dhl.testModeLabel', 'Test-Modus')}</strong>
+          {' — '}{t('settings.company.dhl.testModeLabelDesc', 'kein echtes DHL-Label, nur Mock-Tracking')}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {saving && <Loader2 size={14} className="animate-spin text-gray-400" />}
+          <input type="checkbox" checked={testMode} disabled={status === null || saving}
+            onChange={(e) => toggle(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
+        </span>
+      </label>
+    </Card>
   );
 }
 

@@ -83,6 +83,34 @@ class Settings(BaseSettings):
     weclapp_base_url: str = ""
     weclapp_api_key: str = ""
 
+    # ----- DHL Parcel DE Business Shipment (B2C) -----------------------
+    # Produktion: https://api-eu.dhl.com/parcel/de/shipping/v2
+    # Sandbox:    https://api-sandbox.dhl.com/parcel/de/shipping/v2
+    # Auth-Pärchen:
+    #   • dhl_api_key       → Header "dhl-api-key" (aus Entwicklerportal)
+    #   • dhl_username/pass → HTTP Basic Auth (Geschäftskundenportal-Login)
+    # billing_number = EKP + Verfahren + Teilnahme (z.B. "33333333330102"
+    # für Sandbox-Tests, im Produktiv-Konto aus dem GK-Portal).
+    dhl_base_url: str = "https://api-eu.dhl.com/parcel/de/shipping/v2"
+    dhl_api_key: str = ""
+    dhl_username: str = ""
+    dhl_password: str = ""
+    dhl_billing_number: str = ""
+    # Standard-Produkt = "V01PAK" (DHL Paket National). Andere: V53WPAK
+    # (Warenpost), V54EPAK (Europaket). Pro Sendung überschreibbar.
+    dhl_default_product: str = "V01PAK"
+    # Absender-Default (kann auch pro Sendung mitkommen). Leerlassen, dann
+    # muss der Aufrufer eine Adresse mitgeben.
+    dhl_sender_name: str = ""
+    dhl_sender_street: str = ""
+    dhl_sender_street_no: str = ""
+    dhl_sender_zip: str = ""
+    dhl_sender_city: str = ""
+    dhl_sender_country: str = "DEU"
+    # Label-Format: ZPL2 für direkten Druck am thermischen Labeler der CW1000,
+    # sonst "PDF" zum Anzeigen/Archivieren.
+    dhl_label_format: str = "ZPL2"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

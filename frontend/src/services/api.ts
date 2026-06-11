@@ -310,6 +310,28 @@ export const api = {
     ),
 
   // Produkt-Stammdaten (weclapp, Fallback Pulpo-Cache) für die Produktkarten
+  // DHL Parcel DE — Versandlabel-Anbindung
+  getDhlStatus: () => request<{
+    test_mode: boolean; configured: boolean; base_url: string;
+    billing_number_set: boolean;
+    last_label_at: string | null; last_label_tracking: string;
+    last_error: string | null; last_error_at: string | null;
+    shipments_total: number; shipments_live: number;
+  }>('/settings/dhl/status'),
+  setDhlSettings: (test_mode: boolean) =>
+    request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
+      method: 'PUT', body: JSON.stringify({ test_mode }),
+    }),
+  createTestLabel: (body: {
+    weight_g: number; length_mm: number; width_mm: number; height_mm: number;
+    recipient_name?: string; recipient_street?: string; recipient_street_no?: string;
+    recipient_zip?: string; recipient_city?: string; recipient_country?: string;
+    order_ref?: string; product?: string;
+  }) => request<{
+    tracking_number: string; label_format: string; label_b64_length: number;
+    is_test: boolean; created_at: string;
+  }>('/shipments/test-label', { method: 'POST', body: JSON.stringify(body) }),
+
   lookupProducts: (eans: string[]) =>
     request<{ products: Record<string, ProductInfo | null>; weclapp_configured: boolean }>(
       '/products/lookup', { method: 'POST', body: JSON.stringify({ eans }) },
