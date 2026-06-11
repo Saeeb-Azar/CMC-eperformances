@@ -319,25 +319,60 @@ class PulpoClient:
         dann eine ``label.pdf`` mit gültigem Versandlabel."""
         return await self._request("GET", f"/packing/orders/{order_id}")
 
-    async def download_attachment(self, attachment_id: int | str) -> tuple[bytes, str] | None:
-        """Roh-Bytes eines Attachments + Content-Type, oder None bei 404.
+    async def list_packing_order_boxes(self, packing_order_id: int | str) -> list[dict]:
+        """Boxes für eine Packing-Order — Pulpo Swagger:
+        ``GET /packing/orders/{packing_order_id}/boxes`` → ResponseList_PackingBox.
+        Liefert die innere ``packing_boxes``-Liste."""
+        result = await self._request(
+            "GET", f"/packing/orders/{packing_order_id}/boxes",
+        )
+        if isinstance(result, dict):
+            return list(result.get("packing_boxes") or [])
+        return self._as_list(result)
 
-        Endpoint-Pfad nach REST-Konvention; falls Pulpo einen abweichenden
-        Pfad nutzt, gibt es einen klaren PulpoError den der Aufrufer fängt.
+    async def list_box_shipment_trackings(
+        self, packing_order_id: int | str, box_id: int | str,
+    ) -> list[dict]:
+        """Tracking-Einträge einer Box — Pulpo Swagger:
+        ``GET /packing/orders/{packing_order_id}/boxes/{box_id}/shipment_tracking``
+        → ResponseList_ShipmentTracking. Liefert ``shipment_trackings``.
+        Einzelner Eintrag hat ``tracking_code``, ``tracking_url``,
+        ``carrier_code``, ``status``, ``printed``."""
+        result = await self._request(
+            "GET",
+            f"/packing/orders/{packing_order_id}/boxes/{box_id}/shipment_tracking",
+        )
+        if isinstance(result, dict):
+            return list(result.get("shipment_trackings") or [])
+        return self._as_list(result)
+
+    async def get_attachment(self, attachment_id: int | str) -> dict | None:
+        """Attachment-Metadaten (mit Download-URL) — Pulpo Swagger:
+        ``GET /attachment/{id}`` (Singular!) → JSON mit URL/Name/Type.
+        Der eigentliche Download geht dann gegen die URL aus dem Payload.
         """
         try:
-            resp = await self._client.get(
-                f"{self.base_url}/attachments/{attachment_id}",
-                headers={"Authorization": f"Bearer {await self._ensure_token()}"},
-            )
+            return await self._request("GET", f"/attachment/{attachment_id}")
+        except PulpoError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+    async def download_url(self, url: str) -> tuple[bytes, str] | None:
+        """Generischer Download (z.B. einer Attachment-URL, die Pulpo
+        in ``GET /attachment/{id}`` zurückliefert). Pulpo-URLs sind oft
+        vorsignierte S3-Links — ohne Bearer-Token herunterladen."""
+        if not url:
+            return None
+        try:
+            resp = await self._client.get(url)
         except httpx.HTTPError as e:
-            raise PulpoError(f"download_attachment request failed: {e}") from e
+            raise PulpoError(f"download_url failed: {e}") from e
         if resp.status_code == 404:
             return None
         if resp.status_code >= 400:
             raise PulpoError(
-                f"download_attachment {attachment_id} → HTTP {resp.status_code}",
-                status_code=resp.status_code,
+                f"download_url → HTTP {resp.status_code}", status_code=resp.status_code,
             )
         return resp.content, resp.headers.get("content-type", "application/octet-stream")
 

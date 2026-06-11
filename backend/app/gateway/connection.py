@@ -824,9 +824,18 @@ class ConnectionManager:
         self, db, tenant_id: str, barcode: str,
     ) -> tuple[str, str] | None:
         """Pulpo-Label für den gescannten Barcode finden (best-effort).
-        Liefert ``(tracking, label_b64)`` wenn Pulpo eine packing_box mit
-        Tracking + Label-Attachment hat, sonst None. Jeder Fehler unterwegs
-        → None, damit der DHL-Fallback greift."""
+
+        Endpoint-Kette gemäß Pulpo WMS Swagger v4.6:
+          1. PulpoPackingOrder zum Barcode finden (lokal aus dem Cache)
+          2. GET /packing/orders/{order_id}/boxes  → list of boxes
+          3. GET /packing/orders/{order_id}/boxes/{box_id}/shipment_tracking
+             → tracking_code (= das, was die Maschine als match_barcode
+               braucht), tracking_url
+          4. (optional) GET /attachment/{id} + Download-URL → ZPL/PDF-Bytes
+
+        Liefert ``(tracking_code, label_b64)`` wenn beide Schritte greifen,
+        sonst None → DHL-Fallback. Jeder Fehler unterwegs → None.
+        """
         try:
             from sqlalchemy import select
             from app.modules.pulpo.client import pulpo as pulpo_client
@@ -852,31 +861,48 @@ class ConnectionManager:
             if order is None:
                 return None
 
-            # 2) Frische Order von Pulpo holen (packing_boxes + attachments
-            #    werden serverseitig befüllt, sobald ein Label existiert).
-            full = await pulpo_client.get_packing_order(order.pulpo_order_id)
-            boxes = (full or {}).get("packing_boxes") or []
+            # 2) Boxen der Packing-Order abfragen
+            boxes = await pulpo_client.list_packing_order_boxes(order.pulpo_order_id)
             if not boxes:
                 return None
-            # Erste Box mit Tracking + Label-Attachment auswählen.
+
+            # 3) Pro Box die Shipment-Trackings holen, erste verwertbare nehmen
             for box in boxes:
-                tracking = str(box.get("tracking_number") or box.get("tracking_code") or "").strip()
-                attachments = box.get("attachments") or []
-                label_att = next(
-                    (a for a in attachments
-                     if "label" in str(a.get("name") or a.get("type") or "").lower()),
-                    None,
+                box_id = box.get("id")
+                if not box_id:
+                    continue
+                trackings = await pulpo_client.list_box_shipment_trackings(
+                    order.pulpo_order_id, box_id,
                 )
-                if not (tracking and label_att):
-                    continue
-                att_id = label_att.get("id")
-                if not att_id:
-                    continue
-                data = await pulpo_client.download_attachment(att_id)
-                if not data:
-                    continue
-                bytes_, _ctype = data
-                return tracking, base64.b64encode(bytes_).decode("ascii")
+                for tr in trackings:
+                    tracking = str(tr.get("tracking_code") or "").strip()
+                    if not tracking:
+                        continue
+
+                    # 4) Label-PDF laden, sofern Pulpo eine URL anbietet.
+                    # Pulpo verknüpft das Label-Attachment direkt mit dem
+                    # ShipmentTracking; oft steht es schon in `tracking_url`,
+                    # manche Tenants liefern eine separate attachment_id.
+                    label_b64 = ""
+                    label_url = str(tr.get("tracking_url") or "")
+                    if label_url:
+                        dl = await pulpo_client.download_url(label_url)
+                        if dl:
+                            label_b64 = base64.b64encode(dl[0]).decode("ascii")
+                    else:
+                        att_id = tr.get("attachment_id") or tr.get("label_attachment_id")
+                        if att_id:
+                            att = await pulpo_client.get_attachment(att_id)
+                            url = (att or {}).get("url") or (att or {}).get("download_url")
+                            dl = await pulpo_client.download_url(url) if url else None
+                            if dl:
+                                label_b64 = base64.b64encode(dl[0]).decode("ascii")
+
+                    # Auch wenn das Label-PDF (noch) nicht ladbar ist —
+                    # der Tracking-Code allein reicht der CW1000 als
+                    # match_barcode am Exit-Reader. Label-URL als Hinweis.
+                    return tracking, label_b64
+
             return None
         except Exception as e:
             logger.warning(f"Pulpo label lookup failed: {e!r} — falling back to DHL")
