@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
-import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus, Pencil, Boxes, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus, Pencil, Boxes, CheckCircle, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { api, type MachineRead } from '../services/api';
 import MachineFormModal from '../components/machines/MachineFormModal';
 
@@ -63,6 +63,25 @@ export default function MachinesPage() {
     () => connectedIds.filter((id) => !machinesDb.some((m) => m.machine_id === id)),
     [connectedIds, machinesDb],
   );
+
+  // Erkennungs-Popup: Sobald eine unbekannte Maschine sendet, fragt ein
+  // Dialog aktiv nach ("Maschine erkannt — anlegen?"). NICHTS wird
+  // automatisch angelegt; "Später" merkt sich die ID für diese Session,
+  // der gelbe Banner bleibt als Erinnerung stehen.
+  const [detectId, setDetectId] = useState<string | null>(null);
+  const dismissedRef = useRef<Set<string>>(new Set(
+    JSON.parse(sessionStorage.getItem('cmc.dismissedDetectIds') ?? '[]') as string[],
+  ));
+  useEffect(() => {
+    if (detectId || modalOpen || editing || loading) return;
+    const next = unknownIds.find((id) => !dismissedRef.current.has(id));
+    if (next) setDetectId(next);
+  }, [unknownIds, detectId, modalOpen, editing, loading]);
+  const dismissDetect = (id: string) => {
+    dismissedRef.current.add(id);
+    sessionStorage.setItem('cmc.dismissedDetectIds', JSON.stringify([...dismissedRef.current]));
+    setDetectId(null);
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -258,6 +277,14 @@ export default function MachinesPage() {
           })()}
         </div>
 
+        {detectId && (
+          <MachineDetectDialog
+            machineId={detectId}
+            onLater={() => dismissDetect(detectId)}
+            onCreated={() => { dismissedRef.current.add(detectId); setDetectId(null); reload(); }}
+          />
+        )}
+
         <MachineFormModal
           open={modalOpen || !!editing}
           machine={editing}
@@ -304,6 +331,91 @@ export default function MachinesPage() {
           onFilterChange={setFilterState}
           emptyMessage={loading ? t('common.loading') : machines.length === 0 ? t('common.noData') : t('common.noMatch')}
         />
+      </div>
+    </div>
+  );
+}
+
+/** Aktiver Erkennungs-Dialog: eine unbekannte Maschine sendet bereits —
+ *  Name vergeben, speichern, läuft. Nichts passiert automatisch. */
+function MachineDetectDialog({ machineId, onLater, onCreated }: {
+  machineId: string; onLater: () => void; onCreated: () => void;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(`CW-${machineId}`);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.createMachine({
+        machine_id: machineId, name: name.trim(), model: 'CW1000',
+        tcp_role: 'server', tcp_host: '0.0.0.0', tcp_port: 15001,
+        lab1_enabled: true, lab2_enabled: false, inv_enabled: false,
+        pre_create_labels: true,
+        max_length_mm: 6000, max_width_mm: 4000, max_height_mm: 3000,
+        pulpo_pick_location: '',
+      });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('machines.detect.errorGeneric', 'Anlegen fehlgeschlagen.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onLater}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div className="modal__header">
+          <div className="modal__head-left">
+            <span className="modal__icon" style={{ background: '#fffbeb', color: '#d97706' }}>
+              <Wifi size={17} />
+            </span>
+            <div>
+              <h2 className="modal__title">{t('machines.detect.title', 'Neue Maschine erkannt')}</h2>
+              <p className="modal__subtitle">
+                {t('machines.detect.subtitle', 'Es verbindet sich eine Maschine, die noch nicht angelegt ist.')}
+              </p>
+            </div>
+          </div>
+          <button type="button" className="modal__close" onClick={onLater}><X size={18} /></button>
+        </div>
+        <div className="modal__body">
+          {error && <div className="modal-error">{error}</div>}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+            borderRadius: 10, background: '#f8fafc', border: '1px solid var(--clr-border)', marginBottom: 14,
+          }}>
+            <span style={{ fontSize: 12, color: 'var(--clr-text-muted)' }}>
+              {t('machines.detect.sendsAs', 'Sendet als Maschinen-ID')}
+            </span>
+            <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 14 }}>{machineId}</code>
+          </div>
+          <label className="modal-field">
+            <span className="modal-field__label">{t('machines.detect.nameLabel', 'Anzeigename')}</span>
+            <input
+              type="text" className="modal-input" value={name} autoFocus
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
+            />
+            <span className="modal-field__hint">
+              {t('machines.detect.nameHint', 'So heißt die Maschine im Dashboard. Alles Weitere lässt sich später bearbeiten.')}
+            </span>
+          </label>
+        </div>
+        <div className="modal__footer">
+          <button type="button" className="modal-btn modal-btn--ghost" onClick={onLater}>
+            {t('machines.detect.later', 'Später')}
+          </button>
+          <button type="button" className="modal-btn modal-btn--primary" disabled={saving || !name.trim()} onClick={() => void save()}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            {t('machines.detect.create', 'Anlegen — Maschine läuft sofort')}
+          </button>
+        </div>
       </div>
     </div>
   );
