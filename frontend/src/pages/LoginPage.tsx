@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Mail, Lock, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 import CartonWrapAnimation from '../components/auth/CartonWrapAnimation';
+import LanguageToggle from '../components/ui/LanguageToggle';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -50,7 +51,11 @@ export default function LoginPage() {
       </div>
 
       {/* Right: sign-in form — 40% of viewport, content centered */}
-      <div className="w-full lg:w-[40%] flex items-center justify-center px-8 lg:px-14 py-12">
+      <div className="relative w-full lg:w-[40%] flex items-center justify-center px-8 lg:px-14 py-12">
+        {/* Language switcher, top right */}
+        <div className="absolute top-5 right-6">
+          <LanguageToggle />
+        </div>
         <form
           onSubmit={handleLogin}
           className="w-full max-w-[400px] flex flex-col"

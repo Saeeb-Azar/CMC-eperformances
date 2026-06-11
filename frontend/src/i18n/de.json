@@ -19,7 +19,9 @@
     "tenants": "Mandanten",
     "users": "Benutzer",
     "system": "System",
-    "logout": "Abmelden"
+    "logout": "Abmelden",
+    "dashboard": "Dashboard",
+    "protokoll": "Protokoll"
   },
   "common": {
     "search": "Suchen",
@@ -105,7 +107,8 @@
     "heroTitle": "Überblick über deine CartonWrap-Linie",
     "heroSubtitle": "Echtzeit-Status jeder Station, vollständiger Paket-Lebenszyklus, und tiefe Einblicke in Dimensionen, Gewichte und Durchsatz – live am Puls deiner Maschine.",
     "devCredsLabel": "Standard-Zugang für Tests",
-    "useDevCreds": "eintragen"
+    "useDevCreds": "eintragen",
+    "animationAria": "CartonWrap CW1000 Förderband-Animation"
   },
   "dashboard": {
     "title": "Übersicht",
@@ -231,7 +234,6 @@
     "liveActivity": "Live-Aktivität",
     "live": "Live",
     "waitingForActivity": "Warte auf Aktivität...",
-    "event": "Ereignis",
     "code": "Code",
     "reference": "Referenz",
     "time": "Zeit",
@@ -286,7 +288,156 @@
       "error": "Fehler aufgetreten",
       "errorDesc": "Bei der Verarbeitung ist etwas schiefgelaufen."
     },
-    "elapsed": "s vergangen"
+    "elapsed": "s vergangen",
+    "eventCol": "Ereignis",
+    "testModeBanner": "TEST-MODUS — Pulpo wird nur gelesen, keine Schreibvorgänge",
+    "liveModeBanner": "● LIVE — Schreibvorgänge an Pulpo sind aktiv",
+    "clearTableConfirm_one": "Tabelle wirklich leeren?\n\n{{count}} Bestellung wird aus der Live-Ansicht entfernt. Die Backend-Historie bleibt erhalten — neue Events erscheinen normal.",
+    "clearTableConfirm_other": "Tabelle wirklich leeren?\n\n{{count}} Bestellungen werden aus der Live-Ansicht entfernt. Die Backend-Historie bleibt erhalten — neue Events erscheinen normal.",
+    "actionPrompt": {
+      "resolve": "Auflösungs-Grund:",
+      "retry": "Grund für Wiederholung:",
+      "delete": "Lösch-Grund:"
+    },
+    "actionFailed": "Aktion fehlgeschlagen: {{error}}",
+    "state": {
+      "ASSIGNED": "Zugewiesen",
+      "INDUCTED": "Eingeschleust",
+      "SCANNED": "Vermessen",
+      "LABELED": "Etikettiert",
+      "COMPLETED": "Abgeschlossen",
+      "FAILED": "Fehlgeschlagen",
+      "EJECTED": "Ausgeworfen",
+      "DELETED": "Gelöscht"
+    },
+    "bucket": {
+      "IN_PROGRESS": "In Bearbeitung",
+      "WAITING": "Wartend",
+      "PROBLEM": "Problem",
+      "DONE": "Fertig"
+    },
+    "station": {
+      "scanner": "Scanner",
+      "enq": "ENQ Check",
+      "sensor": "3D Messung",
+      "wrapper": "Verpacker",
+      "labeler": "Etikettierer",
+      "exit": "Ausgang"
+    },
+    "rejection": {
+      "no_read": "Barcode nicht lesbar",
+      "already_active": "Doppel-Scan",
+      "unknown_barcode": "Nicht in CW-Liste",
+      "multi_only_mode": "Multi-Modus: Single abgewiesen",
+      "skipped_by_subsequent_end": "Übersprungen (späteres END)",
+      "dimensions_rejected": "3D-Maße abgewiesen",
+      "label_verification_failed": "Etikett-Verifikation fehlgeschlagen",
+      "manual_eject": "Manuell ausgeworfen",
+      "weight_deviation": "Gewicht außerhalb Toleranz",
+      "size_deviation": "Maße außerhalb Toleranz"
+    },
+    "event": {
+      "noRead": "NOREAD — Barcode nicht lesbar",
+      "duplicateScan": "Doppel-Scan abgewiesen",
+      "unknownBarcode": "Abgewiesen — nicht in CW-Liste",
+      "multiOnlyMode": "Abgewiesen — Multi-Modus, Single-Barcode",
+      "barcodeRead": "Barcode gelesen",
+      "inducted": "Eingeschleust",
+      "measureRejected": "Vermessung abgewiesen",
+      "measureOk": "3D Vermessung OK",
+      "invoicePrinted": "Rechnung gedruckt",
+      "labelFailed": "Etikettendruck fehlgeschlagen",
+      "labelRequested": "Label angefordert",
+      "label2Requested": "Zweites Label angefordert",
+      "exitOk": "Erfolgreich ausgegeben",
+      "exitFailed": "Ausgangs-Verifikation fehlgeschlagen",
+      "removed": "Manuell entfernt",
+      "autoEject": "Auto-Auswurf (übersprungen durch END {{seq}})",
+      "resolved": "Manuell gelöst ({{by}})",
+      "deleted": "Gelöscht ({{by}})",
+      "retryStarted": "Wiederholung gestartet ({{by}})"
+    },
+    "sidebar": {
+      "collapse": "Sidebar einklappen",
+      "expand": "Sidebar ausklappen",
+      "noMachines": "Noch keine Maschine",
+      "packagesCount_one": "{{count}} Paket",
+      "packagesCount_other": "{{count}} Pakete",
+      "selectMachine": "Maschine wählen"
+    },
+    "cwLists": {
+      "title": "CW-Listen",
+      "noPulpoQueue": "Keine Pulpo-Queue — Pick-Location der Maschine in den Einstellungen setzen",
+      "activeHint": "Liste aktiv — wird bei ENQ geprüft",
+      "inactiveHint": "Inaktiv — wird nicht geprüft",
+      "consumed": "{{consumed}} / {{expected}} verbraucht",
+      "items_one": "{{count}} Artikel",
+      "items_other": "{{count}} Artikel"
+    },
+    "cwModal": {
+      "readOnlyNotice": "Automatisch aus der Pulpo-Queue synchronisiert — read-only.",
+      "barcodePlaceholder": "Barcode + Enter",
+      "noItems": "Noch keine Artikel",
+      "qtyMinus": "Menge -1",
+      "qtyPlus": "Menge +1",
+      "removeEntry": "Eintrag ganz entfernen",
+      "deleteConfirm": "Liste „{{name}}“ wirklich löschen?",
+      "close": "Schließen"
+    },
+    "activeBadge": "AKTIV",
+    "noMachineSelected": "Keine Maschine ausgewählt",
+    "multiToggle": {
+      "selectMachine": "Maschine wählen, um den Modus zu setzen",
+      "disableHint": "Multi-Only Modus aktiv — numerische Barcodes werden am Scanner abgelehnt. Klicken zum Ausschalten.",
+      "enableHint": "Maschine in Multi-Only-Modus schalten (akzeptiert nur Multi-Order-Barcodes)"
+    },
+    "multiLabel": "Multi",
+    "singlesLabel": "Singles",
+    "orderCount_one": "{{count}} Bestellung",
+    "orderCount_other": "{{count}} Bestellungen",
+    "searchPlaceholder": "Suchen (Ref oder Barcode)",
+    "filterByCwList": "Nach CW-Liste filtern",
+    "allCwLists": "Alle CW-Listen",
+    "noCwOrders": "Noch keine CW-Aufträge",
+    "deltaRecent": "{{delta}} zuletzt",
+    "ordersHeading": "Aufträge",
+    "filtered": "gefiltert",
+    "resetFilter": "zurücksetzen",
+    "currentStation": "Aktuelle Station",
+    "tableCol": {
+      "position": "Position",
+      "refBarcode": "Ref / Barcode",
+      "since": "Seit",
+      "dimensions": "Maße (L×B×H mm)",
+      "action": "Aktion",
+      "pageInfo": "{{from}}–{{to}} von {{total}}"
+    },
+    "eject": {
+      "button": "Eject",
+      "pending": "Vorgemerkt",
+      "hint": "Nächstes Gate antworten: REJECT → Maschine wirft am nächsten Gate aus, Band läuft weiter",
+      "cancelHint": "Eject zurücknehmen (solange die Maschine noch nicht das nächste Gate erreicht hat)"
+    },
+    "empty": {
+      "noBackend": "Keine Verbindung zum Backend. Läuft uvicorn auf :8000?",
+      "noMachine": "Backend verbunden — aber noch keine Maschine. Simulator unter „Simulator“ anschließen.",
+      "waitingEnq": "Maschine verbunden — warte auf das erste ENQ."
+    },
+    "focus": {
+      "title": "Bestellung im Fokus",
+      "multiOrder": "Multiorder",
+      "singleOrder": "Singleorder",
+      "barcodeId": "Barcode / ID",
+      "dimensions": "Maße (L×B×H)",
+      "product": "PRODUKT",
+      "stateLabel": "State",
+      "since": "seit",
+      "rejected": "ABGEWIESEN",
+      "rejectedAt": "ABGEWIESEN AM {{station}}",
+      "history": "Verlauf (Messages)",
+      "markResolved": "Als gelöst markieren",
+      "retry": "Wiederholen"
+    }
   },
   "orders": {
     "title": "Pakete",
@@ -334,7 +485,75 @@
       "stations": "Aktive Stationen",
       "create": "Maschine anlegen",
       "errorRequired": "Bitte Maschine-ID und Namen angeben",
-      "errorGeneric": "Anlegen fehlgeschlagen"
+      "errorGeneric": "Anlegen fehlgeschlagen",
+      "createSubtitle": "Nur 2 Pflichtfelder — alles andere hat sinnvolle Defaults.",
+      "sectionRequired": "Verknüpfung — Pflicht",
+      "idInfo": "Die <strong>Maschinen-ID</strong> verknüpft die Verbindung mit dieser Maschine: Sie muss <strong>exakt</strong> der ID entsprechen, die die Maschine sendet (am CMC-HMI / Simulator das Feld <strong>„MachineID“</strong>, z.B. <code>0001</code>). Stimmt sie nicht überein, verbindet die Maschine zwar — wird hier aber nie angezeigt.",
+      "machineIdHintCreate": "Muss der gesendeten CIS-ID entsprechen (z.B. 0001) — und eindeutig sein: jede ID gehört genau EINER Maschine.",
+      "machineIdHintEdit": "ID kann nachträglich nicht geändert werden.",
+      "displayName": "Anzeigename",
+      "displayNameHint": "Frei wählbar — so heißt die Maschine im Dashboard.",
+      "sectionPulpo": "Pulpo (optional)",
+      "pickLocationPrefix": "Pick-Location-Präfix",
+      "pickLocationPrefixHint": "Leer = ganze Pulpo-Queue (alle Lagerplätze). „CW2“ = nur CW2*. „CW“ = CW1/CW6/CW10…, schließt SACK aus.",
+      "pickLocationPlaceholder": "leer = alle",
+      "advancedToggle": "Erweiterte Einstellungen (optional) — Modell, Netzwerk, Maße, Stationen",
+      "sectionModelRole": "Modell & Rolle",
+      "tcpRoleHint": "Standard: Maschine verbindet sich zu uns (Server).",
+      "sectionNetwork": "Netzwerk",
+      "lengthMm": "L (mm)",
+      "widthMm": "B (mm)",
+      "heightMm": "H (mm)",
+      "deleteMachine": "Maschine löschen",
+      "confirmDelete": "Maschine „{{name}}“ (ID {{id}}) wirklich löschen?\nHeartbeats und Auftrags-Historie dieser Maschine werden mit entfernt.",
+      "errorDelete": "Löschen fehlgeschlagen.",
+      "errorSave": "Speichern fehlgeschlagen.",
+      "createAndCheck": "Anlegen & Verbindung prüfen"
+    },
+    "searchPlaceholder": "Suche nach Name, Maschinen-ID, Host...",
+    "time": {
+      "secondsAgo": "vor {{count}} s",
+      "minutesAgo": "vor {{count}} min",
+      "hoursAgo": "vor {{count}} h"
+    },
+    "stats": {
+      "machines": "Maschinen",
+      "online": "Online",
+      "warnings": "Warnungen",
+      "connections": "Verbindungen",
+      "subTotal": "gesamt",
+      "subMachines": "Maschinen",
+      "subActive": "aktiv"
+    },
+    "detect": {
+      "bannerTitle": "Maschine verbunden, aber noch nicht angelegt",
+      "bannerDesc": "Es sendet bereits eine Maschine mit unbekannter ID — übernehmen, um sie anzuzeigen.",
+      "createId": "ID {{id}} anlegen",
+      "title": "Neue Maschine erkannt",
+      "subtitle": "Es verbindet sich eine Maschine, die noch nicht angelegt ist.",
+      "sendsAs": "Sendet als Maschinen-ID",
+      "nameLabel": "Anzeigename",
+      "nameHint": "So heißt die Maschine im Dashboard. Alles Weitere lässt sich später bearbeiten.",
+      "later": "Später",
+      "create": "Anlegen — Maschine läuft sofort",
+      "errorGeneric": "Anlegen fehlgeschlagen."
+    },
+    "connectionCheck": {
+      "title": "„{{name}}“ angelegt",
+      "subtitle": "Jetzt die Maschine verbinden — wir warten live.",
+      "connectedTitle": "Verbunden! Maschine ist online.",
+      "waitingTitle": "Warte auf Verbindung von ID {{id}} …",
+      "connectedDesc": "Die Maschine sendet — du findest sie jetzt im Dashboard.",
+      "waitingDesc": "Sobald die Maschine ein HBT/ENQ mit dieser ID sendet, springt der Status hier um.",
+      "step1": "An der Maschine den <strong>CIS Connection Manager</strong> öffnen (Data Origin: <strong>External / Data Server</strong>).",
+      "step2Address": "Als Data-Server-Adresse eintragen:",
+      "step2NoAddress": "Die <strong>Gateway-Adresse</strong> (IP + Port) als Data-Server eintragen. Cloud: Railway-TCP-Proxy-Adresse · Lokal: <code>&lt;Server-IP&gt;:15001</code>.",
+      "step3": "<strong>MachineID</strong> an der Maschine prüfen: muss {{id}} sein.",
+      "step4": "<strong>Reset</strong> drücken, dann <strong>„Send HeatBeat“</strong> — der Status oben springt automatisch um.",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "done": "Fertig",
+      "closeLater": "Später verbinden — schließen"
     }
   },
   "analytics": {
@@ -347,7 +566,13 @@
     "dimensions3d": "3D-Abmessungen (L x B)",
     "length": "Länge",
     "width": "Breite",
-    "carrierSpeed": "Carrier Etiketten-Geschwindigkeit"
+    "carrierSpeed": "Carrier Etiketten-Geschwindigkeit",
+    "avgScale": "Ø Waage",
+    "avgCarton": "Ø Karton",
+    "avgContent": "Ø Inhalt",
+    "minMax": "Min / Max",
+    "height": "Höhe",
+    "avgSeconds": "Ø s"
   },
   "audit": {
     "title": "Protokolle",
@@ -362,7 +587,13 @@
     "machineCol": "Maschine",
     "reference": "Referenz",
     "transition": "Übergang",
-    "detail": "Detail"
+    "detail": "Detail",
+    "categories": {
+      "machine_event": "Maschinen-Ereignis",
+      "state_transition": "Statusübergang",
+      "user_action": "Benutzeraktion",
+      "error": "Fehler"
+    }
   },
   "simulator": {
     "title": "Simulator",
@@ -451,7 +682,21 @@
       "tracking": "Tracking",
       "stage": "Stufe",
       "status": "Status",
-      "lastSeen": "Zuletzt"
+      "lastSeen": "Zuletzt",
+      "type": "Typ"
+    },
+    "totalLabel": "gesamt",
+    "machineCount_one": "{{count}} Maschine",
+    "machineCount_other": "{{count}} Maschinen",
+    "receivedTotal_one": "{{count}} Empfang gesamt",
+    "receivedTotal_other": "{{count}} Empfänge gesamt",
+    "connectedMachines": "Verbundene Maschinen",
+    "manageMachine": "Maschine verwalten",
+    "flow": {
+      "processed": "Verarbeitet",
+      "inProgress": "In Bearbeitung",
+      "errors": "Fehler",
+      "open": "Offen"
     }
   },
   "control": {
@@ -487,7 +732,10 @@
       "totalMachines": "Maschinen gesamt",
       "ordersToday": "Aufträge heute",
       "searchPlaceholder": "Maschinen suchen...",
-      "tenant": "Mandant"
+      "tenant": "Mandant",
+      "secondsAgo": "vor {{count}}s",
+      "minutesAgo": "vor {{count}} min",
+      "hoursAgo": "vor {{count}} h"
     },
     "system": {
       "title": "System",
@@ -513,7 +761,17 @@
       "systemHealth": "Systemstatus",
       "service": "Dienst",
       "latency": "Latenz",
-      "lastCheck": "Letzte Prüfung"
+      "lastCheck": "Letzte Prüfung",
+      "reachable": "Erreichbar",
+      "unknown": "Unbekannt",
+      "portDetail": "Port {{port}}",
+      "clientsCount_one": "{{count}} Client",
+      "clientsCount_other": "{{count}} Clients",
+      "serviceMachines": "CMC-Maschinen",
+      "connectedDetail": "{{connected}} / {{total}} verbunden",
+      "wsClients": "WebSocket-Clients",
+      "gatewayPort": "Gateway-Port",
+      "statusOk": "OK"
     }
   },
   "settings": {
@@ -532,7 +790,61 @@
       "subscription": "Abonnement",
       "currentPlan": "Aktueller Plan",
       "upgradePlan": "Plan upgraden",
-      "memberSince": "Mitglied seit"
+      "memberSince": "Mitglied seit",
+      "headerDesc": "Verwalte dein Firmenprofil, Abonnement und Integrationen.",
+      "companyProfile": "Firmenprofil",
+      "featureMachines": "Maschinen",
+      "featureUsers": "Benutzer",
+      "featureAiInsights": "AI Insights",
+      "featureSupport": "Support",
+      "featureSupportValue": "Premium",
+      "planFeatures": {
+        "unlimitedMachines": "Unbegrenzte Maschinen",
+        "aiInsightsApi": "AI Insights + API",
+        "unlimitedUsers": "Unbegrenzte Benutzer",
+        "dedicatedSupport": "Dedizierter Support"
+      },
+      "relTime": {
+        "seconds_one": "vor {{count}} Sekunde",
+        "seconds_other": "vor {{count}} Sekunden",
+        "minutes": "vor {{count}} Min",
+        "hours": "vor {{count}} Std"
+      },
+      "pulpo": {
+        "cardTitle": "Pulpo-Anbindung",
+        "connected": "Pulpo verbunden",
+        "notConfigured": "Pulpo nicht konfiguriert",
+        "testModeBadge": "Test-Modus aktiv",
+        "liveBadge": "Live",
+        "testModeDesc": "Im Test-Modus werden Pulpo-Daten nur gelesen und angezeigt (CW-Listen). Bestellungen lassen sich abarbeiten, aber es wird nichts in Pulpo geändert.",
+        "liveModeDesc": "Live-Modus: Schreibvorgänge (accept/box/label/finish/close) gehen an Pulpo.",
+        "lastSync": "Letzte Synchronisierung",
+        "barcodes": "Barcodes (CW-Listen)",
+        "openOrders": "Offene Bestellungen",
+        "syncing": "Synchronisiere…",
+        "syncNow": "Jetzt synchronisieren",
+        "syncFailed": "Sync fehlgeschlagen",
+        "syncFailedDesc": "die CW-Listen zeigen den letzten bekannten Stand, nicht live Pulpo.",
+        "testModeToggle": "Test-Modus",
+        "testModeToggleDesc": "Pulpo nur lesen, keine Schreibvorgänge",
+        "locations": {
+          "title": "Lagerplätze: Pulpo (live) vs. CW-Listen",
+          "mismatch": "weicht ab — Cache veraltet?",
+          "tooltip": "Pulpo live: {{live}} Aufträge · CW-Liste/Cache: {{cache}}",
+          "cacheSuffix": "/ Cache {{count}}"
+        }
+      },
+      "quickAccess": {
+        "title": "Schnellzugriff",
+        "machines": "Maschinen verwalten",
+        "machinesSub": "Alle Maschinen anzeigen",
+        "cwLists": "CW-Listen",
+        "cwListsSub": "Im Dashboard anzeigen",
+        "pulpoSettings": "Pulpo Einstellungen",
+        "pulpoSettingsSub": "Verbindung & Optionen",
+        "users": "Benutzer verwalten",
+        "usersSub": "Benutzer & Rollen"
+      }
     },
     "team": {
       "title": "Team",
@@ -583,5 +895,48 @@
       "editCompany": "Firma bearbeiten",
       "editCompanyDesc": "Firmenprofil, Abonnement"
     }
+  },
+  "protokoll": {
+    "title": "Protokoll",
+    "subtitle": "Ereignis-Log: Probleme und erfolgreiche Prozesse",
+    "pageTitle": "Protokoll",
+    "pageDesc": "Nachvollziehbare Logs — Probleme, erfolgreiche Abschlüsse und alle Maschinen-Events.",
+    "bucket": {
+      "problem": "Problem",
+      "success": "Erfolg",
+      "info": "Info"
+    },
+    "persistenceHint": "Live-Session-Log (im Speicher). Für ein <strong>dauerhaftes</strong> Protokoll: Persistenz aktivieren, sobald ihr aus dem Test-Modus geht.",
+    "searchPlaceholder": "Suchen: Typ, Ref, Maschine, Nachricht…",
+    "colType": "Typ",
+    "colMessage": "Nachricht",
+    "noEvents": "Noch keine Ereignisse",
+    "sessionFooter_one": "Zeigt das letzte Event dieser Session (HBT ausgeblendet).",
+    "sessionFooter_other": "Zeigt die letzten {{count}} Events dieser Session (HBT ausgeblendet)."
+  },
+  "liveMonitor": {
+    "title": "Live-Monitor",
+    "subtitle": "Förderband-Status in Echtzeit",
+    "noMachines": "Noch keine Maschinen konfiguriert",
+    "itemsOnBelt": "Pakete auf dem Band",
+    "enqSequence": "ENQ-Sequenz",
+    "conveyorBelt": "Förderband - {{name}}",
+    "activeItems": "Aktive Pakete auf dem Band",
+    "noItems": "Derzeit keine Pakete auf dem Band",
+    "stations": {
+      "scanner": "Scanner",
+      "induction": "Einschleusung",
+      "sensor": "3D-Sensor",
+      "wrapper": "Verpacker",
+      "labeler": "Etikettierer",
+      "exitVerifier": "Ausgangsprüfung"
+    }
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "empty": "Keine Hinweise"
+  },
+  "errors": {
+    "title": "Anwendungsfehler"
   }
 }

@@ -16,7 +16,7 @@ export default function Sidebar() {
   };
 
   const items = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/', icon: LayoutDashboard, label: t('nav.dashboard', 'Dashboard') },
     { to: '/machines', icon: Server, label: t('nav.machines', 'Maschinen') },
     { to: '/simulator', icon: Plug, label: t('nav.simulator') },
     { to: '/protokoll', icon: ScrollText, label: t('nav.protokoll', 'Protokoll') },

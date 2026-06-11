@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../services/api';
 
 interface Notice {
@@ -26,6 +27,7 @@ function colorFor(n: Notice): string {
 }
 
 export default function NotificationBell() {
+  const { t } = useTranslation();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -48,7 +50,7 @@ export default function NotificationBell() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button className="btn-icon" aria-label="Benachrichtigungen" onClick={() => setOpen((v) => !v)} style={{ position: 'relative' }}>
+      <button className="btn-icon" aria-label={t('notifications.title')} onClick={() => setOpen((v) => !v)} style={{ position: 'relative' }}>
         <Bell size={18} />
         {count > 0 && (
           <span style={{
@@ -68,11 +70,11 @@ export default function NotificationBell() {
             boxShadow: '0 14px 40px rgba(15,23,42,0.18)',
           }}>
             <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--clr-border)', fontWeight: 600, fontSize: 14 }}>
-              Benachrichtigungen
+              {t('notifications.title')}
             </div>
             {count === 0 ? (
               <div style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--clr-text-muted)', fontSize: 13 }}>
-                Keine Hinweise
+                {t('notifications.empty')}
               </div>
             ) : notices.map((n) => {
               const c = colorFor(n);

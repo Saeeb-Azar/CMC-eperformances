@@ -8,6 +8,7 @@ import {
   RefreshCw, AlertTriangle, MapPin,
 } from 'lucide-react';
 import { api, type UserRead, type TenantRead } from '../../services/api';
+import type { TFunction } from 'i18next';
 
 interface PulpoStatus {
   test_mode: boolean; configured: boolean; last_sync_at: string | null;
@@ -16,12 +17,12 @@ interface PulpoStatus {
   locations: Record<string, number>; cache_locations: Record<string, number>;
 }
 
-function relTime(iso: string | null): string {
+function relTime(iso: string | null, t: TFunction): string {
   if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 60_000) return `vor ${Math.max(1, Math.round(diff / 1000))} Sekunden`;
-  if (diff < 3_600_000) return `vor ${Math.round(diff / 60_000)} Min`;
-  return `vor ${Math.round(diff / 3_600_000)} Std`;
+  if (diff < 60_000) return t('settings.company.relTime.seconds', { count: Math.max(1, Math.round(diff / 1000)) });
+  if (diff < 3_600_000) return t('settings.company.relTime.minutes', { count: Math.round(diff / 60_000) });
+  return t('settings.company.relTime.hours', { count: Math.round(diff / 3_600_000) });
 }
 
 export default function SettingsCompanyPage() {
@@ -83,25 +84,25 @@ export default function SettingsCompanyPage() {
               <Building2 size={22} />
             </span>
             <div>
-              <h1 className="page-header__title">Firma</h1>
-              <p className="page-header__desc">Verwalte dein Firmenprofil, Abonnement und Integrationen.</p>
+              <h1 className="page-header__title">{t('settings.company.pageTitle')}</h1>
+              <p className="page-header__desc">{t('settings.company.headerDesc')}</p>
             </div>
           </div>
-          <button className="modal-btn modal-btn--primary"><Save size={15} /> Speichern</button>
+          <button className="modal-btn modal-btn--primary"><Save size={15} /> {t('common.save')}</button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20, alignItems: 'start' }}>
           {/* LEFT */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <Card icon={<Building2 size={16} />} title="Firmenprofil">
+            <Card icon={<Building2 size={16} />} title={t('settings.company.companyProfile')}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <FieldText label="Firmenname" value={tenant?.name ?? ''} />
-                <FieldText label="Slug (URL)" value={tenant?.slug ?? ''} mono copy />
+                <FieldText label={t('settings.company.companyName')} value={tenant?.name ?? ''} />
+                <FieldText label={t('settings.company.slug')} value={tenant?.slug ?? ''} mono copy />
               </div>
-              <FieldText label="E-Mail" value={me?.email ?? ''} readOnly />
+              <FieldText label={t('settings.company.email')} value={me?.email ?? ''} readOnly />
             </Card>
 
-            <Card icon={<Boxes size={16} />} title="Pulpo-Anbindung">
+            <Card icon={<Boxes size={16} />} title={t('settings.company.pulpo.cardTitle')}>
               <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16 }}>
                 <div style={{
                   padding: 16, borderRadius: 12,
@@ -111,27 +112,27 @@ export default function SettingsCompanyPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                     <ShieldCheck size={20} className={testMode ? 'text-emerald-600' : 'text-orange-500'} />
                     <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                      {status?.configured ? 'Pulpo verbunden' : 'Pulpo nicht konfiguriert'}
+                      {status?.configured ? t('settings.company.pulpo.connected') : t('settings.company.pulpo.notConfigured')}
                     </span>
                     <span style={{
                       fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
                       background: testMode ? '#d1fae5' : '#ffedd5', color: testMode ? '#047857' : '#c2410c',
-                    }}>{testMode ? 'Test-Modus aktiv' : 'Live'}</span>
+                    }}>{testMode ? t('settings.company.pulpo.testModeBadge') : t('settings.company.pulpo.liveBadge')}</span>
                   </div>
                   <p style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
                     {testMode
-                      ? 'Im Test-Modus werden Pulpo-Daten nur gelesen und angezeigt (CW-Listen). Bestellungen lassen sich abarbeiten, aber es wird nichts in Pulpo geändert.'
-                      : 'Live-Modus: Schreibvorgänge (accept/box/label/finish/close) gehen an Pulpo.'}
+                      ? t('settings.company.pulpo.testModeDesc')
+                      : t('settings.company.pulpo.liveModeDesc')}
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14, justifyContent: 'center' }}>
-                  <Stat icon={<Clock size={15} />} label="Letzte Synchronisierung" value={relTime(status?.last_sync_at ?? null)} />
-                  <Stat icon={<ListChecks size={15} />} label="Barcodes (CW-Listen)" value={String(status?.barcodes ?? 0)} />
-                  <Stat icon={<ShoppingCart size={15} />} label="Offene Bestellungen" value={String(status?.open_orders ?? 0)} />
+                  <Stat icon={<Clock size={15} />} label={t('settings.company.pulpo.lastSync')} value={relTime(status?.last_sync_at ?? null, t)} />
+                  <Stat icon={<ListChecks size={15} />} label={t('settings.company.pulpo.barcodes')} value={String(status?.barcodes ?? 0)} />
+                  <Stat icon={<ShoppingCart size={15} />} label={t('settings.company.pulpo.openOrders')} value={String(status?.open_orders ?? 0)} />
                   <button type="button" className="modal-btn modal-btn--ghost" onClick={syncNow} disabled={syncing}
                     style={{ justifyContent: 'center', gap: 6 }}>
                     <RefreshCw size={14} className={syncing ? 'animate-spin' : undefined} />
-                    {syncing ? 'Synchronisiere…' : 'Jetzt synchronisieren'}
+                    {syncing ? t('settings.company.pulpo.syncing') : t('settings.company.pulpo.syncNow')}
                   </button>
                 </div>
               </div>
@@ -142,7 +143,7 @@ export default function SettingsCompanyPage() {
                 }}>
                   <AlertTriangle size={16} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
                   <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>
-                    <strong>Sync fehlgeschlagen</strong> ({relTime(status.last_sync_error_at)}) — die CW-Listen zeigen den letzten bekannten Stand, nicht live Pulpo.
+                    <strong>{t('settings.company.pulpo.syncFailed')}</strong> ({relTime(status.last_sync_error_at, t)}) — {t('settings.company.pulpo.syncFailedDesc')}
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, marginTop: 4, wordBreak: 'break-all' }}>{status.last_sync_error}</div>
                   </div>
                 </div>
@@ -155,7 +156,7 @@ export default function SettingsCompanyPage() {
                 padding: '10px 14px', borderRadius: 10, border: '1px solid var(--clr-border)', cursor: 'pointer',
               }}>
                 <span style={{ fontSize: 13, color: '#334155' }}>
-                  <strong>Test-Modus</strong> — Pulpo nur lesen, keine Schreibvorgänge
+                  <strong>{t('settings.company.pulpo.testModeToggle')}</strong> — {t('settings.company.pulpo.testModeToggleDesc')}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {saving && <Loader2 size={14} className="animate-spin text-gray-400" />}
@@ -165,48 +166,53 @@ export default function SettingsCompanyPage() {
               </label>
             </Card>
 
-            <Card icon={<Zap size={16} />} title="Schnellzugriff">
+            <Card icon={<Zap size={16} />} title={t('settings.company.quickAccess.title')}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <QuickLink icon={<Server size={16} />} title="Maschinen verwalten" sub="Alle Maschinen anzeigen" onClick={() => navigate('/machines')} />
-                <QuickLink icon={<ListChecks size={16} />} title="CW-Listen" sub="Im Dashboard anzeigen" onClick={() => navigate('/')} />
-                <QuickLink icon={<ShoppingCart size={16} />} title="Pulpo Einstellungen" sub="Verbindung & Optionen" onClick={() => navigate('/simulator')} />
-                <QuickLink icon={<Users size={16} />} title="Benutzer verwalten" sub="Benutzer & Rollen" onClick={() => navigate('/control/users')} />
+                <QuickLink icon={<Server size={16} />} title={t('settings.company.quickAccess.machines')} sub={t('settings.company.quickAccess.machinesSub')} onClick={() => navigate('/machines')} />
+                <QuickLink icon={<ListChecks size={16} />} title={t('settings.company.quickAccess.cwLists')} sub={t('settings.company.quickAccess.cwListsSub')} onClick={() => navigate('/')} />
+                <QuickLink icon={<ShoppingCart size={16} />} title={t('settings.company.quickAccess.pulpoSettings')} sub={t('settings.company.quickAccess.pulpoSettingsSub')} onClick={() => navigate('/simulator')} />
+                <QuickLink icon={<Users size={16} />} title={t('settings.company.quickAccess.users')} sub={t('settings.company.quickAccess.usersSub')} onClick={() => navigate('/control/users')} />
               </div>
             </Card>
           </div>
 
           {/* RIGHT */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <Card icon={<CreditCard size={16} />} title="Abonnement">
+            <Card icon={<CreditCard size={16} />} title={t('settings.company.subscription')}>
               <div style={{
                 borderRadius: 14, padding: 20, textAlign: 'center',
                 background: 'linear-gradient(180deg,#eff6ff,#eef2ff)', border: '1px solid #dbeafe',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#1d4ed8' }}>AKTUELLER PLAN</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#1d4ed8' }}>{t('settings.company.currentPlan').toUpperCase()}</span>
                   <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: '#d1fae5', color: '#047857', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <Check size={11} /> Aktiv
+                    <Check size={11} /> {t('common.active')}
                   </span>
                 </div>
-                <div style={{ fontSize: 30, fontWeight: 800, color: '#1d4ed8', textTransform: 'capitalize', marginTop: 4 }}>{plan}</div>
+                <div style={{ fontSize: 30, fontWeight: 800, color: '#1d4ed8', textTransform: 'capitalize', marginTop: 4 }}>{t(`plans.${plan}`, { defaultValue: plan })}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginTop: 16 }}>
-                  <Feature icon={<Server size={16} />} label="Maschinen" value={<InfinityIcon size={16} />} />
-                  <Feature icon={<Users size={16} />} label="Benutzer" value={<InfinityIcon size={16} />} />
-                  <Feature icon={<Zap size={16} />} label="AI Insights" value="Aktiv" />
-                  <Feature icon={<ShieldCheck size={16} />} label="Support" value="Premium" />
+                  <Feature icon={<Server size={16} />} label={t('settings.company.featureMachines')} value={<InfinityIcon size={16} />} />
+                  <Feature icon={<Users size={16} />} label={t('settings.company.featureUsers')} value={<InfinityIcon size={16} />} />
+                  <Feature icon={<Zap size={16} />} label={t('settings.company.featureAiInsights')} value={t('common.active')} />
+                  <Feature icon={<ShieldCheck size={16} />} label={t('settings.company.featureSupport')} value={t('settings.company.featureSupportValue')} />
                 </div>
               </div>
               <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                {['Unlimited Machines', 'AI Insights + API', 'Unlimited Users', 'Dedicated Support'].map((f) => (
+                {[
+                  t('settings.company.planFeatures.unlimitedMachines'),
+                  t('settings.company.planFeatures.aiInsightsApi'),
+                  t('settings.company.planFeatures.unlimitedUsers'),
+                  t('settings.company.planFeatures.dedicatedSupport'),
+                ].map((f) => (
                   <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569' }}>
                     <Check size={15} className="text-emerald-500" /> {f}
                   </li>
                 ))}
               </ul>
-              <button className="modal-btn modal-btn--ghost" style={{ width: '100%', justifyContent: 'center' }}>Plan upgraden</button>
+              <button className="modal-btn modal-btn--ghost" style={{ width: '100%', justifyContent: 'center' }}>{t('settings.company.upgradePlan')}</button>
             </Card>
 
-            <Card icon={<Clock size={16} />} title="Mitglied seit">
+            <Card icon={<Clock size={16} />} title={t('settings.company.memberSince')}>
               <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>{createdAt}</div>
             </Card>
           </div>
@@ -257,16 +263,17 @@ function FieldText({ label, value, mono, copy, readOnly }: { label: string; valu
  *  Weichen die beiden ab, ist der Cache veraltet — genau das macht „Geister-
  *  Listen" wie CW3/CW7 sichtbar, die in Pulpo längst nicht mehr existieren. */
 function LocationCompare({ live, cache }: { live: Record<string, number>; cache: Record<string, number> }) {
+  const { t } = useTranslation();
   const keys = Array.from(new Set([...Object.keys(live), ...Object.keys(cache)])).sort();
   const mismatch = keys.some((k) => (live[k] ?? 0) !== (cache[k] ?? 0));
   return (
     <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid var(--clr-border)', background: '#f8fafc' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <MapPin size={14} style={{ color: '#64748b' }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Lagerplätze: Pulpo (live) vs. CW-Listen</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{t('settings.company.pulpo.locations.title')}</span>
         {mismatch && (
           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e' }}>
-            weicht ab — Cache veraltet?
+            {t('settings.company.pulpo.locations.mismatch')}
           </span>
         )}
       </div>
@@ -276,14 +283,14 @@ function LocationCompare({ live, cache }: { live: Record<string, number>; cache:
           const c = cache[k] ?? 0;
           const stale = l !== c;
           return (
-            <span key={k} title={`Pulpo live: ${l} Aufträge · CW-Liste/Cache: ${c}`}
+            <span key={k} title={t('settings.company.pulpo.locations.tooltip', { live: l, cache: c })}
               style={{
                 fontSize: 11, fontFamily: 'var(--font-mono)', padding: '3px 8px', borderRadius: 8,
                 background: stale ? '#fff7ed' : '#ecfdf5',
                 border: `1px solid ${stale ? '#fed7aa' : '#a7f3d0'}`,
                 color: stale ? '#9a3412' : '#065f46',
               }}>
-              {k}: {l}{stale ? ` / Cache ${c}` : ''}
+              {k}: {l}{stale ? ` ${t('settings.company.pulpo.locations.cacheSuffix', { count: c })}` : ''}
             </span>
           );
         })}

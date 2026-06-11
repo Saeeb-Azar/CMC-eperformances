@@ -56,7 +56,7 @@ export default function LiveEventFeed({ events, maxVisible = 14 }: LiveEventFeed
           <thead>
             <tr>
               <th style={{ width: 52 }}></th>
-              <th>{t('liveFlow.event')}</th>
+              <th>{t('liveFlow.eventCol')}</th>
               <th style={{ width: 70 }}>{t('liveFlow.code')}</th>
               <th style={{ width: 100 }}>{t('liveFlow.reference')}</th>
               <th style={{ width: 80 }} className="!text-right">{t('liveFlow.time')}</th>

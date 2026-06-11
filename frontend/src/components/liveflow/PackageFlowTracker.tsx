@@ -1,5 +1,6 @@
 import { ScanBarcode, LogIn, Ruler, Box, Tag, CheckCircle, XCircle, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 export interface FlowStep {
   id: string;
@@ -11,13 +12,14 @@ export interface FlowStep {
   detail?: string;
 }
 
-const defaultSteps: FlowStep[] = [
-  { id: 'scan', label: 'Scanned', technicalCode: 'ENQ', icon: <ScanBarcode size={15} />, status: 'pending' },
-  { id: 'enter', label: 'Entered', technicalCode: 'IND', icon: <LogIn size={15} />, status: 'pending' },
-  { id: 'measure', label: 'Measured', technicalCode: 'ACK', icon: <Ruler size={15} />, status: 'pending' },
-  { id: 'wrap', label: 'Wrapped', technicalCode: '', icon: <Box size={15} />, status: 'pending' },
-  { id: 'label', label: 'Labeled', technicalCode: 'LAB', icon: <Tag size={15} />, status: 'pending' },
-  { id: 'complete', label: 'Completed', technicalCode: 'END', icon: <CheckCircle size={15} />, status: 'pending' },
+// Resolved at render time via t() so the labels react to language switches.
+const defaultSteps = (t: TFunction): FlowStep[] => [
+  { id: 'scan', label: t('liveFlow.scanned'), technicalCode: 'ENQ', icon: <ScanBarcode size={15} />, status: 'pending' },
+  { id: 'enter', label: t('liveFlow.entered'), technicalCode: 'IND', icon: <LogIn size={15} />, status: 'pending' },
+  { id: 'measure', label: t('liveFlow.measured'), technicalCode: 'ACK', icon: <Ruler size={15} />, status: 'pending' },
+  { id: 'wrap', label: t('liveFlow.wrapped'), technicalCode: '', icon: <Box size={15} />, status: 'pending' },
+  { id: 'label', label: t('liveFlow.labeled'), technicalCode: 'LAB', icon: <Tag size={15} />, status: 'pending' },
+  { id: 'complete', label: t('liveFlow.completedStation'), technicalCode: 'END', icon: <CheckCircle size={15} />, status: 'pending' },
 ];
 
 interface PackageFlowTrackerProps {
@@ -34,8 +36,9 @@ const styles = {
   skipped:   { dot: 'border-gray-200 bg-gray-50 text-gray-300', line: 'bg-gray-200', text: 'text-gray-400 line-through' },
 };
 
-export default function PackageFlowTracker({ steps = defaultSteps, showTechnical = false, onStepClick }: PackageFlowTrackerProps) {
+export default function PackageFlowTracker({ steps, showTechnical = false, onStepClick }: PackageFlowTrackerProps) {
   const { t } = useTranslation();
+  const effectiveSteps = steps ?? defaultSteps(t);
   return (
     <div className="panel">
       <div className="panel__header">
@@ -43,9 +46,9 @@ export default function PackageFlowTracker({ steps = defaultSteps, showTechnical
       </div>
       <div className="px-6 py-6">
         <div className="flex items-start">
-          {steps.map((step, idx) => {
+          {effectiveSteps.map((step, idx) => {
             const s = styles[step.status];
-            const isLast = idx === steps.length - 1;
+            const isLast = idx === effectiveSteps.length - 1;
 
             return (
               <div key={step.id} className="flex items-start flex-1 min-w-0">

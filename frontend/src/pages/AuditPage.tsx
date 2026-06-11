@@ -61,7 +61,7 @@ export default function AuditPage() {
       width: 150,
       render: (log) => (
         <span className={categoryBadge[log.category] || 'badge badge--neutral'}>
-          {log.category.replace(/_/g, ' ')}
+          {t(`audit.categories.${log.category}`, log.category.replace(/_/g, ' '))}
         </span>
       ),
     },
@@ -126,7 +126,7 @@ export default function AuditPage() {
             {
               key: 'category',
               label: t('audit.category'),
-              options: CATEGORIES.map((c) => ({ value: c, label: c.replace(/_/g, ' ') })),
+              options: CATEGORIES.map((c) => ({ value: c, label: t(`audit.categories.${c}`, c.replace(/_/g, ' ')) })),
             },
           ]}
           filterState={filterState}

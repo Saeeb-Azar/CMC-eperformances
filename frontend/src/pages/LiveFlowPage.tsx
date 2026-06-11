@@ -2,6 +2,7 @@ import { ChevronRight, ChevronLeft, ChevronDown, Inbox, CheckCircle2, RefreshCw,
 import NotificationBell from '../components/layout/NotificationBell';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
 import {
   type PackageState,
@@ -105,23 +106,13 @@ const BUCKET_OF: Record<PackageState, Bucket> = {
 // Per cmc-process-doc Section 4 — the 8 lifecycle states each get their
 // own label and color in the table, so the operator sees exactly *which*
 // state the package is in, not just the broad bucket.
-const STATE_LABEL: Record<PackageState, string> = {
-  ASSIGNED:  'Zugewiesen',
-  INDUCTED:  'Eingeschleust',
-  SCANNED:   'Vermessen',
-  LABELED:   'Etikettiert',
-  COMPLETED: 'Abgeschlossen',
-  FAILED:    'Fehlgeschlagen',
-  EJECTED:   'Ausgeworfen',
-  DELETED:   'Gelöscht',
-};
+// Labels are resolved at render time via t() so they react to language
+// switches (no module-load-time freezing).
+const stateLabel = (t: TFunction, state: PackageState): string =>
+  t(`liveFlow.state.${state}`);
 
-const BUCKET_LABEL: Record<Bucket, string> = {
-  IN_PROGRESS: 'In Bearbeitung',
-  WAITING:     'Wartend',
-  PROBLEM:     'Problem',
-  DONE:        'Fertig',
-};
+const bucketLabel = (t: TFunction, bucket: Bucket): string =>
+  t(`liveFlow.bucket.${bucket}`);
 const BUCKET_COLORS: Record<Bucket, { bg: string; fg: string; border: string; dot: string }> = {
   IN_PROGRESS: { bg: '#ecfdf5', fg: '#047857', border: '#a7f3d0', dot: '#10b981' },
   WAITING:     { bg: '#fffbeb', fg: '#92400e', border: '#fde68a', dot: '#f59e0b' },
@@ -163,14 +154,8 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 // ────────────────────────────────────────────────────────────────────────
 
 type StationKey = 'scanner' | 'enq' | 'sensor' | 'wrapper' | 'labeler' | 'exit';
-const STATION_LABELS: Record<StationKey, string> = {
-  scanner:  'Scanner',
-  enq:      'ENQ Check',
-  sensor:   '3D Messung',
-  wrapper:  'Verpacker',
-  labeler:  'Etikettierer',
-  exit:     'Ausgang',
-};
+const stationLabel = (t: TFunction, station: StationKey): string =>
+  t(`liveFlow.station.${station}`);
 const STATION_ICONS: Record<StationKey, React.ComponentType<{ size?: number }>> = {
   scanner: Scan,
   enq: CheckCircle2,
@@ -251,18 +236,21 @@ interface CWList {
   remaining: number;
 }
 
-const REJECTION_LABEL: Record<string, string> = {
-  no_read:         'Barcode nicht lesbar',
-  already_active:  'Doppel-Scan',
-  unknown_barcode: 'Nicht in CW-Liste',
-  multi_only_mode: 'Multi-Modus: Single abgewiesen',
-  skipped_by_subsequent_end: 'Übersprungen (späteres END)',
-  dimensions_rejected: '3D-Maße abgewiesen',
-  label_verification_failed: 'Etikett-Verifikation fehlgeschlagen',
-  manual_eject:    'Manuell ausgeworfen',
-  weight_deviation: 'Gewicht außerhalb Toleranz',
-  size_deviation:  'Maße außerhalb Toleranz',
-};
+const KNOWN_REJECTIONS = new Set([
+  'no_read',
+  'already_active',
+  'unknown_barcode',
+  'multi_only_mode',
+  'skipped_by_subsequent_end',
+  'dimensions_rejected',
+  'label_verification_failed',
+  'manual_eject',
+  'weight_deviation',
+  'size_deviation',
+]);
+
+const rejectionLabel = (t: TFunction, reason: string): string =>
+  KNOWN_REJECTIONS.has(reason) ? t(`liveFlow.rejection.${reason}`) : reason;
 
 function aggregatePackages(events: RawEvent[]): PackageRow[] {
   const map = new Map<string, PackageRow>();
@@ -403,27 +391,27 @@ function dbRowToPackage(r: DbOrderRow): PackageRow {
 }
 
 // Translate ENQ/IND/... to operator-readable verbs for the Verlauf timeline.
-function eventLabel(ev: RawEvent): string {
+function eventLabel(ev: RawEvent, t: TFunction): string {
   const d = ev.data ?? {};
   switch (ev.type) {
     case 'ENQ':
-      if (d.rejection_reason === 'no_read')         return 'NOREAD — Barcode nicht lesbar';
-      if (d.rejection_reason === 'already_active')  return 'Doppel-Scan abgewiesen';
-      if (d.rejection_reason === 'unknown_barcode') return 'Abgewiesen — nicht in CW-Liste';
-      if (d.rejection_reason === 'multi_only_mode') return 'Abgewiesen — Multi-Modus, Single-Barcode';
-      return 'Barcode gelesen';
-    case 'IND':  return 'Eingeschleust';
-    case 'ACK':  return isBad(d.good) ? 'Vermessung abgewiesen' : '3D Vermessung OK';
-    case 'INV':  return 'Rechnung gedruckt';
-    case 'LAB1': return isBad(d.good) ? 'Etikettendruck fehlgeschlagen' : 'Label angefordert';
-    case 'LAB2': return 'Zweites Label angefordert';
-    case 'END':  return (d.status === 1 || d.status === '1') ? 'Erfolgreich ausgegeben' : 'Ausgangs-Verifikation fehlgeschlagen';
-    case 'REM':  return 'Manuell entfernt';
-    case 'EJECT': return `Auto-Auswurf (übersprungen durch END ${getNum(ev, 'trigger_sequence') ?? '?'})`;
-    case 'HBT':  return 'Heartbeat';
-    case 'RESOLVE': return `Manuell gelöst (${getStr(ev, 'resolved_by') ?? 'admin'})`;
-    case 'DELETE':  return `Gelöscht (${getStr(ev, 'resolved_by') ?? 'admin'})`;
-    case 'RETRY':   return `Wiederholung gestartet (${getStr(ev, 'resolved_by') ?? 'admin'})`;
+      if (d.rejection_reason === 'no_read')         return t('liveFlow.event.noRead');
+      if (d.rejection_reason === 'already_active')  return t('liveFlow.event.duplicateScan');
+      if (d.rejection_reason === 'unknown_barcode') return t('liveFlow.event.unknownBarcode');
+      if (d.rejection_reason === 'multi_only_mode') return t('liveFlow.event.multiOnlyMode');
+      return t('liveFlow.event.barcodeRead');
+    case 'IND':  return t('liveFlow.event.inducted');
+    case 'ACK':  return isBad(d.good) ? t('liveFlow.event.measureRejected') : t('liveFlow.event.measureOk');
+    case 'INV':  return t('liveFlow.event.invoicePrinted');
+    case 'LAB1': return isBad(d.good) ? t('liveFlow.event.labelFailed') : t('liveFlow.event.labelRequested');
+    case 'LAB2': return t('liveFlow.event.label2Requested');
+    case 'END':  return (d.status === 1 || d.status === '1') ? t('liveFlow.event.exitOk') : t('liveFlow.event.exitFailed');
+    case 'REM':  return t('liveFlow.event.removed');
+    case 'EJECT': return t('liveFlow.event.autoEject', { seq: getNum(ev, 'trigger_sequence') ?? '?' });
+    case 'HBT':  return t('common.heartbeat');
+    case 'RESOLVE': return t('liveFlow.event.resolved', { by: getStr(ev, 'resolved_by') ?? 'admin' });
+    case 'DELETE':  return t('liveFlow.event.deleted', { by: getStr(ev, 'resolved_by') ?? 'admin' });
+    case 'RETRY':   return t('liveFlow.event.retryStarted', { by: getStr(ev, 'resolved_by') ?? 'admin' });
     case 'SYSTEM':  return ev.message;
     default: return ev.type;
   }
@@ -718,9 +706,7 @@ export default function LiveFlowPage() {
   const handleClearTable = () => {
     const count = allPackages.length;
     if (count === 0) return;
-    const ok = window.confirm(
-      `Tabelle wirklich leeren?\n\n${count} ${count === 1 ? 'Bestellung wird' : 'Bestellungen werden'} aus der Live-Ansicht entfernt. Die Backend-Historie bleibt erhalten — neue Events erscheinen normal.`,
-    );
+    const ok = window.confirm(t('liveFlow.clearTableConfirm', { count }));
     if (!ok) return;
     setEvents([]);
     setSelectedRef(null);
@@ -790,12 +776,7 @@ export default function LiveFlowPage() {
   };
 
   const runAction = async (action: 'resolve' | 'retry' | 'delete', pkg: PackageRow) => {
-    const prompts = {
-      resolve: 'Auflösungs-Grund:',
-      retry:   'Grund für Wiederholung:',
-      delete:  'Lösch-Grund:',
-    };
-    const reason = window.prompt(prompts[action]);
+    const reason = window.prompt(t(`liveFlow.actionPrompt.${action}`));
     if (!reason || !reason.trim()) return;
     try {
       const token = localStorage.getItem('access_token');
@@ -807,9 +788,9 @@ export default function LiveFlowPage() {
         },
         body: JSON.stringify({ machine_id: pkg.machine_id ?? '', reason: reason.trim() }),
       });
-      if (!res.ok) window.alert(`Aktion fehlgeschlagen: ${res.status} ${await res.text()}`);
+      if (!res.ok) window.alert(t('liveFlow.actionFailed', { error: `${res.status} ${await res.text()}` }));
     } catch (e) {
-      window.alert(`Aktion fehlgeschlagen: ${String(e)}`);
+      window.alert(t('liveFlow.actionFailed', { error: String(e) }));
     }
   };
 
@@ -838,8 +819,8 @@ export default function LiveFlowPage() {
           borderBottom: '1px solid var(--clr-border)',
         }}>
           {pulpoTestMode
-            ? 'TEST-MODUS — Pulpo wird nur gelesen, keine Schreibvorgänge'
-            : '● LIVE — Schreibvorgänge an Pulpo sind aktiv'}
+            ? t('liveFlow.testModeBanner')
+            : t('liveFlow.liveModeBanner')}
         </div>
       )}
       <div style={{
@@ -927,6 +908,7 @@ function MachineSidebar({
   machines, stats, selected, onSelect, connectedIds, open, onToggle,
   cwLists, onUpsertCwList, onDeleteCwList,
 }: MachineSidebarProps) {
+  const { t } = useTranslation();
   // CW-Listen come exclusively from Pulpo now — no manual creation/editing.
   const [editingList, setEditingList] = useState<string | null>(null);
   return (
@@ -939,7 +921,7 @@ function MachineSidebar({
     }}>
       <button
         onClick={onToggle}
-        title={open ? 'Sidebar einklappen' : 'Sidebar ausklappen'}
+        title={open ? t('liveFlow.sidebar.collapse') : t('liveFlow.sidebar.expand')}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: open ? 'space-between' : 'center',
           padding: '6px 8px', marginBottom: 4,
@@ -947,14 +929,14 @@ function MachineSidebar({
           color: 'var(--clr-text)',
         }}
       >
-        {open && <strong style={{ fontSize: 13 }}>Maschinen</strong>}
+        {open && <strong style={{ fontSize: 13 }}>{t('nav.machines')}</strong>}
         {open ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
       </button>
 
       {machines.length === 0 ? (
         open ? (
           <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', padding: '12px 8px', textAlign: 'center' }}>
-            Noch keine Maschine
+            {t('liveFlow.sidebar.noMachines')}
           </div>
         ) : null
       ) : (
@@ -969,7 +951,7 @@ function MachineSidebar({
               <button
                 key={m}
                 onClick={() => onSelect(m)}
-                title={`${displayMachineId(m)} · ${s.total} Pakete`}
+                title={`${displayMachineId(m)} · ${t('liveFlow.sidebar.packagesCount', { count: s.total })}`}
                 style={{
                   position: 'relative',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1028,7 +1010,7 @@ function MachineSidebar({
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Box size={12} />
               <strong style={{ fontSize: 11, letterSpacing: 0.3, textTransform: 'uppercase' }}>
-                CW-Listen
+                {t('liveFlow.cwLists.title')}
               </strong>
             </span>
             <span style={{ fontSize: 10 }}>{cwLists.length}</span>
@@ -1041,7 +1023,7 @@ function MachineSidebar({
               border: '1px dashed var(--clr-border)', borderRadius: 6,
               background: 'var(--clr-bg-subtle, #f8fafc)',
             }}>
-              Maschine wählen
+              {t('liveFlow.sidebar.selectMachine')}
             </div>
           ) : (
             <>
@@ -1051,7 +1033,7 @@ function MachineSidebar({
                   padding: '8px', textAlign: 'center',
                   border: '1px dashed var(--clr-border)', borderRadius: 4,
                 }}>
-                  Keine Pulpo-Queue — Pick-Location der Maschine in den Einstellungen setzen
+                  {t('liveFlow.cwLists.noPulpoQueue')}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1071,7 +1053,7 @@ function MachineSidebar({
                           type="checkbox"
                           checked={lst.active}
                           onChange={(e) => onUpsertCwList(lst.name, { active: e.target.checked })}
-                          title={lst.active ? 'Liste aktiv — wird bei ENQ geprüft' : 'Inaktiv — wird nicht geprüft'}
+                          title={lst.active ? t('liveFlow.cwLists.activeHint') : t('liveFlow.cwLists.inactiveHint')}
                           style={{ cursor: 'pointer' }}
                         />
                         <button
@@ -1093,9 +1075,9 @@ function MachineSidebar({
                             )}
                           </div>
                           <div style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>
-                            {lst.total_consumed} / {lst.total_expected} verbraucht
+                            {t('liveFlow.cwLists.consumed', { consumed: lst.total_consumed, expected: lst.total_expected })}
                             {lst.items.length > 0 && lst.items.length !== lst.total_expected
-                              ? ` · ${lst.items.length} ${lst.items.length === 1 ? 'Artikel' : 'Artikel'}`
+                              ? ` · ${t('liveFlow.cwLists.items', { count: lst.items.length })}`
                               : ''}
                           </div>
                         </button>
@@ -1198,6 +1180,7 @@ function useProduct(ean: string | null | undefined): ProductCard | null {
 }
 
 function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState('');
   const [items, setItems] = useState<CWListItem[]>(list.items);
   // Live-Updates aus dem Polling-Stream übernehmen — vor allem damit
@@ -1303,11 +1286,11 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           <div>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{list.name}</div>
             <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-              {totalConsumed} / {totalExpected} verbraucht
+              {t('liveFlow.cwLists.consumed', { consumed: totalConsumed, expected: totalExpected })}
               {items.length > 0 && (
-                <span> · {items.length} {items.length === 1 ? 'Artikel' : 'Artikel'}</span>
+                <span> · {t('liveFlow.cwLists.items', { count: items.length })}</span>
               )}
-              {list.active && <span style={{ marginLeft: 8, color: '#1d4ed8', fontWeight: 600 }}>· AKTIV</span>}
+              {list.active && <span style={{ marginLeft: 8, color: '#1d4ed8', fontWeight: 600 }}>· {t('liveFlow.activeBadge')}</span>}
             </div>
           </div>
           <button
@@ -1325,7 +1308,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <Box size={13} />
-            Automatisch aus der Pulpo-Queue synchronisiert — read-only.
+            {t('liveFlow.cwModal.readOnlyNotice')}
           </div>
         ) : (
           <div style={{ padding: '14px 18px', display: 'flex', gap: 6 }}>
@@ -1334,7 +1317,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-              placeholder="Barcode + Enter"
+              placeholder={t('liveFlow.cwModal.barcodePlaceholder')}
               autoFocus
               style={{
                 flex: 1, padding: '6px 10px', fontSize: 13,
@@ -1352,7 +1335,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                 cursor: draft.trim() ? 'pointer' : 'not-allowed',
                 opacity: draft.trim() ? 1 : 0.5,
               }}
-            >Hinzufügen</button>
+            >{t('common.add')}</button>
           </div>
         )}
 
@@ -1366,7 +1349,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
               padding: '20px', textAlign: 'center',
               border: '1px dashed var(--clr-border)', borderRadius: 6,
             }}>
-              Noch keine Artikel
+              {t('liveFlow.cwModal.noItems')}
             </div>
           ) : (
             items.map((it) => {
@@ -1421,7 +1404,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                       <div style={{ display: 'flex', gap: 2 }}>
                         <button
                           onClick={() => dec(it.barcode)}
-                          title="Menge -1"
+                          title={t('liveFlow.cwModal.qtyMinus')}
                           style={{
                             width: 22, height: 22, padding: 0,
                             border: '1px solid var(--clr-border)',
@@ -1432,7 +1415,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                         >−</button>
                         <button
                           onClick={() => inc(it.barcode)}
-                          title="Menge +1"
+                          title={t('liveFlow.cwModal.qtyPlus')}
                           style={{
                             width: 22, height: 22, padding: 0,
                             border: '1px solid var(--clr-border)',
@@ -1444,7 +1427,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                       </div>
                       <button
                         onClick={() => remove(it.barcode)}
-                        title="Eintrag ganz entfernen"
+                        title={t('liveFlow.cwModal.removeEntry')}
                         style={{
                           padding: 2, border: 'none', background: 'transparent',
                           color: 'var(--clr-text-muted)', cursor: 'pointer',
@@ -1468,7 +1451,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           ) : (
             <button
               onClick={() => {
-                if (window.confirm(`Liste „${list.name}" wirklich löschen?`)) onDelete();
+                if (window.confirm(t('liveFlow.cwModal.deleteConfirm', { name: list.name }))) onDelete();
               }}
               style={{
                 padding: '6px 12px', fontSize: 12, fontWeight: 600,
@@ -1477,7 +1460,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
               }}
             >
               <Trash2 size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />
-              Löschen
+              {t('common.delete')}
             </button>
           )}
           <button
@@ -1488,7 +1471,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
               background: 'var(--clr-bg-elevated, #fff)',
               borderRadius: 6, cursor: 'pointer',
             }}
-          >Schließen</button>
+          >{t('liveFlow.cwModal.close')}</button>
         </div>
       </div>
     </div>
@@ -1552,6 +1535,7 @@ interface MainPaneProps {
 const PAGE_SIZE = 25;
 
 function MainPane(p: MainPaneProps) {
+  const { t } = useTranslation();
   const totalSingles = p.packages.filter((x) => detectType(x.barcode) === 'S').length;
   const totalMulti   = p.packages.filter((x) => detectType(x.barcode) === 'M').length;
   const [page, setPage] = useState(0);
@@ -1570,11 +1554,11 @@ function MainPane(p: MainPaneProps) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h1 style={{ fontSize: 22, fontWeight: 700 }}>
-              {p.machine ? displayMachineId(p.machine) : 'Keine Maschine ausgewählt'}
+              {p.machine ? displayMachineId(p.machine) : t('liveFlow.noMachineSelected')}
             </h1>
             {p.machine && (
               <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#ecfdf5', color: '#047857', fontWeight: 600, letterSpacing: 0.3 }}>
-                AKTIV
+                {t('liveFlow.activeBadge')}
               </span>
             )}
             <button
@@ -1582,9 +1566,9 @@ function MainPane(p: MainPaneProps) {
               aria-pressed={p.multiOnly}
               disabled={!p.machine}
               title={
-                !p.machine ? 'Maschine wählen, um den Modus zu setzen'
-                : p.multiOnly ? 'Multi-Only Modus aktiv — numerische Barcodes werden am Scanner abgelehnt. Klicken zum Ausschalten.'
-                : 'Maschine in Multi-Only-Modus schalten (akzeptiert nur Multi-Order-Barcodes)'
+                !p.machine ? t('liveFlow.multiToggle.selectMachine')
+                : p.multiOnly ? t('liveFlow.multiToggle.disableHint')
+                : t('liveFlow.multiToggle.enableHint')
               }
               style={{
                 padding: '2px 10px', fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
@@ -1596,12 +1580,12 @@ function MainPane(p: MainPaneProps) {
                 opacity: p.machine ? 1 : 0.5,
               }}
             >
-              Multi
+              {t('liveFlow.multiLabel')}
             </button>
           </div>
           <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', marginTop: 4 }}>
-            {p.packages.length} {p.packages.length === 1 ? 'Bestellung' : 'Bestellungen'}
-            {' · '}Singles: {totalSingles}{' · '}Multi: {totalMulti}
+            {t('liveFlow.orderCount', { count: p.packages.length })}
+            {' · '}{t('liveFlow.singlesLabel')}: {totalSingles}{' · '}{t('liveFlow.multiLabel')}: {totalMulti}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1612,7 +1596,7 @@ function MainPane(p: MainPaneProps) {
             <Search size={13} style={{ position: 'absolute', left: 8, color: 'var(--clr-text-muted)' }} />
             <input
               type="text"
-              placeholder="Suchen (Ref oder Barcode)"
+              placeholder={t('liveFlow.searchPlaceholder')}
               value={p.search}
               onChange={(e) => p.onSearch(e.target.value)}
               style={{
@@ -1636,7 +1620,7 @@ function MainPane(p: MainPaneProps) {
                 cursor: 'pointer', fontWeight: p.cwListFilter ? 600 : 400,
               }}
             >
-              <Filter size={13} /> {p.cwListFilter && p.cwListFilter !== ALL_CW_LISTS ? p.cwListFilter : 'Filter'}
+              <Filter size={13} /> {p.cwListFilter && p.cwListFilter !== ALL_CW_LISTS ? p.cwListFilter : t('table.filters')}
               <ChevronDown size={13} />
             </button>
             {filterOpen && (
@@ -1649,13 +1633,13 @@ function MainPane(p: MainPaneProps) {
                   boxShadow: '0 10px 30px rgba(15,23,42,0.15)', padding: 4,
                 }}>
                   <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--clr-text-muted)', padding: '6px 8px' }}>
-                    Nach CW-Liste filtern
+                    {t('liveFlow.filterByCwList')}
                   </div>
-                  <FilterRow label="Alle CW-Listen" active={!p.cwListFilter}
+                  <FilterRow label={t('liveFlow.allCwLists')} active={!p.cwListFilter}
                     onClick={() => { p.onCwListFilterChange(null); setFilterOpen(false); }} />
                   {p.cwOptions.length === 0 ? (
                     <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', padding: '8px', textAlign: 'center' }}>
-                      Noch keine CW-Aufträge
+                      {t('liveFlow.noCwOrders')}
                     </div>
                   ) : p.cwOptions.map((name) => (
                     <FilterRow key={name} label={name} active={p.cwListFilter === name}
@@ -1691,9 +1675,9 @@ function MainPane(p: MainPaneProps) {
                 }}><Icon size={17} /></span>
                 <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: 'var(--clr-text)' }}>{p.counts[b]}</span>
               </div>
-              <div style={{ fontSize: 12, color: c.fg, fontWeight: 600, marginTop: 10 }}>{BUCKET_LABEL[b]}</div>
+              <div style={{ fontSize: 12, color: c.fg, fontWeight: 600, marginTop: 10 }}>{bucketLabel(t, b)}</div>
               <div style={{ fontSize: 10.5, color: 'var(--clr-text-muted)', marginTop: 2 }}>
-                {delta > 0 ? `+${delta}` : delta} zuletzt
+                {t('liveFlow.deltaRecent', { delta: delta > 0 ? `+${delta}` : String(delta) })}
               </div>
               <div style={{ marginTop: 6, marginLeft: -2 }}>
                 <Sparkline values={series} color={c.dot} />
@@ -1705,17 +1689,17 @@ function MainPane(p: MainPaneProps) {
 
       {/* Aufträge (CW-Filter sitzt im „Filter"-Button oben rechts) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px 12px' }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>Aufträge</h3>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{t('liveFlow.ordersHeading')}</h3>
         <span style={{
           fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
           background: '#dbeafe', color: '#1d4ed8',
         }}>{p.packages.length}</span>
         {p.cwListFilter && p.cwListFilter !== ALL_CW_LISTS && (
           <span style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-            · gefiltert: <strong style={{ color: '#1d4ed8' }}>{p.cwListFilter}</strong>
+            · {t('liveFlow.filtered')}: <strong style={{ color: '#1d4ed8' }}>{p.cwListFilter}</strong>
             <button onClick={() => p.onCwListFilterChange(null)}
               style={{ marginLeft: 6, border: 'none', background: 'transparent', color: 'var(--clr-text-muted)', cursor: 'pointer', textDecoration: 'underline' }}>
-              zurücksetzen
+              {t('liveFlow.resetFilter')}
             </button>
           </span>
         )}
@@ -1733,14 +1717,14 @@ function MainPane(p: MainPaneProps) {
           <table className="data-table" style={{ minWidth: 720 }}>
             <thead>
               <tr style={{ background: 'var(--clr-bg-subtle, #fafafa)', borderBottom: '1px solid var(--clr-border)' }}>
-                <Th>Position</Th>
-                <Th>Ref / Barcode</Th>
-                <Th>Status</Th>
-                <Th>Aktuelle Station</Th>
-                <Th>Seit</Th>
-                <Th>Maße (L×B×H mm)</Th>
-                <Th>Gewicht</Th>
-                <Th>Aktion</Th>
+                <Th>{t('liveFlow.tableCol.position')}</Th>
+                <Th>{t('liveFlow.tableCol.refBarcode')}</Th>
+                <Th>{t('common.status')}</Th>
+                <Th>{t('liveFlow.currentStation')}</Th>
+                <Th>{t('liveFlow.tableCol.since')}</Th>
+                <Th>{t('liveFlow.tableCol.dimensions')}</Th>
+                <Th>{t('orders.weight')}</Th>
+                <Th>{t('liveFlow.tableCol.action')}</Th>
               </tr>
             </thead>
             <tbody>
@@ -1766,7 +1750,11 @@ function MainPane(p: MainPaneProps) {
           padding: '10px 16px', borderTop: '1px solid var(--clr-border)',
           fontSize: 12, color: 'var(--clr-text-muted)',
         }}>
-          <span>{pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, p.packages.length)} von {p.packages.length}</span>
+          <span>{t('liveFlow.tableCol.pageInfo', {
+            from: pageStart + 1,
+            to: Math.min(pageStart + PAGE_SIZE, p.packages.length),
+            total: p.packages.length,
+          })}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
               onClick={() => setPage((x) => Math.max(0, x - 1))}
@@ -1837,6 +1825,7 @@ function TableRow({
   pkg, position, selected, onClick, nowTs,
   ejectPending, onEject, onCancelEject,
 }: TableRowProps) {
+  const { t } = useTranslation();
   const sc = STATE_COLORS[pkg.state];
   const station = currentStation(pkg.state);
   const StationIcon = STATION_ICONS[station];
@@ -1848,7 +1837,7 @@ function TableRow({
   const weight = pkg.weight_g != null ? `${pkg.weight_g} g` : '—';
   const isProblem = pkg.state === 'EJECTED' || pkg.state === 'FAILED';
   const rejectLabel = pkg.rejectionReason
-    ? REJECTION_LABEL[pkg.rejectionReason] ?? pkg.rejectionReason
+    ? rejectionLabel(t, pkg.rejectionReason)
     : null;
 
   return (
@@ -1904,7 +1893,7 @@ function TableRow({
           background: sc.bg, color: sc.fg, border: `1px solid ${sc.border}`,
         }}>
           <span style={{ width: 6, height: 6, borderRadius: 99, background: sc.fg }} />
-          {STATE_LABEL[pkg.state]}
+          {stateLabel(t, pkg.state)}
         </span>
         {rejectLabel && (
           <div style={{ fontSize: 10, color: '#991b1b', marginTop: 3 }}>
@@ -1915,7 +1904,7 @@ function TableRow({
       <Td>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--clr-text)' }}>
           <StationIcon size={14} />
-          {STATION_LABELS[station]}
+          {stationLabel(t, station)}
         </span>
       </Td>
       <Td><span className="tabular-nums" style={{ color: 'var(--clr-text-muted)' }}>{fmtSeit(pkg.lastSeen, nowTs)}</span></Td>
@@ -1933,27 +1922,27 @@ function TableRow({
             return (
               <button
                 onClick={(e) => { e.stopPropagation(); onCancelEject(); }}
-                title="Eject zurücknehmen (solange die Maschine noch nicht das nächste Gate erreicht hat)"
+                title={t('liveFlow.eject.cancelHint')}
                 style={{
                   padding: '3px 8px', fontSize: 10, fontWeight: 600,
                   border: '1px solid #fbbf24', background: '#fffbeb',
                   color: '#92400e', borderRadius: 4, cursor: 'pointer',
                   whiteSpace: 'nowrap',
                 }}
-              >Vorgemerkt</button>
+              >{t('liveFlow.eject.pending')}</button>
             );
           }
           return (
             <button
               onClick={(e) => { e.stopPropagation(); onEject(); }}
-              title="Nächstes Gate antworten: REJECT → Maschine wirft am nächsten Gate aus, Band läuft weiter"
+              title={t('liveFlow.eject.hint')}
               style={{
                 padding: '3px 8px', fontSize: 10, fontWeight: 600,
                 border: '1px solid #fecaca', background: '#fef2f2',
                 color: '#991b1b', borderRadius: 4, cursor: 'pointer',
                 whiteSpace: 'nowrap',
               }}
-            >Eject</button>
+            >{t('liveFlow.eject.button')}</button>
           );
         })()}
       </Td>
@@ -1966,11 +1955,12 @@ function Td({ children, className }: { children: React.ReactNode; className?: st
 }
 
 function EmptyState({ connected, hasSimulator }: { connected: boolean; hasSimulator: boolean }) {
+  const { t } = useTranslation();
   const msg = !connected
-    ? 'Keine Verbindung zum Backend. Läuft uvicorn auf :8000?'
+    ? t('liveFlow.empty.noBackend')
     : !hasSimulator
-      ? 'Backend verbunden — aber noch keine Maschine. Simulator unter „Simulator" anschließen.'
-      : 'Maschine verbunden — warte auf das erste ENQ.';
+      ? t('liveFlow.empty.noMachine')
+      : t('liveFlow.empty.waitingEnq');
   return (
     <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--clr-text-muted)' }}>
       <Inbox size={28} style={{ opacity: 0.4, marginBottom: 12 }} />
@@ -1991,7 +1981,8 @@ interface FocusPanelProps {
 }
 
 function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
-  // Hook MUSS vor dem Early-Return stehen (rules of hooks).
+  // Hooks MÜSSEN vor dem Early-Return stehen (rules of hooks).
+  const { t } = useTranslation();
   const product = useProduct(pkg?.barcode ?? null);
   if (!pkg) {
     // Grid column is 0px wide in this state — render nothing instead of an
@@ -2018,7 +2009,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
       display: 'flex', flexDirection: 'column',
     }}>
       <header style={{ padding: '16px 20px', borderBottom: '1px solid var(--clr-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <strong style={{ fontSize: 13 }}>Bestellung im Fokus</strong>
+        <strong style={{ fontSize: 13 }}>{t('liveFlow.focus.title')}</strong>
         <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--clr-text-muted)' }}>
           <X size={15} />
         </button>
@@ -2036,19 +2027,19 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
           <div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{pkg.ref}</div>
             <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-              {type === 'M' ? 'Multiorder' : 'Singleorder'}
+              {type === 'M' ? t('liveFlow.focus.multiOrder') : t('liveFlow.focus.singleOrder')}
             </div>
           </div>
         </div>
 
         <dl style={{ marginTop: 16, fontSize: 12, display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 6, columnGap: 12 }}>
-          <dt style={{ color: 'var(--clr-text-muted)' }}>Maschine</dt>
+          <dt style={{ color: 'var(--clr-text-muted)' }}>{t('machines.machine')}</dt>
           <dd><code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.machine_id ? displayMachineId(pkg.machine_id) : '—'}</code></dd>
-          <dt style={{ color: 'var(--clr-text-muted)' }}>Barcode / ID</dt>
+          <dt style={{ color: 'var(--clr-text-muted)' }}>{t('liveFlow.focus.barcodeId')}</dt>
           <dd><code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.barcode ?? '—'}</code></dd>
-          <dt style={{ color: 'var(--clr-text-muted)' }}>Maße (L×B×H)</dt>
+          <dt style={{ color: 'var(--clr-text-muted)' }}>{t('liveFlow.focus.dimensions')}</dt>
           <dd className="tabular-nums">{dims}</dd>
-          <dt style={{ color: 'var(--clr-text-muted)' }}>Gewicht</dt>
+          <dt style={{ color: 'var(--clr-text-muted)' }}>{t('orders.weight')}</dt>
           <dd className="tabular-nums">{weight}</dd>
         </dl>
 
@@ -2061,7 +2052,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
             <ProductThumb ean={pkg.barcode!} hasImage={!!product.image_url} size={56} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6, color: '#94a3b8', marginBottom: 2 }}>
-                PRODUKT{product.source === 'pulpo' ? ' · PULPO' : ''}
+                {t('liveFlow.focus.product')}{product.source === 'pulpo' ? ' · PULPO' : ''}
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
                 {product.name}
@@ -2086,7 +2077,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
 
       <div style={{ padding: 20, borderBottom: '1px solid var(--clr-border)' }}>
         <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--clr-text-muted)', marginBottom: 8 }}>
-          Aktuelle Station
+          {t('liveFlow.currentStation')}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{
@@ -2098,9 +2089,9 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
             <StationIcon size={16} />
           </span>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{STATION_LABELS[station]}</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{stationLabel(t, station)}</div>
             <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
-              State <strong style={{ color: sc.fg }}>{STATE_LABEL[pkg.state]}</strong> · seit {fmtSeit(pkg.lastSeen, nowTs)}
+              {t('liveFlow.focus.stateLabel')} <strong style={{ color: sc.fg }}>{stateLabel(t, pkg.state)}</strong> · {t('liveFlow.focus.since')} {fmtSeit(pkg.lastSeen, nowTs)}
             </div>
           </div>
         </div>
@@ -2117,10 +2108,12 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
             display: 'flex', flexDirection: 'column', gap: 2,
           }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#991b1b', letterSpacing: 0.4 }}>
-              ABGEWIESEN{pkg.rejectionStation && ` AM ${STATION_LABELS[pkg.rejectionStation].toUpperCase()}`}
+              {pkg.rejectionStation
+                ? t('liveFlow.focus.rejectedAt', { station: stationLabel(t, pkg.rejectionStation).toUpperCase() })
+                : t('liveFlow.focus.rejected')}
             </div>
             <div style={{ fontSize: 12, color: '#7f1d1d' }}>
-              {REJECTION_LABEL[pkg.rejectionReason] ?? pkg.rejectionReason}
+              {rejectionLabel(t, pkg.rejectionReason)}
             </div>
           </div>
         )}
@@ -2128,7 +2121,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
 
       <div style={{ padding: 20, borderBottom: '1px solid var(--clr-border)' }}>
         <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--clr-text-muted)', marginBottom: 8 }}>
-          Verlauf (Messages)
+          {t('liveFlow.focus.history')}
         </div>
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {pkg.events
@@ -2138,7 +2131,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
                 <Activity size={11} style={{ color: 'var(--clr-text-muted)' }} />
                 <span className="tabular-nums" style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>{fmtTime(ev.timestamp)}</span>
                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#eff6ff', color: '#1e40af', display: 'inline-block', textAlign: 'center' }}>{ev.type}</span>
-                <span style={{ fontSize: 11, color: 'var(--clr-text)' }}>{eventLabel(ev)}</span>
+                <span style={{ fontSize: 11, color: 'var(--clr-text)' }}>{eventLabel(ev, t)}</span>
               </li>
             ))}
         </ul>
@@ -2147,12 +2140,12 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
       <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {canResolve && (
           <ActionBigBtn tone="success" icon={<CheckCircle2 size={14} />} onClick={() => onAction('resolve', pkg)}>
-            Als gelöst markieren
+            {t('liveFlow.focus.markResolved')}
           </ActionBigBtn>
         )}
         {canRetry && (
           <ActionBigBtn tone="info" icon={<RefreshCw size={14} />} onClick={() => onAction('retry', pkg)}>
-            Wiederholen
+            {t('liveFlow.focus.retry')}
           </ActionBigBtn>
         )}
       </div>
@@ -2166,6 +2159,7 @@ function StationProgress({ stations, current, removed }: {
   current: StationKey;
   removed: boolean;
 }) {
+  const { t } = useTranslation();
   // Map our StationId set (scanner/induction/sensor/wrapper/labeler/exit) to
   // the focus-panel labels.
   const sequence: { key: StationKey; lib: StationId }[] = [
@@ -2195,7 +2189,7 @@ function StationProgress({ stations, current, removed }: {
               <Icon size={12} />
             </span>
             <span style={{ fontSize: 9, color: 'var(--clr-text-muted)', marginTop: 4, textAlign: 'center' }}>
-              {STATION_LABELS[s.key].split(' ')[0]}
+              {stationLabel(t, s.key).split(' ')[0]}
             </span>
           </div>
         );

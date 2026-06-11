@@ -35,22 +35,22 @@ export default function ControlSystemPage() {
     {
       service: 'FastAPI Backend',
       ok: true,
-      detail: 'Reachable',
+      detail: t('control.system.reachable'),
     },
     {
       service: 'TCP Gateway',
       ok: gateway?.listening === true,
-      detail: gateway ? `Port ${gateway.port}` : 'Unknown',
+      detail: gateway ? t('control.system.portDetail', { port: gateway.port }) : t('control.system.unknown'),
     },
     {
       service: 'WebSocket / Polling',
       ok: wsClients >= 0,
-      detail: `${wsClients} clients`,
+      detail: t('control.system.clientsCount', { count: wsClients }),
     },
     {
-      service: 'CMC Machines',
+      service: t('control.system.serviceMachines'),
       ok: connectedCount > 0,
-      detail: `${connectedCount} / ${machineTotal} connected`,
+      detail: t('control.system.connectedDetail', { connected: connectedCount, total: machineTotal }),
     },
   ];
 
@@ -69,9 +69,9 @@ export default function ControlSystemPage() {
         <div className="grid-4 gap-4">
           {[
             { label: t('control.system.machinesConnected'), value: `${connectedCount} / ${machineTotal}`, icon: <Server size={18} /> },
-            { label: 'WebSocket Clients', value: String(wsClients), icon: <Activity size={18} /> },
+            { label: t('control.system.wsClients'), value: String(wsClients), icon: <Activity size={18} /> },
             { label: t('control.system.activeSessions'), value: gateway ? '—' : '—', icon: <Activity size={18} /> },
-            { label: 'Gateway Port', value: gateway ? String(gateway.port) : '—', icon: <Server size={18} /> },
+            { label: t('control.system.gatewayPort'), value: gateway ? String(gateway.port) : '—', icon: <Server size={18} /> },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <div className="flex items-center justify-between w-full">
@@ -164,7 +164,7 @@ export default function ControlSystemPage() {
               <tr>
                 <th>{t('control.system.service')}</th>
                 <th style={{ width: 90 }}>{t('common.status')}</th>
-                <th style={{ width: 200 }}>Detail</th>
+                <th style={{ width: 200 }}>{t('audit.detail')}</th>
               </tr>
             </thead>
             <tbody>
@@ -174,7 +174,7 @@ export default function ControlSystemPage() {
                   <td>
                     <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${s.ok ? 'text-emerald-600' : 'text-amber-600'}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                      {s.ok ? 'OK' : 'Offline'}
+                      {s.ok ? t('control.system.statusOk') : t('common.offline')}
                     </span>
                   </td>
                   <td><span className="cell-muted">{s.detail}</span></td>

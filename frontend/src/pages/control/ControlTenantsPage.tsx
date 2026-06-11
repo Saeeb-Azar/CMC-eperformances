@@ -116,8 +116,8 @@ export default function ControlTenantsPage() {
           {[
             { label: t('control.tenants.totalTenants'), value: tenants.length },
             { label: t('control.tenants.activeTenants'), value: tenants.filter(t => t.is_active).length },
-            { label: 'Enterprise', value: tenants.filter(t => t.plan === 'enterprise').length },
-            { label: 'Pro', value: tenants.filter(t => t.plan === 'pro').length },
+            { label: t('plans.enterprise'), value: tenants.filter(ten => ten.plan === 'enterprise').length },
+            { label: t('plans.pro'), value: tenants.filter(ten => ten.plan === 'pro').length },
           ].map(s => (
             <div key={s.label} className="stat-card" style={{ flexDirection: 'column', gap: '4px' }}>
               <span className="stat-card__label">{s.label}</span>

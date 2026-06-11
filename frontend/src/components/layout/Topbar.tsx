@@ -2,6 +2,7 @@ import { Eye, Code } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import NotificationBell from './NotificationBell';
+import LanguageToggle from '../ui/LanguageToggle';
 
 interface TopbarProps {
   title: string;
@@ -11,14 +12,8 @@ interface TopbarProps {
 }
 
 export default function Topbar({ title, subtitle, liveStatus, showViewToggle = false }: TopbarProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [view, setView] = useState<'operator' | 'technical'>('operator');
-
-  const toggleLang = () => {
-    const next = i18n.language === 'de' ? 'en' : 'de';
-    i18n.changeLanguage(next);
-    localStorage.setItem('lang', next);
-  };
 
   return (
     <div className="topbar">
@@ -56,14 +51,7 @@ export default function Topbar({ title, subtitle, liveStatus, showViewToggle = f
         )}
 
         {/* Language switcher */}
-        <button
-          onClick={toggleLang}
-          className="segmented"
-          style={{ cursor: 'pointer', border: 'none' }}
-        >
-          <span className={`segmented__item ${i18n.language === 'de' ? 'segmented__item--active' : ''}`} style={{ padding: '4px 8px', fontSize: 11 }}>DE</span>
-          <span className={`segmented__item ${i18n.language === 'en' ? 'segmented__item--active' : ''}`} style={{ padding: '4px 8px', fontSize: 11 }}>EN</span>
-        </button>
+        <LanguageToggle />
 
         <NotificationBell />
       </div>

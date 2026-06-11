@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import Topbar from '../components/layout/Topbar';
 import StatusBadge from '../components/ui/StatusBadge';
 import DataTable, { type Column, type FilterState } from '../components/ui/DataTable';
@@ -7,12 +8,12 @@ import { Server, Wifi, WifiOff, Tag, FileText, Ruler, Plus, Pencil, Boxes, Check
 import { api, type MachineRead } from '../services/api';
 import MachineFormModal from '../components/machines/MachineFormModal';
 
-const formatHeartbeat = (iso: string | null): string => {
+const formatHeartbeat = (iso: string | null, t: TFunction): string => {
   if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
-  return `${Math.round(diff / 3_600_000)}h ago`;
+  if (diff < 60_000) return t('machines.time.secondsAgo', { count: Math.max(1, Math.round(diff / 1000)) });
+  if (diff < 3_600_000) return t('machines.time.minutesAgo', { count: Math.round(diff / 60_000) });
+  return t('machines.time.hoursAgo', { count: Math.round(diff / 3_600_000) });
 };
 
 export default function MachinesPage() {
@@ -145,7 +146,7 @@ export default function MachinesPage() {
       key: 'heartbeat',
       header: t('common.heartbeat'),
       width: 110,
-      render: (m) => <span className="cell-muted">{formatHeartbeat(m.last_heartbeat_at)}</span>,
+      render: (m) => <span className="cell-muted">{formatHeartbeat(m.last_heartbeat_at, t)}</span>,
     },
     {
       key: 'dimensions',
@@ -189,7 +190,7 @@ export default function MachinesPage() {
           type="button"
           onClick={() => setEditing(m)}
           className="w-8 h-8 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center"
-          title={t('common.edit', 'Bearbeiten')}
+          title={t('common.edit')}
         >
           <Pencil size={14} />
         </button>
@@ -225,10 +226,10 @@ export default function MachinesPage() {
             <Wifi size={18} style={{ color: '#d97706', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e' }}>
-                Maschine verbunden, aber noch nicht angelegt
+                {t('machines.detect.bannerTitle')}
               </div>
               <div style={{ fontSize: 12, color: '#a16207' }}>
-                Es sendet bereits eine Maschine mit unbekannter ID — übernehmen, um sie anzuzeigen.
+                {t('machines.detect.bannerDesc')}
               </div>
             </div>
             {unknownIds.map((id) => (
@@ -244,7 +245,7 @@ export default function MachinesPage() {
                   fontFamily: 'var(--font-mono)',
                 }}
               >
-                <Plus size={13} /> ID {id} anlegen
+                <Plus size={13} /> {t('machines.detect.createId', { id })}
               </button>
             ))}
           </div>
@@ -256,13 +257,13 @@ export default function MachinesPage() {
             const online = machines.filter((m) => m.is_online).length;
             const warnings = machines.filter((m) => m.status === 'ERROR').length;
             const cards = [
-              { label: 'Maschinen', sub: 'gesamt', value: machines.length, icon: <Boxes size={20} />, c: { bg: '#eff6ff', fg: '#2563eb' } },
-              { label: 'Online', sub: 'Maschinen', value: online, icon: <CheckCircle size={20} />, c: { bg: '#ecfdf5', fg: '#059669' } },
-              { label: 'Warnungen', sub: 'aktiv', value: warnings, icon: <AlertTriangle size={20} />, c: { bg: '#fffbeb', fg: '#d97706' } },
-              { label: 'Verbindungen', sub: 'aktiv', value: online, icon: <Wifi size={20} />, c: { bg: '#f5f3ff', fg: '#7c3aed' } },
+              { key: 'machines', label: t('machines.stats.machines'), sub: t('machines.stats.subTotal'), value: machines.length, icon: <Boxes size={20} />, c: { bg: '#eff6ff', fg: '#2563eb' } },
+              { key: 'online', label: t('machines.stats.online'), sub: t('machines.stats.subMachines'), value: online, icon: <CheckCircle size={20} />, c: { bg: '#ecfdf5', fg: '#059669' } },
+              { key: 'warnings', label: t('machines.stats.warnings'), sub: t('machines.stats.subActive'), value: warnings, icon: <AlertTriangle size={20} />, c: { bg: '#fffbeb', fg: '#d97706' } },
+              { key: 'connections', label: t('machines.stats.connections'), sub: t('machines.stats.subActive'), value: online, icon: <Wifi size={20} />, c: { bg: '#f5f3ff', fg: '#7c3aed' } },
             ];
             return cards.map((s) => (
-              <div key={s.label} style={{
+              <div key={s.key} style={{
                 background: 'var(--clr-bg-elevated, #fff)', border: '1px solid var(--clr-border)',
                 borderRadius: 14, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16,
               }}>

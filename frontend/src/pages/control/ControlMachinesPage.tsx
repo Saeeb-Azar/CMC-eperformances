@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import Topbar from '../../components/layout/Topbar';
 import StatusBadge from '../../components/ui/StatusBadge';
 import DataTable, { type Column, type FilterState } from '../../components/ui/DataTable';
 import { Server, Wifi, WifiOff, MoreVertical } from 'lucide-react';
 import { api, type MachineRead, type TenantRead } from '../../services/api';
 
-const formatHeartbeat = (iso: string | null): string => {
+const formatHeartbeat = (iso: string | null, t: TFunction): string => {
   if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
-  return `${Math.round(diff / 3_600_000)}h ago`;
+  if (diff < 60_000) return t('control.machines.secondsAgo', { count: Math.max(1, Math.round(diff / 1000)) });
+  if (diff < 3_600_000) return t('control.machines.minutesAgo', { count: Math.round(diff / 60_000) });
+  return t('control.machines.hoursAgo', { count: Math.round(diff / 3_600_000) });
 };
 
 export default function ControlMachinesPage() {
@@ -107,7 +108,7 @@ export default function ControlMachinesPage() {
       key: 'heartbeat',
       header: t('common.heartbeat'),
       width: 100,
-      render: (m) => <span className="cell-muted">{formatHeartbeat(m.last_heartbeat_at)}</span>,
+      render: (m) => <span className="cell-muted">{formatHeartbeat(m.last_heartbeat_at, t)}</span>,
     },
     {
       key: 'actions',

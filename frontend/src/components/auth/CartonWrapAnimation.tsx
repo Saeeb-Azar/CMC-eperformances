@@ -23,7 +23,10 @@
  *   (blue) state during the initial delay so station 5 is not already
  *   green on page load.
  */
+import { useTranslation } from 'react-i18next';
+
 export default function CartonWrapAnimation() {
+  const { t } = useTranslation();
   return (
     <div
       className="absolute inset-0"
@@ -55,7 +58,7 @@ export default function CartonWrapAnimation() {
           viewBox="0 0 960 720"
           className="w-full h-full max-w-[980px]"
           role="img"
-          aria-label="CartonWrap CW1000 conveyor animation"
+          aria-label={t('auth.animationAria')}
         >
           <defs>
             <pattern id="floorGrid" width="48" height="48" patternUnits="userSpaceOnUse">

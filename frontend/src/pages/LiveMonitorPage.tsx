@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Header from '../components/layout/Header';
 import StatusBadge from '../components/ui/StatusBadge';
 import { Radio, ArrowRight } from 'lucide-react';
 import { api, type MachineRead, type OrderStateRead } from '../services/api';
 
-const stations = ['Scanner', 'Induction', '3D Sensor', 'Wrapper', 'Labeler', 'Exit Verifier'];
+const STATION_KEYS = ['scanner', 'induction', 'sensor', 'wrapper', 'labeler', 'exitVerifier'] as const;
 
 // Map order state → conveyor station index
 const STATE_TO_STATION: Record<string, number> = {
@@ -18,6 +19,8 @@ const STATE_TO_STATION: Record<string, number> = {
 };
 
 export default function LiveMonitorPage() {
+  const { t } = useTranslation();
+  const stations = STATION_KEYS.map((k) => t(`liveMonitor.stations.${k}`));
   const [machines, setMachines] = useState<MachineRead[]>([]);
   const [activeByMachine, setActiveByMachine] = useState<Record<string, OrderStateRead[]>>({});
 
@@ -59,13 +62,13 @@ export default function LiveMonitorPage() {
 
   return (
     <div>
-      <Header title="Live Monitor" subtitle="Real-time conveyor belt status" />
+      <Header title={t('liveMonitor.title')} subtitle={t('liveMonitor.subtitle')} />
 
       <div className="p-8 space-y-6">
         {/* Machine status cards */}
         {machines.length === 0 ? (
           <div className="bg-surface rounded-xl border border-border p-8 text-center text-text-muted text-sm">
-            No machines configured yet
+            {t('liveMonitor.noMachines')}
           </div>
         ) : (
           <div className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${Math.min(machines.length, 4)}, minmax(0, 1fr))` }}>
@@ -88,11 +91,11 @@ export default function LiveMonitorPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <p className="text-text-muted text-xs">Items on belt</p>
+                      <p className="text-text-muted text-xs">{t('liveMonitor.itemsOnBelt')}</p>
                       <p className="font-semibold text-text-primary">{active.length}</p>
                     </div>
                     <div>
-                      <p className="text-text-muted text-xs">ENQ sequence</p>
+                      <p className="text-text-muted text-xs">{t('liveMonitor.enqSequence')}</p>
                       <p className="font-semibold text-text-primary tabular-nums">{m.enq_sequence.toLocaleString()}</p>
                     </div>
                   </div>
@@ -106,7 +109,7 @@ export default function LiveMonitorPage() {
         {selected && (
           <div className="bg-surface rounded-xl border border-border p-6">
             <h3 className="text-sm font-medium text-text-primary mb-6">
-              Conveyor Belt - {selected.name}
+              {t('liveMonitor.conveyorBelt', { name: selected.name })}
             </h3>
 
             {/* Station flow */}
@@ -146,12 +149,12 @@ export default function LiveMonitorPage() {
             {/* Active items table */}
             <div className="border-t border-border pt-4">
               <h4 className="text-xs font-medium text-text-secondary uppercase mb-3">
-                Active Items on Conveyor
+                {t('liveMonitor.activeItems')}
               </h4>
               <div className="divide-y divide-border-light">
                 {conveyor.length === 0 ? (
                   <p className="py-8 text-center text-text-muted text-sm">
-                    No items currently on the conveyor
+                    {t('liveMonitor.noItems')}
                   </p>
                 ) : (
                   conveyor.map((item) => (

@@ -431,7 +431,7 @@ export default function SimulatorPage() {
                 <span style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{s.value}</span>
               </div>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--clr-text)', marginTop: 10 }}>{s.label}</div>
-              <div style={{ fontSize: 10.5, color: 'var(--clr-text-muted)', marginTop: 1 }}>gesamt</div>
+              <div style={{ fontSize: 10.5, color: 'var(--clr-text-muted)', marginTop: 1 }}>{t('simulator.totalLabel')}</div>
             </div>
           ))}
           <div style={{
@@ -443,10 +443,10 @@ export default function SimulatorPage() {
             {hasSimulator ? <Wifi size={26} className="text-emerald-500" /> : <WifiOff size={26} style={{ color: '#94a3b8' }} />}
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                {hasSimulator ? t('simulator.simulatorConnected', 'Simulator verbunden') : (connected ? t('simulator.noSimulator', 'Wartet auf Simulator') : t('common.disconnected'))}
+                {hasSimulator ? t('simulator.simulatorConnected') : (connected ? t('simulator.noSimulator') : t('common.disconnected'))}
               </div>
               <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', marginTop: 2 }}>
-                {connectedMachines.length} {connectedMachines.length === 1 ? 'Maschine' : 'Maschinen'} · {stats.total} Empfänge gesamt
+                {t('simulator.machineCount', { count: connectedMachines.length })} · {t('simulator.receivedTotal', { count: stats.total })}
               </div>
             </div>
           </div>
@@ -544,10 +544,10 @@ export default function SimulatorPage() {
                     <tr>
                       <th style={{ width: 28 }}></th>
                       <th style={{ width: 40 }}></th>
-                      <th style={{ width: 70 }}>Type</th>
-                      <th>Event</th>
-                      <th style={{ width: 120 }}>Ref</th>
-                      <th style={{ width: 110 }} className="!text-right">Time</th>
+                      <th style={{ width: 70 }}>{t('simulator.col.type')}</th>
+                      <th>{t('liveFlow.eventCol')}</th>
+                      <th style={{ width: 120 }}>{t('simulator.col.ref')}</th>
+                      <th style={{ width: 110 }} className="!text-right">{t('liveFlow.time')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -700,7 +700,7 @@ export default function SimulatorPage() {
             {/* Connected machines */}
             <div className="panel">
               <div className="panel__header">
-                <h3 className="panel__title">Verbundene Maschinen</h3>
+                <h3 className="panel__title">{t('simulator.connectedMachines')}</h3>
               </div>
               <div className="panel__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {connectedMachines.length === 0 ? (
@@ -725,7 +725,7 @@ export default function SimulatorPage() {
                     background: '#fff', color: '#1d4ed8', fontSize: 13, fontWeight: 600,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer',
                   }}
-                ><Server size={14} /> Maschine verwalten</button>
+                ><Server size={14} /> {t('simulator.manageMachine')}</button>
               </div>
             </div>
 
@@ -750,10 +750,10 @@ export default function SimulatorPage() {
                     else flow.open++;
                   }
                   const rows = [
-                    { label: 'Verarbeitet', value: flow.done, color: '#10b981' },
-                    { label: 'In Bearbeitung', value: flow.prog, color: '#3b82f6' },
-                    { label: 'Fehler', value: flow.err, color: '#ef4444' },
-                    { label: 'Offen', value: flow.open, color: '#cbd5e1' },
+                    { label: t('simulator.flow.processed'), value: flow.done, color: '#10b981' },
+                    { label: t('simulator.flow.inProgress'), value: flow.prog, color: '#3b82f6' },
+                    { label: t('simulator.flow.errors'), value: flow.err, color: '#ef4444' },
+                    { label: t('simulator.flow.open'), value: flow.open, color: '#cbd5e1' },
                   ];
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>

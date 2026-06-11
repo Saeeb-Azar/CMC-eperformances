@@ -78,10 +78,10 @@ export default function AnalyticsPage() {
                 <EmptyChart label={t('common.noData')} />
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <Metric label="Ø Scale" value={weights.avg_weight_scale_g} unit="g" />
-                  <Metric label="Ø Carton" value={weights.avg_weight_carton_g} unit="g" />
-                  <Metric label="Ø Content" value={weights.avg_weight_content_g} unit="g" />
-                  <Metric label="Min / Max" value={weights.min_weight_g != null && weights.max_weight_g != null ? `${weights.min_weight_g} / ${weights.max_weight_g}` : null} unit="g" />
+                  <Metric label={t('analytics.avgScale')} value={weights.avg_weight_scale_g} unit="g" />
+                  <Metric label={t('analytics.avgCarton')} value={weights.avg_weight_carton_g} unit="g" />
+                  <Metric label={t('analytics.avgContent')} value={weights.avg_weight_content_g} unit="g" />
+                  <Metric label={t('analytics.minMax')} value={weights.min_weight_g != null && weights.max_weight_g != null ? `${weights.min_weight_g} / ${weights.max_weight_g}` : null} unit="g" />
                 </div>
               )}
             </div>
@@ -128,7 +128,7 @@ export default function AnalyticsPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
                   <Metric label={t('analytics.length')} value={dims.avg_length_mm} unit="mm" sub={dims.min_length_mm != null ? `${dims.min_length_mm}–${dims.max_length_mm}` : undefined} />
                   <Metric label={t('analytics.width')} value={dims.avg_width_mm} unit="mm" sub={dims.min_width_mm != null ? `${dims.min_width_mm}–${dims.max_width_mm}` : undefined} />
-                  <Metric label="Height" value={dims.avg_height_mm} unit="mm" sub={dims.min_height_mm != null ? `${dims.min_height_mm}–${dims.max_height_mm}` : undefined} />
+                  <Metric label={t('analytics.height')} value={dims.avg_height_mm} unit="mm" sub={dims.min_height_mm != null ? `${dims.min_height_mm}–${dims.max_height_mm}` : undefined} />
                 </div>
               )}
             </div>
@@ -136,7 +136,7 @@ export default function AnalyticsPage() {
 
           {/* Station timings */}
           <div className="panel">
-            <div className="panel__header"><h3 className="panel__title">{t('analytics.carrierSpeed')}</h3><span className="panel__subtitle">avg s</span></div>
+            <div className="panel__header"><h3 className="panel__title">{t('analytics.carrierSpeed')}</h3><span className="panel__subtitle">{t('analytics.avgSeconds')}</span></div>
             <div className="panel__body">
               {timingChart.length === 0 ? (
                 <EmptyChart label={t('common.noData')} />

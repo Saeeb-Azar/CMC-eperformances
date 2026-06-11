@@ -1,4 +1,5 @@
 import { Bell, User } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface HeaderProps {
   title: string;
@@ -6,6 +7,7 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle }: HeaderProps) {
+  const { t } = useTranslation();
   return (
     <header className="bg-surface border-b border-border px-8 py-5 flex items-center justify-between">
       <div>
@@ -21,7 +23,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
           <div className="w-8 h-8 rounded-full bg-sidebar flex items-center justify-center">
             <User size={14} className="text-white" />
           </div>
-          <span className="text-sm text-text-secondary">Admin</span>
+          <span className="text-sm text-text-secondary">{t('roles.admin')}</span>
         </div>
       </div>
     </header>

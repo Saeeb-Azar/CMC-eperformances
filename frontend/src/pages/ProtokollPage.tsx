@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import { AlertTriangle, CheckCircle2, Info, ChevronRight, ChevronDown, Search, Database } from 'lucide-react';
 
@@ -31,9 +31,9 @@ function bucketOf(ev: LogEvent): Bucket {
 }
 
 const BUCKET = {
-  problem: { label: 'Problem', color: '#b91c1c', bg: '#fef2f2', border: '#fecaca', icon: AlertTriangle },
-  success: { label: 'Erfolg', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0', icon: CheckCircle2 },
-  info:    { label: 'Info',    color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Info },
+  problem: { labelKey: 'protokoll.bucket.problem', color: '#b91c1c', bg: '#fef2f2', border: '#fecaca', icon: AlertTriangle },
+  success: { labelKey: 'protokoll.bucket.success', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0', icon: CheckCircle2 },
+  info:    { labelKey: 'protokoll.bucket.info',    color: '#475569', bg: '#f1f5f9', border: '#e2e8f0', icon: Info },
 } as const;
 
 function fmt(iso: string): string {
@@ -95,12 +95,12 @@ export default function ProtokollPage() {
 
   return (
     <div>
-      <Topbar title="Protokoll" subtitle="Ereignis-Log: Probleme und erfolgreiche Prozesse" />
+      <Topbar title={t('protokoll.title')} subtitle={t('protokoll.subtitle')} />
       <div className="page-content">
         <div className="page-header">
           <div>
-            <h1 className="page-header__title">Protokoll</h1>
-            <p className="page-header__desc">Nachvollziehbare Logs — Probleme, erfolgreiche Abschlüsse und alle Maschinen-Events.</p>
+            <h1 className="page-header__title">{t('protokoll.pageTitle')}</h1>
+            <p className="page-header__desc">{t('protokoll.pageDesc')}</p>
           </div>
         </div>
 
@@ -119,7 +119,7 @@ export default function ProtokollPage() {
                 <span style={{ width: 42, height: 42, borderRadius: 11, background: m.bg, color: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={20} /></span>
                 <div>
                   <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1 }}>{counts[b]}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: m.color, marginTop: 3 }}>{m.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: m.color, marginTop: 3 }}>{t(m.labelKey)}</div>
                 </div>
               </button>
             );
@@ -129,7 +129,7 @@ export default function ProtokollPage() {
         {/* Persistence hint */}
         {!persistent && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 14, borderRadius: 8, background: '#eff6ff', color: '#1d4ed8', fontSize: 12 }}>
-            <Database size={14} /> Live-Session-Log (im Speicher). Für ein <strong>dauerhaftes</strong> Protokoll: Persistenz aktivieren, sobald ihr aus dem Test-Modus geht.
+            <Database size={14} /> <Trans i18nKey="protokoll.persistenceHint" components={{ strong: <strong /> }} />
           </div>
         )}
 
@@ -144,25 +144,25 @@ export default function ProtokollPage() {
                     border: `1px solid ${filter === f ? '#1d4ed8' : 'var(--clr-border)'}`,
                     background: filter === f ? '#1d4ed8' : '#fff', color: filter === f ? '#fff' : 'var(--clr-text-muted)',
                   }}>
-                  {f === 'all' ? 'Alle' : BUCKET[f].label}
+                  {f === 'all' ? t('common.all') : t(BUCKET[f].labelKey)}
                 </button>
               ))}
             </div>
             <div style={{ position: 'relative', flex: 1, minWidth: 200, maxWidth: 360 }}>
               <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--clr-text-muted)' }} />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Suchen: Typ, Ref, Maschine, Nachricht…"
+                placeholder={t('protokoll.searchPlaceholder')}
                 style={{ width: '100%', height: 30, fontSize: 12, padding: '0 8px 0 26px', border: '1px solid var(--clr-border)', borderRadius: 6 }} />
             </div>
           </div>
           <div className="data-table__scroll" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
             <table className="data-table">
               <thead>
-                <tr><th style={{ width: 28 }}></th><th style={{ width: 150 }}>Zeit</th><th style={{ width: 90 }}>Typ</th><th style={{ width: 110 }}>Kategorie</th><th>Nachricht</th><th style={{ width: 90 }}>Maschine</th></tr>
+                <tr><th style={{ width: 28 }}></th><th style={{ width: 150 }}>{t('audit.time')}</th><th style={{ width: 90 }}>{t('protokoll.colType')}</th><th style={{ width: 110 }}>{t('audit.category')}</th><th>{t('protokoll.colMessage')}</th><th style={{ width: 90 }}>{t('audit.machineCol')}</th></tr>
               </thead>
               <tbody>
                 {visible.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--clr-text-muted)' }}>Noch keine Ereignisse</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--clr-text-muted)' }}>{t('protokoll.noEvents')}</td></tr>
                 ) : visible.map((e) => {
                   const b = bucketOf(e); const m = BUCKET[b];
                   const ref = (e.data?.reference_id ?? e.data?.referenceId) as string | undefined;
@@ -175,7 +175,7 @@ export default function ProtokollPage() {
                       <td>{hasDetail && <span style={{ color: 'var(--clr-text-muted)' }}>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>}</td>
                       <td className="data-table__num" style={{ color: 'var(--clr-text-muted)' }}>{fmt(e.timestamp)}</td>
                       <td className="data-table__mono">{e.type}</td>
-                      <td><span className="pill" style={{ background: m.bg, color: m.color, border: `1px solid ${m.border}` }}><span className="pill__dot" />{m.label}</span></td>
+                      <td><span className="pill" style={{ background: m.bg, color: m.color, border: `1px solid ${m.border}` }}><span className="pill__dot" />{t(m.labelKey)}</span></td>
                       <td>
                         {e.message}
                         {ref && <span className="data-table__mono" style={{ color: 'var(--clr-text-muted)', marginLeft: 8, fontSize: 11 }}>{ref}</span>}
@@ -194,7 +194,7 @@ export default function ProtokollPage() {
             </table>
           </div>
         </div>
-        <p style={{ fontSize: 11, color: 'var(--clr-text-muted)', marginTop: 8 }}>{t('common.loading', '') && ''}Zeigt die letzten {events.length} Events dieser Session (HBT ausgeblendet).</p>
+        <p style={{ fontSize: 11, color: 'var(--clr-text-muted)', marginTop: 8 }}>{t('protokoll.sessionFooter', { count: events.length })}</p>
       </div>
     </div>
   );
