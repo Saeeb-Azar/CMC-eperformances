@@ -798,7 +798,18 @@ export default function LiveFlowPage() {
     }
   };
 
-  const runAction = async (action: 'resolve' | 'retry' | 'delete', pkg: PackageRow) => {
+  // Bestätigungsdialog für den manuellen Eject — eigenes State-Paar, damit
+  // statt window.prompt ein erklärender Modal mit den Folgen erscheint.
+  const [confirmEject, setConfirmEject] = useState<PackageRow | null>(null);
+
+  const runAction = async (
+    action: 'resolve' | 'retry' | 'delete' | 'manualEject', pkg: PackageRow,
+  ) => {
+    if (action === 'manualEject') {
+      // Eigene Confirm-UI mit klarer Warnung über die Folgen.
+      setConfirmEject(pkg);
+      return;
+    }
     const reason = window.prompt(t(`liveFlow.actionPrompt.${action}`));
     if (!reason || !reason.trim()) return;
     try {
@@ -814,6 +825,30 @@ export default function LiveFlowPage() {
       if (!res.ok) window.alert(t('liveFlow.actionFailed', { error: `${res.status} ${await res.text()}` }));
     } catch (e) {
       window.alert(t('liveFlow.actionFailed', { error: String(e) }));
+    }
+  };
+
+  // Eigentlicher Eject-Call, nachdem der User im Modal bestätigt + einen
+  // Grund eingegeben hat. Trennung Dialog/Call macht den Modal-State klar
+  // und erlaubt sauberes Abbrechen.
+  const doManualEject = async (pkg: PackageRow, reason: string) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`${API_BASE}/api/v1/packages/${encodeURIComponent(pkg.ref)}/manual-eject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ machine_id: pkg.machine_id ?? '', reason }),
+      });
+      if (!res.ok) {
+        window.alert(t('liveFlow.actionFailed', { error: `${res.status} ${await res.text()}` }));
+      }
+    } catch (e) {
+      window.alert(t('liveFlow.actionFailed', { error: String(e) }));
+    } finally {
+      setConfirmEject(null);
     }
   };
 
@@ -916,6 +951,13 @@ export default function LiveFlowPage() {
           nowTs={nowTs}
         />
       </div>
+      {confirmEject && (
+        <ManualEjectConfirm
+          pkg={confirmEject}
+          onCancel={() => setConfirmEject(null)}
+          onConfirm={(reason) => doManualEject(confirmEject, reason)}
+        />
+      )}
     </div>
   );
 }
@@ -2125,7 +2167,7 @@ function EmptyState({ connected, hasSimulator }: { connected: boolean; hasSimula
 interface FocusPanelProps {
   pkg: PackageRow | null;
   onClose: () => void;
-  onAction: (a: 'resolve' | 'retry' | 'delete', pkg: PackageRow) => void;
+  onAction: (a: 'resolve' | 'retry' | 'delete' | 'manualEject', pkg: PackageRow) => void;
   nowTs: number;
 }
 
@@ -2309,6 +2351,14 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
             {t('liveFlow.focus.retry')}
           </ActionBigBtn>
         )}
+        {/* Notausstieg für hängende, aktive Aufträge — z.B. wenn die
+            Maschine das Paket nie zu Ende verarbeitet hat (Crash, Stromaus,
+            physisch entfernt). Markiert den Auftrag als EJECTED.  */}
+        {(['ASSIGNED','INDUCTED','SCANNED','LABELED','FAILED'] as PackageState[]).includes(pkg.state) && (
+          <ActionBigBtn tone="warning" icon={<AlertCircle size={14} />} onClick={() => onAction('manualEject', pkg)}>
+            {t('liveFlow.focus.manualEject', 'Manuell als ausgeworfen markieren')}
+          </ActionBigBtn>
+        )}
       </div>
     </aside>
   );
@@ -2365,12 +2415,13 @@ function ActionBigBtn({
   children: React.ReactNode;
   onClick: () => void;
   icon: React.ReactNode;
-  tone: 'success' | 'info' | 'danger';
+  tone: 'success' | 'info' | 'danger' | 'warning';
 }) {
   const colors = {
     success: { bg: '#ecfdf5', fg: '#065f46', border: '#a7f3d0' },
     info:    { bg: '#eff6ff', fg: '#1e40af', border: '#bfdbfe' },
     danger:  { bg: '#fef2f2', fg: '#991b1b', border: '#fecaca' },
+    warning: { bg: '#fff7ed', fg: '#9a3412', border: '#fed7aa' },
   } as const;
   const c = colors[tone];
   return (
@@ -2390,5 +2441,116 @@ function ActionBigBtn({
       {children}
       <ChevronRight size={13} style={{ marginLeft: 'auto', opacity: 0.5 }} />
     </button>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Manueller Eject — Bestätigungsmodal mit Klartext-Folgen
+// ────────────────────────────────────────────────────────────────────────
+
+function ManualEjectConfirm({
+  pkg, onCancel, onConfirm,
+}: {
+  pkg: PackageRow;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [reason, setReason] = useState('');
+  const reasonTrimmed = reason.trim();
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="modal__header">
+          <div className="modal__head-left">
+            <span className="modal__icon" style={{ background: '#fff7ed', color: '#9a3412' }}>
+              <AlertCircle size={17} />
+            </span>
+            <div>
+              <h2 className="modal__title">
+                {t('liveFlow.manualEject.title', 'Wirklich manuell ausgeworfen?')}
+              </h2>
+              <p className="modal__subtitle">
+                {t('liveFlow.manualEject.subtitle', 'Diese Aktion ist nicht reversibel.')}
+              </p>
+            </div>
+          </div>
+          <button type="button" className="modal__close" onClick={onCancel}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="modal__body">
+          <div style={{
+            padding: '12px 14px', borderRadius: 10, marginBottom: 14,
+            background: 'var(--clr-bg-subtle, #f4f6fa)', border: '1px solid var(--clr-border)',
+            display: 'flex', flexDirection: 'column', gap: 4,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+              <span style={{ color: 'var(--clr-text-muted)' }}>{t('liveFlow.focus.singleOrder')}</span>
+              <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                {pkg.pulpoSequenceNumber || pkg.ref}
+              </code>
+            </div>
+            {pkg.pulpoSalesOrderNum && (
+              <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {pkg.pulpoSalesOrderNum}
+              </div>
+            )}
+            {pkg.barcode && (
+              <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {pkg.barcode}
+              </div>
+            )}
+          </div>
+
+          <div style={{
+            padding: '12px 14px', borderRadius: 10, marginBottom: 14,
+            background: '#fff7ed', border: '1px solid #fed7aa',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#9a3412', marginBottom: 6 }}>
+              {t('liveFlow.manualEject.consequencesTitle', 'Folgen dieser Aktion')}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#7c2d12', lineHeight: 1.55 }}>
+              <li>{t('liveFlow.manualEject.consequence1', 'Der Auftrag erhält den Status „Ausgeworfen" und verschwindet aus der aktiven Bearbeitungsliste.')}</li>
+              <li>{t('liveFlow.manualEject.consequence2', 'Es wird KEIN Versandlabel gedruckt und KEIN Pulpo-Rückfluss ausgelöst.')}</li>
+              <li>{t('liveFlow.manualEject.consequence3', 'Das Paket selbst wird nicht physisch ausgeworfen — Du bestätigst nur, dass es nicht mehr auf dem Band ist.')}</li>
+              <li>{t('liveFlow.manualEject.consequence4', 'Die Aktion wird mit Deinem Namen und Begründung protokolliert; rückgängig machen ist nur durch erneutes Scannen möglich.')}</li>
+            </ul>
+          </div>
+
+          <label className="modal-field">
+            <span className="modal-field__label">
+              {t('liveFlow.manualEject.reasonLabel', 'Grund')} *
+            </span>
+            <textarea
+              className="modal-input" value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoFocus rows={2}
+              placeholder={t('liveFlow.manualEject.reasonPlaceholder', 'z.B. Maschinen-Crash, Paket physisch entfernt …')}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </label>
+        </div>
+        <div className="modal__footer">
+          <button type="button" className="modal-btn modal-btn--ghost" onClick={onCancel}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            className="modal-btn"
+            style={{
+              background: '#9a3412', color: '#fff', border: 'none',
+              opacity: reasonTrimmed ? 1 : 0.6, cursor: reasonTrimmed ? 'pointer' : 'not-allowed',
+            }}
+            disabled={!reasonTrimmed}
+            onClick={() => onConfirm(reasonTrimmed)}
+          >
+            <AlertCircle size={14} />
+            {t('liveFlow.manualEject.confirm', 'Ja, manuell ausgeworfen markieren')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -436,7 +436,20 @@
       "rejectedAt": "REJECTED AT {{station}}",
       "history": "History (messages)",
       "markResolved": "Mark as resolved",
-      "retry": "Retry"
+      "retry": "Retry",
+      "manualEject": "Mark as manually ejected"
+    },
+    "manualEject": {
+      "title": "Mark as manually ejected?",
+      "subtitle": "This action cannot be undone.",
+      "consequencesTitle": "Consequences of this action",
+      "consequence1": "The order moves to status “Ejected” and leaves the active processing list.",
+      "consequence2": "NO shipping label will be printed and NO Pulpo write-back is triggered.",
+      "consequence3": "The parcel itself is not physically ejected — you only confirm it is no longer on the conveyor.",
+      "consequence4": "The action is logged with your name and reason; reverting is only possible by re-scanning.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "e.g. machine crash, parcel removed manually …",
+      "confirm": "Yes, mark as manually ejected"
     }
   },
   "orders": {

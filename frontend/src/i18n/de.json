@@ -436,7 +436,20 @@
       "rejectedAt": "ABGEWIESEN AM {{station}}",
       "history": "Verlauf (Messages)",
       "markResolved": "Als gelöst markieren",
-      "retry": "Wiederholen"
+      "retry": "Wiederholen",
+      "manualEject": "Manuell als ausgeworfen markieren"
+    },
+    "manualEject": {
+      "title": "Wirklich manuell ausgeworfen?",
+      "subtitle": "Diese Aktion ist nicht reversibel.",
+      "consequencesTitle": "Folgen dieser Aktion",
+      "consequence1": "Der Auftrag erhält den Status „Ausgeworfen“ und verschwindet aus der aktiven Bearbeitungsliste.",
+      "consequence2": "Es wird KEIN Versandlabel gedruckt und KEIN Pulpo-Rückfluss ausgelöst.",
+      "consequence3": "Das Paket selbst wird nicht physisch ausgeworfen — Du bestätigst nur, dass es nicht mehr auf dem Band ist.",
+      "consequence4": "Die Aktion wird mit Deinem Namen und Begründung protokolliert; rückgängig machen ist nur durch erneutes Scannen möglich.",
+      "reasonLabel": "Grund",
+      "reasonPlaceholder": "z.B. Maschinen-Crash, Paket physisch entfernt …",
+      "confirm": "Ja, manuell ausgeworfen markieren"
     }
   },
   "orders": {

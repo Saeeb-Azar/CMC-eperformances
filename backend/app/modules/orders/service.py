@@ -207,6 +207,35 @@ async def eject_older_states(db: AsyncSession, machine_db_id: str, current_seque
     return older_orders
 
 
+async def manual_eject_order(
+    db: AsyncSession,
+    order_id: str,
+    user_id: str,
+    reason: str,
+) -> OrderState:
+    """Aktiven Auftrag manuell als EJECTED markieren — der „Notausstieg"
+    für Aufträge, die in einem aktiven Zustand hängengeblieben sind (z.B.
+    Maschine ausgefallen, Paket physisch entfernt, Operator gibt auf).
+
+    Erlaubt nur, wenn der Auftrag NICHT bereits terminal ist (COMPLETED /
+    DELETED). EJECTED bleibt EJECTED — kein Doppelklick-Effekt. Reason
+    wird in ejection_reason gespeichert (Prefix `manual:` zur Unterscheidung
+    vom automatischen `skipped_by_subsequent_end`).
+    """
+    order = await get_order(db, order_id)
+    if not order:
+        raise OrderNotFound(order_id)
+    if order.state in {"COMPLETED", "DELETED"}:
+        raise InvalidStateTransition(order.state, "EJECTED")
+
+    order.state = "EJECTED"
+    order.ejection_reason = f"manual: {reason.strip()}" if reason.strip() else "manual"
+    order.resolved_by = user_id
+    order.resolved_at = datetime.now(timezone.utc)
+    await db.flush()
+    return order
+
+
 async def resolve_order(
     db: AsyncSession,
     order_id: str,

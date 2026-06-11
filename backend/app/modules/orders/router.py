@@ -9,6 +9,7 @@ from app.modules.orders.schemas import (
     OrderStateListItem,
     OrderResolveRequest,
     OrderDeleteRequest,
+    OrderManualEjectRequest,
     OrderFilterParams,
 )
 
@@ -86,3 +87,16 @@ async def delete_order(
 ):
     """Soft-delete an order state (admin action)."""
     return await service.soft_delete_order(db, order_id, user["sub"], data.reason)
+
+
+@router.post("/{order_id}/manual-eject", response_model=OrderStateRead)
+async def manual_eject(
+    order_id: str,
+    data: OrderManualEjectRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role(Role.OPERATOR)),
+):
+    """Aktiven Auftrag manuell auf EJECTED setzen — der „Notausstieg" für
+    Aufträge, die nach Maschinen-Crash o.ä. in einem aktiven Status hängen.
+    Operator-Rolle reicht; Soft-Delete bleibt Admins vorbehalten."""
+    return await service.manual_eject_order(db, order_id, user["sub"], data.reason)

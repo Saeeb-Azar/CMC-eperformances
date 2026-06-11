@@ -107,6 +107,10 @@ class OrderDeleteRequest(BaseModel):
     reason: str
 
 
+class OrderManualEjectRequest(BaseModel):
+    reason: str
+
+
 class OrderFilterParams(BaseModel):
     state: str | None = None
     machine_id: str | None = None

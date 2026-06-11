@@ -289,6 +289,12 @@ export const api = {
     }),
   deleteMachine: (id: string) =>
     request<{ ok: boolean }>(`/machines/${id}`, { method: 'DELETE' }),
+
+  // „Manuell ausgeworfen" — Notausstieg für hängende Aufträge.
+  manualEjectOrder: (orderId: string, reason: string) =>
+    request<OrderStateRead>(`/orders/${encodeURIComponent(orderId)}/manual-eject`, {
+      method: 'POST', body: JSON.stringify({ reason }),
+    }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),
   getGatewayStatus: () => request<{
     listening: boolean; port: number; connected_machines: string[];
