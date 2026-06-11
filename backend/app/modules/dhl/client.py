@@ -76,6 +76,16 @@ class Address:
             out["phone"] = self.phone
         return out
 
+    def missing_fields(self) -> list[str]:
+        """Pflichtfelder, die DHL für eine Adresse braucht — leer = vollständig.
+        Wird vor dem Live-Call geprüft, damit ein fehlendes Feld einen klaren
+        Fehler gibt statt einer kryptischen DHL-Validierungsantwort."""
+        required = {
+            "name": self.name, "street": self.street, "street_no": self.street_no,
+            "zip": self.zip_code, "city": self.city, "country": self.country,
+        }
+        return [k for k, v in required.items() if not str(v or "").strip()]
+
 
 class DhlClient:
     """Thin async HTTP client für Parcel DE Business Shipment v2.
@@ -171,7 +181,25 @@ class DhlClient:
             }
 
         if not self.configured:
-            raise DhlError("DHL client is not configured (missing API key / credentials / billing number)")
+            # Genau benennen, WAS fehlt — spart Rätselraten in Railway.
+            missing = [n for n, v in (
+                ("DHL_BASE_URL", self.base_url), ("DHL_API_KEY", self.api_key),
+                ("DHL_USERNAME", self.username), ("DHL_PASSWORD", self.password),
+                ("DHL_BILLING_NUMBER", self.billing_number),
+            ) if not v]
+            raise DhlError(f"DHL nicht konfiguriert — fehlende Variablen: {', '.join(missing)}")
+
+        # Adressen prüfen, bevor wir DHL fragen — klare Meldung statt 400.
+        miss_rcpt = recipient.missing_fields()
+        if miss_rcpt:
+            raise DhlError(f"Empfängeradresse unvollständig — fehlt: {', '.join(miss_rcpt)}")
+        miss_sender = sender.missing_fields()
+        if miss_sender:
+            raise DhlError(
+                f"Absenderadresse unvollständig (DHL_SENDER_*) — fehlt: {', '.join(miss_sender)}"
+            )
+        if int(weight_g) <= 0:
+            raise DhlError(f"Ungültiges Gewicht: {weight_g} g")
 
         # Abrechnungsnummer je Empfänger-Land: bei DEU die nationale, sonst
         # die INT-Abrechnungsnummer (falls gesetzt — sonst nationale als

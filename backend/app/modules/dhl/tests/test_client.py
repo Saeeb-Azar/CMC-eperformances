@@ -32,6 +32,15 @@ def _recipient() -> Address:
     )
 
 
+def _sender() -> Address:
+    # Tests laufen ohne gesetzte DHL_SENDER_*-Settings → expliziten gültigen
+    # Absender mitgeben, damit die Absender-Validierung nicht vorab greift.
+    return Address(
+        name="ePerformances", street="Senderstr.", street_no="2",
+        zip_code="10115", city="Berlin", country="DEU",
+    )
+
+
 @pytest.mark.asyncio
 async def test_test_mode_returns_mock_without_network():
     """Solange write_enabled=False, geht KEIN Request raus."""
@@ -65,7 +74,7 @@ async def test_live_mode_sends_correct_body_and_headers():
     dhl_runtime.write_enabled = True
     c = make_client(handler)
     r = await c.create_shipment(
-        recipient=_recipient(), weight_g=500,
+        recipient=_recipient(), sender=_sender(), weight_g=500,
         length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
     )
     assert r["tracking"] == "00340434161094023901"
@@ -92,9 +101,9 @@ async def test_live_mode_unconfigured_raises():
         base_url="", api_key="", username="", password="", billing_number="",
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})),
     )
-    with pytest.raises(DhlError, match="not configured"):
+    with pytest.raises(DhlError, match="nicht konfiguriert"):
         await c.create_shipment(
-            recipient=_recipient(), weight_g=500,
+            recipient=_recipient(), sender=_sender(), weight_g=500,
             length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
         )
 
@@ -108,7 +117,7 @@ async def test_http_error_raises_and_records_runtime_error():
     c = make_client(handler)
     with pytest.raises(DhlError) as ei:
         await c.create_shipment(
-            recipient=_recipient(), weight_g=500,
+            recipient=_recipient(), sender=_sender(), weight_g=500,
             length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
         )
     assert ei.value.status_code == 401
@@ -124,9 +133,61 @@ async def test_missing_shipment_no_raises():
     c = make_client(handler)
     with pytest.raises(DhlError, match="shipmentNo"):
         await c.create_shipment(
-            recipient=_recipient(), weight_g=500,
+            recipient=_recipient(), sender=_sender(), weight_g=500,
             length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
         )
+
+
+@pytest.mark.asyncio
+async def test_incomplete_recipient_raises_clear_error():
+    """Live-Modus + Empfänger ohne PLZ/Stadt → klarer Fehler, KEIN API-Call."""
+    def handler(_: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("must not call DHL with invalid address")
+    dhl_runtime.write_enabled = True
+    c = make_client(handler)
+    bad = Address(name="X", street="Y", street_no="1", zip_code="", city="", country="DEU")
+    with pytest.raises(DhlError, match="Empfängeradresse unvollständig"):
+        await c.create_shipment(
+            recipient=bad, weight_g=500,
+            length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
+        )
+
+
+@pytest.mark.asyncio
+async def test_incomplete_recipient_ok_in_test_mode():
+    """Test-Modus mockt trotz unvollständiger Adresse — Validierung gilt nur live."""
+    dhl_runtime.write_enabled = False
+    c = make_client(lambda r: httpx.Response(200, json={}))
+    bad = Address(name="", street="", street_no="", zip_code="", city="", country="DEU")
+    r = await c.create_shipment(
+        recipient=bad, weight_g=500,
+        length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
+    )
+    assert r["tracking"].startswith("TEST-")
+
+
+@pytest.mark.asyncio
+async def test_zero_weight_raises():
+    dhl_runtime.write_enabled = True
+    c = make_client(lambda r: httpx.Response(200, json={"items": [{"shipmentNo": "X"}]}))
+    with pytest.raises(DhlError, match="Gewicht"):
+        await c.create_shipment(
+            recipient=_recipient(), sender=_sender(), weight_g=0,
+            length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
+        )
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_error_names_missing_vars():
+    dhl_runtime.write_enabled = True
+    c = DhlClient(base_url="https://x", api_key="", username="u", password="p",
+                  billing_number="", transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+    with pytest.raises(DhlError) as ei:
+        await c.create_shipment(
+            recipient=_recipient(), sender=_sender(), weight_g=500,
+            length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
+        )
+    assert "DHL_API_KEY" in str(ei.value) and "DHL_BILLING_NUMBER" in str(ei.value)
 
 
 @pytest.mark.asyncio
@@ -143,7 +204,7 @@ async def test_refno_is_truncated_to_35_chars():
     c = make_client(handler)
     long_ref = "ref" + "0" * 50  # 53 Zeichen
     await c.create_shipment(
-        recipient=_recipient(), weight_g=500,
+        recipient=_recipient(), sender=_sender(), weight_g=500,
         length_mm=200, width_mm=150, height_mm=80, order_ref=long_ref,
     )
     import json

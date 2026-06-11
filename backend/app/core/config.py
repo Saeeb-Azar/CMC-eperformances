@@ -140,6 +140,11 @@ class Settings(BaseSettings):
     # Label-Format: ZPL2 für direkten Druck am thermischen Labeler der CW1000,
     # sonst "PDF" zum Anzeigen/Archivieren.
     dhl_label_format: str = "ZPL2"
+    # Zeitbudget (Sek.) für den DHL-Call im LAB1-Hotpath. Die CW1000 timed das
+    # LAB1-Reply nach ~2 s, also < 2 lassen. Eine echte DHL-API kann aber
+    # 1-3 s brauchen → wenn das hier reißt, ist Pre-Creation (Label schon bei
+    # ACK erzeugen) der richtige Weg. Per Env justierbar.
+    dhl_lab1_timeout_s: float = 1.8
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

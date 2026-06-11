@@ -1015,12 +1015,14 @@ class ConnectionManager:
                             # blinder Annahme.
                             if msg_type == "LAB1" and response.get("result") == 1 and conn.protocol_id:
                                 ref_for_label = str(response.get("reference_id") or "")
+                                from app.core.config import get_settings as _gs
+                                _dhl_timeout = _gs().dhl_lab1_timeout_s
                                 try:
                                     await asyncio.wait_for(
                                         self._enrich_lab1_with_dhl(
                                             response, conn.protocol_id, ref_for_label, msg_data,
                                         ),
-                                        timeout=1.5,
+                                        timeout=_dhl_timeout,
                                     )
                                 except asyncio.TimeoutError:
                                     logger.warning(
