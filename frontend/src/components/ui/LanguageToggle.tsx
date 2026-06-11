@@ -20,16 +20,31 @@ export default function LanguageToggle({ variant = 'light' }: LanguageToggleProp
   };
 
   if (variant === 'dark') {
+    // Gleicher Pill-Look wie der helle .segmented-Schalter, nur auf dunklem
+    // Grund — bewusst Inline-Styles (keine Tailwind-Abhängigkeit).
     return (
-      <div className="flex items-center gap-0.5 rounded bg-gray-800 p-0.5" role="group" aria-label="Language">
+      <div
+        role="group"
+        aria-label="Language"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 2,
+          padding: 2, borderRadius: 7, flexShrink: 0,
+          background: 'rgba(255,255,255,0.10)',
+          border: '1px solid rgba(255,255,255,0.14)',
+        }}
+      >
         {(['de', 'en'] as Lang[]).map((lang) => (
           <button
             key={lang}
             type="button"
             onClick={() => setLang(lang)}
-            className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
-              current === lang ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'
-            }`}
+            style={{
+              padding: '3px 8px', borderRadius: 5, border: 'none',
+              fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
+              cursor: 'pointer', lineHeight: 1.2,
+              background: current === lang ? '#fff' : 'transparent',
+              color: current === lang ? '#0f172a' : 'rgba(255,255,255,0.55)',
+            }}
           >
             {lang.toUpperCase()}
           </button>
