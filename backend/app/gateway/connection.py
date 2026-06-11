@@ -929,6 +929,18 @@ class ConnectionManager:
                         matched_cw_list: str | None = None
                         filter_passed = True
                         if msg_type == "ENQ" and conn.protocol_id:
+                            # Stationsflags MÜSSEN vor dem ENQ-Reply geladen
+                            # sein (Lab1Sel etc.). Der Hintergrund-Task kann
+                            # noch laufen → hier zuverlässig nachladen, falls
+                            # noch nicht gecacht. Einmaliger DB-Read, danach
+                            # gecacht; im 2-s-Budget der Maschine unkritisch.
+                            if conn.station_flags is None:
+                                try:
+                                    await asyncio.wait_for(
+                                        self._load_station_flags(conn), timeout=1.0,
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"station flags load failed inline: {e}")
                             raw_bc = str(msg_data.get("barcode", "") or "")
                             barcode = sanitize_barcode(raw_bc)
                             # Resolved code flows through the whole pipeline
