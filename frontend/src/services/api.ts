@@ -281,8 +281,14 @@ export const api = {
   getPulpoSettings: () => request<{ test_mode: boolean; write_enabled: boolean }>('/settings/pulpo'),
   getPulpoStatus: () => request<{
     test_mode: boolean; configured: boolean; last_sync_at: string | null;
+    last_sync_error: string | null; last_sync_error_at: string | null;
     open_orders: number; barcodes: number;
+    locations: Record<string, number>; cache_locations: Record<string, number>;
   }>('/settings/pulpo/status'),
+  triggerPulpoResync: () =>
+    request<{ ok: boolean; orders?: number; locations?: Record<string, number>; error?: string }>(
+      '/settings/pulpo/resync', { method: 'POST' },
+    ),
   setPulpoSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/pulpo', {
       method: 'PUT',

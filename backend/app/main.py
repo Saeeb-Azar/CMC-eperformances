@@ -299,6 +299,7 @@ async def get_pulpo_status():
 
     open_orders = 0
     barcodes = 0
+    cache_locations: dict[str, int] = {}
     try:
         async with async_session() as db:
             open_orders = (await db.execute(
@@ -310,6 +311,15 @@ async def get_pulpo_status():
                 .join(PulpoPackingOrder, PulpoOrderItem.order_db_id == PulpoPackingOrder.id)
                 .where(PulpoPackingOrder.state == "queue", PulpoOrderItem.ean != "")
             )).scalar() or 0
+            # Cache-side Lagerplatz distribution — what the sidebar is built
+            # from. If this diverges from `locations` (last live pull), the
+            # cache is stale / the resync is not landing.
+            rows = (await db.execute(
+                select(PulpoPackingOrder.pick_location, func.count())
+                .where(PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")))
+                .group_by(PulpoPackingOrder.pick_location)
+            )).all()
+            cache_locations = {(loc or "?"): int(n) for loc, n in rows}
     except Exception as e:
         logger.warning(f"pulpo status counts failed: {e}")
 
@@ -317,9 +327,31 @@ async def get_pulpo_status():
         "test_mode": pulpo_runtime.test_mode,
         "configured": pulpo.configured,
         "last_sync_at": pulpo_runtime.last_sync_at.isoformat() if pulpo_runtime.last_sync_at else None,
+        "last_sync_error": pulpo_runtime.last_sync_error,
+        "last_sync_error_at": (
+            pulpo_runtime.last_sync_error_at.isoformat() if pulpo_runtime.last_sync_error_at else None
+        ),
         "open_orders": open_orders,
         "barcodes": barcodes,
+        # live = letzter erfolgreicher Pulpo-Pull; cache = woraus die Sidebar baut
+        "locations": pulpo_runtime.last_locations,
+        "cache_locations": cache_locations,
     }
+
+
+@app.post("/api/v1/settings/pulpo/resync")
+async def trigger_pulpo_resync():
+    """Manual resync: pull the live Pulpo queue NOW, self-heal the cache and
+    rebuild the CW-Listen. Returns the result incl. the live Lagerplatz
+    distribution — the one-click answer to \"why does the sidebar show X?\"."""
+    from app.core.database import async_session
+    from app.modules.pulpo import cw_sync
+
+    async with async_session() as db:
+        result = await cw_sync.resync_cache_from_pulpo(db)
+        await cw_sync.sync_cw_lists_from_cache(db)
+        await db.commit()
+    return result
 
 
 @app.get("/api/v1/notifications")

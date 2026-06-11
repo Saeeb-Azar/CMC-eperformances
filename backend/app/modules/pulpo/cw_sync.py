@@ -152,8 +152,34 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
             o0 = orders[0]
             logger.info(f"Pulpo sample order FULL: {_json.dumps(o0, default=str)[:2500]}")
             logger.info(f"Pulpo sample order: keys={list(o0.keys())} loc={_extract_location_code(o0, loc_map)!r}")
+
+        # Defensive: we request state=queue, but should Pulpo ever ignore the
+        # param and return finished orders too, they must not be upserted as
+        # "queue" (they'd resurrect ghost Lagerplätze). Skip clearly terminal
+        # states; anything else (queue/taken/missing field) counts as live.
+        _TERMINAL = {"ended", "closed", "cancelled", "canceled", "finished", "done"}
+        live_orders = []
+        for o in orders:
+            st = str(o.get("state") or o.get("status") or "").lower()
+            if st in _TERMINAL:
+                continue
+            live_orders.append(o)
+        if len(live_orders) != len(orders):
+            logger.warning(
+                f"Pulpo resync: dropped {len(orders) - len(live_orders)} order(s) "
+                f"with terminal state from the queue pull"
+            )
+
+        # Diagnostics: Lagerplatz distribution of the LIVE pull — this is what
+        # the sidebar SHOULD show. Exposed via the settings status endpoint.
+        loc_counts: dict[str, int] = {}
+        for o in live_orders:
+            code = _extract_location_code(o, loc_map) or "?"
+            loc_counts[code] = loc_counts.get(code, 0) + 1
+        logger.info(f"Pulpo queue Lagerplatz distribution: {loc_counts}")
+
         pulled_ids: set[str] = set()
-        for order in orders:
+        for order in live_orders:
             oid = order.get("id")
             if oid is None:
                 continue
@@ -185,12 +211,16 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
         )
     except PulpoError as e:
         logger.warning(f"Pulpo resync failed: {e} — keeping existing cache")
+        pulpo_runtime.last_sync_error = str(e)
+        pulpo_runtime.last_sync_error_at = datetime.now(timezone.utc)
         return {"ok": False, "error": str(e)}
 
     pulpo_runtime.last_sync_at = datetime.now(timezone.utc)
-    pulpo_runtime.last_sync_orders = len(orders)
+    pulpo_runtime.last_sync_orders = len(live_orders)
+    pulpo_runtime.last_sync_error = None
+    pulpo_runtime.last_locations = loc_counts
     await sync_cw_lists_from_cache(db)
-    return {"ok": True, "orders": len(orders)}
+    return {"ok": True, "orders": len(live_orders), "locations": loc_counts}
 
 
 def _extract_cartbox(order: dict) -> str:

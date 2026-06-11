@@ -25,6 +25,13 @@ class PulpoRuntime:
         # Last successful resync (for the settings status card).
         self.last_sync_at: datetime | None = None
         self.last_sync_orders: int = 0
+        # Diagnostics: why the last resync failed (None = last run OK) and the
+        # Lagerplatz distribution of the last successful LIVE queue pull
+        # (e.g. {"CW2": 198}). Comparing this against the cache distribution
+        # immediately shows whether the sidebar reflects Pulpo or stale cache.
+        self.last_sync_error: str | None = None
+        self.last_sync_error_at: datetime | None = None
+        self.last_locations: dict[str, int] = {}
 
     @property
     def test_mode(self) -> bool:

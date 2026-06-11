@@ -5,12 +5,15 @@ import Topbar from '../../components/layout/Topbar';
 import {
   Building2, CreditCard, Boxes, ShieldCheck, Loader2, Save, Copy,
   Clock, ListChecks, ShoppingCart, Server, Users, Zap, ChevronRight, Check, Infinity as InfinityIcon,
+  RefreshCw, AlertTriangle, MapPin,
 } from 'lucide-react';
 import { api, type UserRead, type TenantRead } from '../../services/api';
 
 interface PulpoStatus {
   test_mode: boolean; configured: boolean; last_sync_at: string | null;
+  last_sync_error: string | null; last_sync_error_at: string | null;
   open_orders: number; barcodes: number;
+  locations: Record<string, number>; cache_locations: Record<string, number>;
 }
 
 function relTime(iso: string | null): string {
@@ -28,6 +31,7 @@ export default function SettingsCompanyPage() {
   const [tenant, setTenant] = useState<TenantRead | null>(null);
   const [status, setStatus] = useState<PulpoStatus | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +52,15 @@ export default function SettingsCompanyPage() {
   }, []);
 
   const testMode = status ? status.test_mode : true;
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      await api.triggerPulpoResync();
+      const s = await api.getPulpoStatus();
+      setStatus(s);
+    } catch { /* status poll will catch up */ } finally { setSyncing(false); }
+  };
 
   const toggleTestMode = async (next: boolean) => {
     setSaving(true);
@@ -115,8 +128,28 @@ export default function SettingsCompanyPage() {
                   <Stat icon={<Clock size={15} />} label="Letzte Synchronisierung" value={relTime(status?.last_sync_at ?? null)} />
                   <Stat icon={<ListChecks size={15} />} label="Barcodes (CW-Listen)" value={String(status?.barcodes ?? 0)} />
                   <Stat icon={<ShoppingCart size={15} />} label="Offene Bestellungen" value={String(status?.open_orders ?? 0)} />
+                  <button type="button" className="modal-btn modal-btn--ghost" onClick={syncNow} disabled={syncing}
+                    style={{ justifyContent: 'center', gap: 6 }}>
+                    <RefreshCw size={14} className={syncing ? 'animate-spin' : undefined} />
+                    {syncing ? 'Synchronisiere…' : 'Jetzt synchronisieren'}
+                  </button>
                 </div>
               </div>
+              {status?.last_sync_error && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
+                  borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca',
+                }}>
+                  <AlertTriangle size={16} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>
+                    <strong>Sync fehlgeschlagen</strong> ({relTime(status.last_sync_error_at)}) — die CW-Listen zeigen den letzten bekannten Stand, nicht live Pulpo.
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, marginTop: 4, wordBreak: 'break-all' }}>{status.last_sync_error}</div>
+                  </div>
+                </div>
+              )}
+              {status && (Object.keys(status.locations ?? {}).length > 0 || Object.keys(status.cache_locations ?? {}).length > 0) && (
+                <LocationCompare live={status.locations ?? {}} cache={status.cache_locations ?? {}} />
+              )}
               <label style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                 padding: '10px 14px', borderRadius: 10, border: '1px solid var(--clr-border)', cursor: 'pointer',
@@ -217,6 +250,45 @@ function FieldText({ label, value, mono, copy, readOnly }: { label: string; valu
         )}
       </div>
     </label>
+  );
+}
+
+/** Lagerplatz-Verteilung: live (letzter Pulpo-Pull) vs. Sidebar (Cache).
+ *  Weichen die beiden ab, ist der Cache veraltet — genau das macht „Geister-
+ *  Listen" wie CW3/CW7 sichtbar, die in Pulpo längst nicht mehr existieren. */
+function LocationCompare({ live, cache }: { live: Record<string, number>; cache: Record<string, number> }) {
+  const keys = Array.from(new Set([...Object.keys(live), ...Object.keys(cache)])).sort();
+  const mismatch = keys.some((k) => (live[k] ?? 0) !== (cache[k] ?? 0));
+  return (
+    <div style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid var(--clr-border)', background: '#f8fafc' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <MapPin size={14} style={{ color: '#64748b' }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Lagerplätze: Pulpo (live) vs. CW-Listen</span>
+        {mismatch && (
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e' }}>
+            weicht ab — Cache veraltet?
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {keys.map((k) => {
+          const l = live[k] ?? 0;
+          const c = cache[k] ?? 0;
+          const stale = l !== c;
+          return (
+            <span key={k} title={`Pulpo live: ${l} Aufträge · CW-Liste/Cache: ${c}`}
+              style={{
+                fontSize: 11, fontFamily: 'var(--font-mono)', padding: '3px 8px', borderRadius: 8,
+                background: stale ? '#fff7ed' : '#ecfdf5',
+                border: `1px solid ${stale ? '#fed7aa' : '#a7f3d0'}`,
+                color: stale ? '#9a3412' : '#065f46',
+              }}>
+              {k}: {l}{stale ? ` / Cache ${c}` : ''}
+            </span>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
