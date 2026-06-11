@@ -9,6 +9,7 @@ import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
+from app.core.config import get_settings
 from app.core.logging import logger
 from app.gateway.protocol import MessageType
 
@@ -298,6 +299,9 @@ def build_response(
             # erwartet wird → "Wrong enq" + Out-of-Format-Auswurf.
             # Den Ablehnungsgrund halten wir intern in rejection_reason fest.
             "label_match": barcode,
+            # feeders aus den Settings (Env CMC_ENQ_FEEDERS) — muss zur
+            # physischen Pappe-Bahn-Konfig der Maschine passen, sonst Auswurf
+            # bei der Kartonbildung. Im responses-Dict unten überschrieben.
             # Stationsflags MÜSSEN zur tatsächlich installierten Hardware
             # passen — sonst antwortet die echte CW1000 mit "no LAB1 Reader
             # selected → INVALID" und wirft das Item aus. Werte kommen aus
@@ -318,7 +322,7 @@ def build_response(
             # wählt anhand der 3D-Messung selbst die richtige Karton-Größe.
             # (Default "01000000" hatte den CIS-Simulator zudem "incorrect
             # feeders value!" werfen lassen.)
-            "feeders": "11111111",
+            "feeders": (get_settings().cmc_enq_feeders or "11111111"),
             # Internal hints — stripped before wire serialisation, used by
             # connection.py to annotate the broadcast event for the dashboard.
             "rejection_reason": rejection_reason,
