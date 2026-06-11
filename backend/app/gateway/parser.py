@@ -290,21 +290,27 @@ def build_response(
             "reference_id": ref,
             "result": 1 if accept_enq else 0,
             "item_validated": accept_enq,
-            "description": "" if accept_enq else (
-                "NOREAD" if is_noread
-                else "UNKNOWN_BARCODE" if is_unknown
-                else "SINGLE_REJECTED" if is_single_reject
-                else "DUPLICATE_SCAN"
-            ),
+            # description war hier — entfernt: die echte CW1000 (und die
+            # Soll-Antwort des CMC-CIS-Simulators) hat KEIN description-Feld
+            # zwischen item_validated und label_match. Mit dem Extra-Feld
+            # rutscht alles danach um einen Slot, feeders landet wo sorter
+            # erwartet wird → "Wrong enq" + Out-of-Format-Auswurf.
+            # Den Ablehnungsgrund halten wir intern in rejection_reason fest.
             "label_match": barcode,
             "lab1_enabled": True,
             "lab2_enabled": False,
             "lab3_enabled": False,
             "inv_enabled": False,
             "sorter": 0,
-            # Feeders bitmask (8 chars, one per carton-forming feeder).
-            # "01000000" = use feeder #2, the default on the simulator.
-            "feeders": "01000000",
+            # Feeders-Bitmask (8 chars, je Bit = ein Karton-Formings-Feeder /
+            # eine Pappe-Rolle). Die ECHTE CW1000 wirft den Auftrag als
+            # "Out of Format (W2/W1)" aus, wenn der einzige erlaubte Feeder
+            # eine andere Pappenbreite hat als zum gemessenen 3D-Item passt.
+            # Wir lassen deshalb ALLE Feeder zu ("11111111") — die Maschine
+            # wählt anhand der 3D-Messung selbst die richtige Karton-Größe.
+            # (Default "01000000" hatte den CIS-Simulator zudem "incorrect
+            # feeders value!" werfen lassen.)
+            "feeders": "11111111",
             # Internal hints — stripped before wire serialisation, used by
             # connection.py to annotate the broadcast event for the dashboard.
             "rejection_reason": rejection_reason,
@@ -380,11 +386,13 @@ def serialize_response(msg_type: str, response: dict, machine_id: str = "") -> b
         "END": ["event", "reference_id", "result"],
         "INV": ["event", "reference_id", "result", "match_barcode"],
         "ENQ": [
-            # CW1000 CIS rel 4.0: the ENQ response carries the item's
-            # validation flag, reference, display info, station flags, and
-            # an 8-char feeders bitmask at the end (same bitmask the machine
-            # echoes back in the LAB1 request).
-            "event", "reference_id", "item_validated", "description",
+            # CW1000 CIS rel 4.0: Reihenfolge nach Soll-Antwort des CMC-CIS-
+            # Simulators ("|enq|event|ref|item_validated|label_match|lab1|
+            # lab2|lab3|inv|sorter|feeders"). KEIN description-Feld in der
+            # Wire-Antwort — sonst rutschen alle Werte um einen Slot, die
+            # echte Maschine wirft das Item als "Wrong enq / Out of Format"
+            # aus (siehe Maschinen-HMI-Logs 11.06.).
+            "event", "reference_id", "item_validated",
             "label_match", "lab1_enabled", "lab2_enabled", "lab3_enabled",
             "inv_enabled", "sorter", "feeders",
         ],
