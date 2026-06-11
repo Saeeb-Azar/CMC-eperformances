@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete as sa_delete
 
 from app.modules.machines.models import Machine, HeartbeatLog
 from app.modules.machines.schemas import MachineCreate, MachineUpdate
@@ -54,6 +54,22 @@ async def list_machines(db: AsyncSession, tenant_id: str) -> list[Machine]:
     for m in machines:
         m.is_online = effective_online(m)
     return machines
+
+
+async def delete_machine(db: AsyncSession, machine_db_id: str) -> bool:
+    """Maschine + abhängige Daten (Heartbeats, Auftrags-Historie) löschen.
+
+    Explizite Deletes statt Verlass auf DB-CASCADE, damit es auch auf
+    SQLite (lokale Dev-DB ohne FK-Enforcement) sauber funktioniert."""
+    machine = await get_machine(db, machine_db_id)
+    if not machine:
+        return False
+    from app.modules.orders.models import OrderState  # local: avoid cycle
+    await db.execute(sa_delete(HeartbeatLog).where(HeartbeatLog.machine_db_id == machine_db_id))
+    await db.execute(sa_delete(OrderState).where(OrderState.machine_db_id == machine_db_id))
+    await db.delete(machine)
+    await db.flush()
+    return True
 
 
 async def update_machine(db: AsyncSession, machine_db_id: str, data: MachineUpdate) -> Machine | None:

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   X, Server, Loader2, Network, Boxes, Ruler, Layers, Link2, Copy, Check,
-  ChevronDown, ChevronRight, CheckCircle2, Wifi, Info,
+  ChevronDown, ChevronRight, CheckCircle2, Wifi, Info, Trash2,
 } from 'lucide-react';
 import { api, type MachineCreateInput, type MachineRead } from '../../services/api';
 
@@ -14,6 +14,8 @@ interface MachineFormModalProps {
   machine?: MachineRead | null;
   /** Prefill für die Maschinen-ID — z.B. aus „unbekannte Verbindung erkannt". */
   initialMachineId?: string | null;
+  /** Nach erfolgreichem Löschen (nur Edit-Modus relevant). */
+  onDeleted?: () => void;
 }
 
 const DEFAULTS: MachineCreateInput = {
@@ -52,12 +54,13 @@ function fromMachine(m: MachineRead): MachineCreateInput {
   };
 }
 
-export default function MachineFormModal({ open, onClose, onCreated, machine, initialMachineId }: MachineFormModalProps) {
+export default function MachineFormModal({ open, onClose, onCreated, machine, initialMachineId, onDeleted }: MachineFormModalProps) {
   const { t } = useTranslation();
   const isEdit = !!machine;
   const [form, setForm] = useState<MachineCreateInput>(DEFAULTS);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   // Nach erfolgreichem Anlegen: Verbindungs-Check-Ansicht statt Formular.
   const [created, setCreated] = useState<MachineRead | null>(null);
@@ -85,6 +88,22 @@ export default function MachineFormModal({ open, onClose, onCreated, machine, in
 
   const update = <K extends keyof MachineCreateInput>(key: K, value: MachineCreateInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleDelete = async () => {
+    if (!machine) return;
+    if (!window.confirm(`Maschine „${machine.name}“ (ID ${machine.machine_id}) wirklich löschen?\nHeartbeats und Auftrags-Historie dieser Maschine werden mit entfernt.`)) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await api.deleteMachine(machine.id);
+      onDeleted?.();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -160,7 +179,7 @@ export default function MachineFormModal({ open, onClose, onCreated, machine, in
               <div className="modal-grid-2">
                 <Field
                   label="Maschinen-ID *"
-                  hint={isEdit ? 'ID kann nachträglich nicht geändert werden.' : 'Muss der gesendeten CIS-ID entsprechen (z.B. 0001).'}
+                  hint={isEdit ? 'ID kann nachträglich nicht geändert werden.' : 'Muss der gesendeten CIS-ID entsprechen (z.B. 0001) — und eindeutig sein: jede ID gehört genau EINER Maschine.'}
                 >
                   <input
                     type="text" className="modal-input" value={form.machine_id}
@@ -266,14 +285,32 @@ export default function MachineFormModal({ open, onClose, onCreated, machine, in
           </div>
 
           {/* Footer */}
-          <div className="modal__footer">
-            <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose}>
-              {t('common.cancel')}
-            </button>
-            <button type="submit" className="modal-btn modal-btn--primary" disabled={loading}>
-              {loading ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
-              {loading ? t('common.loading') : isEdit ? t('common.save', 'Speichern') : 'Anlegen & Verbindung prüfen'}
-            </button>
+          <div className="modal__footer" style={isEdit ? { justifyContent: 'space-between' } : undefined}>
+            {isEdit && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+                  border: '1px solid #fecaca', background: '#fef2f2',
+                  fontSize: 12.5, fontWeight: 600, color: '#991b1b',
+                }}
+              >
+                {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                Maschine löschen
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose}>
+                {t('common.cancel')}
+              </button>
+              <button type="submit" className="modal-btn modal-btn--primary" disabled={loading}>
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <Server size={14} />}
+                {loading ? t('common.loading') : isEdit ? t('common.save', 'Speichern') : 'Anlegen & Verbindung prüfen'}
+              </button>
+            </div>
           </div>
         </form>
       )}

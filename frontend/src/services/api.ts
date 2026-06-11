@@ -286,6 +286,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  deleteMachine: (id: string) =>
+    request<{ ok: boolean }>(`/machines/${id}`, { method: 'DELETE' }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),
   getGatewayStatus: () => request<{
     listening: boolean; port: number; connected_machines: string[];

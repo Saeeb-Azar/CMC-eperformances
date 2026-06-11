@@ -262,6 +262,7 @@ export default function MachinesPage() {
           open={modalOpen || !!editing}
           machine={editing}
           initialMachineId={prefillId}
+          onDeleted={() => { reload(); }}
           onClose={() => { setModalOpen(false); setEditing(null); setPrefillId(null); }}
           onCreated={(m) => {
             setMachines((prev) => {

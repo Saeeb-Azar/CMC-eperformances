@@ -20,7 +20,33 @@ async def create_machine(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role(Role.TENANT_ADMIN)),
 ):
+    # Die Maschinen-ID ist der Verknüpfungsschlüssel zur TCP-Verbindung —
+    # zwei Maschinen mit derselben ID machen die Zuordnung mehrdeutig
+    # (Name/Heartbeat springen zwischen den Einträgen hin und her).
+    existing = await service.get_machine_by_machine_id(db, user["tenant_id"], data.machine_id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Maschinen-ID „{data.machine_id}“ ist bereits durch "
+                f"„{existing.name}“ belegt. Jede ID kann nur EINER Maschine "
+                f"zugeordnet werden — bitte die bestehende Maschine bearbeiten "
+                f"oder eine andere ID verwenden."
+            ),
+        )
     return await service.create_machine(db, user["tenant_id"], data)
+
+
+@router.delete("/{machine_id}")
+async def delete_machine(
+    machine_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_role(Role.TENANT_ADMIN)),
+):
+    ok = await service.delete_machine(db, machine_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Machine not found")
+    return {"ok": True}
 
 
 @router.get("", response_model=list[MachineRead])
