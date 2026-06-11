@@ -1029,13 +1029,28 @@ class ConnectionManager:
                                     response["result"] = 0
                                     response["status"] = "REJECTED"
                                     response["rejection_reason"] = "dhl_timeout"
+                                    try:
+                                        from app.modules.dhl.runtime import dhl_runtime
+                                        from datetime import datetime as _dt
+                                        dhl_runtime.last_error = f"LAB1 {ref_for_label}: timeout after 1.5s"
+                                        dhl_runtime.last_error_at = _dt.utcnow()
+                                    except Exception: pass
                                 except Exception as e:
                                     logger.warning(
-                                        f"DHL label error for {ref_for_label}: {e} — rejecting LAB1"
+                                        f"DHL label error for {ref_for_label}: {e!r} — rejecting LAB1",
+                                        exc_info=True,
                                     )
                                     response["result"] = 0
                                     response["status"] = "REJECTED"
                                     response["rejection_reason"] = "dhl_error"
+                                    # Fehlertext ins Runtime spiegeln, damit er
+                                    # in der DHL-Statuskarte sichtbar ist.
+                                    try:
+                                        from app.modules.dhl.runtime import dhl_runtime
+                                        from datetime import datetime as _dt
+                                        dhl_runtime.last_error = f"LAB1 {ref_for_label}: {e!r}"
+                                        dhl_runtime.last_error_at = _dt.utcnow()
+                                    except Exception: pass
                             # Nach erfolgreicher ENQ-Annahme: verbrauchten
                             # CW-Slot abbuchen und Glitch-Memo setzen.
                             if (
