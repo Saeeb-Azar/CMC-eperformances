@@ -24,8 +24,11 @@ class Settings(BaseSettings):
     # Auth
     secret_key: str = "CHANGE-ME-IN-PRODUCTION"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 7
+    # Lange Sessions sind hier gewollt: ein Operator soll mitten in einem
+    # Pack-Vorgang nicht ausgeloggt werden. 30 Tage Access-Token + 365 Tage
+    # Refresh-Token. JWT bleibt signiert/verifiziert wie bisher.
+    access_token_expire_minutes: int = 60 * 24 * 30
+    refresh_token_expire_days: int = 365
 
     # CMC Gateway
     cmc_tcp_host: str = "0.0.0.0"

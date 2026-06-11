@@ -938,5 +938,14 @@
   },
   "errors": {
     "title": "Anwendungsfehler"
+  },
+  "session": {
+    "tooltip": "Angemeldet seit dem letzten Login",
+    "short": {
+      "d": "T",
+      "h": "h",
+      "m": "m",
+      "s": "s"
+    }
   }
 }

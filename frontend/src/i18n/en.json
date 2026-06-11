@@ -938,5 +938,14 @@
   },
   "errors": {
     "title": "Application Error"
+  },
+  "session": {
+    "tooltip": "Signed in since last login",
+    "short": {
+      "d": "d",
+      "h": "h",
+      "m": "m",
+      "s": "s"
+    }
   }
 }

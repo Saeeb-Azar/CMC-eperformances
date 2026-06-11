@@ -30,6 +30,8 @@ export default function LoginPage() {
       const res = await api.login(email, password);
       localStorage.setItem('access_token', res.access_token);
       localStorage.setItem('refresh_token', res.refresh_token);
+      // Sitzungsbeginn für die Session-Uhr in der Topbar.
+      localStorage.setItem('cmc.loginAt', String(Date.now()));
       navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('auth.loginFailed'));

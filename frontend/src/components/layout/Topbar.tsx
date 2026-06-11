@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import NotificationBell from './NotificationBell';
 import LanguageToggle from '../ui/LanguageToggle';
+import SessionClock from '../ui/SessionClock';
 import { useMobileNav } from './AppLayout';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
@@ -70,6 +71,9 @@ export default function Topbar({ title, subtitle, liveStatus, showViewToggle = f
           </div>
         )}
 
+        {/* Session-Uhr: „angemeldet seit". Auf sehr schmalen Phones blenden
+            wir sie aus (Toggle + Glocke haben Vorrang). */}
+        {!isMobile && <SessionClock />}
         {/* Language switcher */}
         <LanguageToggle />
 

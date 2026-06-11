@@ -6,5 +6,9 @@ export default function RequireAuth() {
   if (!token) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
+  // Backfill für Bestands-Sessions, die noch keinen Login-Zeitstempel haben.
+  if (typeof window !== 'undefined' && !localStorage.getItem('cmc.loginAt')) {
+    localStorage.setItem('cmc.loginAt', String(Date.now()));
+  }
   return <Outlet />;
 }

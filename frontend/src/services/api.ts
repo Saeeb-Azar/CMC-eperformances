@@ -29,6 +29,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (res.status === 401 && !path.startsWith('/auth/login')) {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+      localStorage.removeItem('cmc.loginAt');
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.href = '/login';
       }

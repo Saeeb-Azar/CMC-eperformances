@@ -1,6 +1,7 @@
 import { Wifi, WifiOff, Activity, AlertCircle, Pause, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LanguageToggle from '../ui/LanguageToggle';
+import SessionClock from '../ui/SessionClock';
 
 export type MachineState = 'running' | 'idle' | 'error' | 'paused' | 'offline';
 
@@ -43,6 +44,7 @@ export default function TopStatusBar({
       <div className="flex items-center gap-4 text-gray-500">
         {currentStep && <span>{currentStep}</span>}
         {activeBarcode && <code className="font-mono text-gray-300">{activeBarcode}</code>}
+        <SessionClock variant="dark" />
         <LanguageToggle variant="dark" />
       </div>
     </div>
