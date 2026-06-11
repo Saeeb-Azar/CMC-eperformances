@@ -728,6 +728,16 @@ class ConnectionManager:
 
                 conn.last_heartbeat = datetime.now(timezone.utc)
 
+                # Roh-Frame loggen (STX/ETX sichtbar gemacht) — unverzichtbar
+                # für die Inbetriebnahme an der echten Maschine: so sehen wir
+                # exakt, welche Felder die CMC im ENQ schickt und können die
+                # Antwort 1:1 dagegen abgleichen ("Wrong Barcode"-Diagnose).
+                logger.info(
+                    "TCP recv ← %s",
+                    data.replace(b"\x02", b"<STX>").replace(b"\x03", b"<ETX>")
+                        .decode("utf-8", "replace").strip(),
+                )
+
                 # Parse raw TCP data
                 events = parse_message(data)
 
