@@ -202,6 +202,10 @@ interface PackageRow {
   rejectionReason?: string;
   rejectionStation?: 'scanner' | 'sensor' | 'labeler' | 'exit';
   cwList?: string;
+  // Pulpo-Identifikatoren (aus dem Backend per Barcode-Lookup angereichert),
+  // damit Operator die Sendung im Pulpo-UI wiederfindet.
+  pulpoSequenceNumber?: string;     // z.B. PA-0580416
+  pulpoSalesOrderNum?: string;      // z.B. 305-4362733-7081967_422525
   events: RawEvent[];
 }
 
@@ -341,6 +345,7 @@ function aggregatePackages(events: RawEvent[]): PackageRow[] {
 interface DbOrderRow {
   reference_id: string; barcode: string; state: string;
   machine_id: string; is_test: boolean;
+  pulpo_sequence_number?: string; pulpo_sales_order_num?: string;
   final_weight_g: number | null;
   final_length_mm: number | null; final_width_mm: number | null; final_height_mm: number | null;
   dimension_length_mm: number | null; dimension_width_mm: number | null; dimension_height_mm: number | null;
@@ -387,6 +392,8 @@ function dbRowToPackage(r: DbOrderRow): PackageRow {
     height_mm: r.final_height_mm ?? r.dimension_height_mm ?? undefined,
     weight_g:  r.final_weight_g ?? undefined,
     rejectionReason: r.ejection_reason ?? undefined,
+    pulpoSequenceNumber: r.pulpo_sequence_number || undefined,
+    pulpoSalesOrderNum: r.pulpo_sales_order_num || undefined,
     events: [],
   };
 }
@@ -542,8 +549,20 @@ export default function LiveFlowPage() {
       return flag === undefined || flag === pulpoTestMode;
     });
     const live = aggregatePackages(visible);
-    const liveRefs = new Set(live.map((p) => p.ref));
-    return [...live, ...dbPackages.filter((p) => !liveRefs.has(p.ref))].sort(
+    // DB-Pakete nach ref indexieren, damit Live-Einträge die Pulpo-Nummern
+    // (PA-…, Verkaufsauftrag) übernehmen können — die kommen NUR aus dem
+    // Backend-Lookup, nicht aus dem Live-Event-Stream.
+    const dbByRef = new Map(dbPackages.map((p) => [p.ref, p]));
+    const enrichedLive = live.map((p) => {
+      const d = dbByRef.get(p.ref);
+      return d
+        ? { ...p,
+            pulpoSequenceNumber: p.pulpoSequenceNumber ?? d.pulpoSequenceNumber,
+            pulpoSalesOrderNum: p.pulpoSalesOrderNum ?? d.pulpoSalesOrderNum }
+        : p;
+    });
+    const liveRefs = new Set(enrichedLive.map((p) => p.ref));
+    return [...enrichedLive, ...dbPackages.filter((p) => !liveRefs.has(p.ref))].sort(
       (a, b) => new Date(a.firstSeen).getTime() - new Date(b.firstSeen).getTime(),
     );
   }, [events, dbPackages, pulpoTestMode]);
@@ -1978,7 +1997,19 @@ function TableRow({
           )}
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{pkg.ref}</code>
+              {/* Wenn Pulpo-Mapping da ist: PA-Nummer prominent, CMC-Ref klein */}
+              {pkg.pulpoSequenceNumber ? (
+                <>
+                  <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700 }}>
+                    {pkg.pulpoSequenceNumber}
+                  </code>
+                  <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--clr-text-muted)' }}>
+                    {pkg.ref}
+                  </code>
+                </>
+              ) : (
+                <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{pkg.ref}</code>
+              )}
               {pkg.cwList && (
                 <span style={{
                   fontSize: 9, fontWeight: 600, letterSpacing: 0.3, padding: '1px 5px',
@@ -1986,6 +2017,13 @@ function TableRow({
                 }}>{pkg.cwList}</span>
               )}
             </div>
+            {pkg.pulpoSalesOrderNum && (
+              <div style={{
+                fontSize: 10, color: 'var(--clr-text-muted)',
+                fontFamily: 'var(--font-mono)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260,
+              }}>{pkg.pulpoSalesOrderNum}</div>
+            )}
             <div style={{
               fontSize: 10.5, color: 'var(--clr-text-muted)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260,
@@ -2135,10 +2173,22 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
             background: type === 'M' ? '#ede9fe' : '#dbeafe',
             color:      type === 'M' ? '#5b21b6' : '#1e40af',
           }}>{type}</span>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{pkg.ref}</div>
-            <div style={{ fontSize: 11, color: 'var(--clr-text-muted)' }}>
+          <div style={{ minWidth: 0 }}>
+            {/* Hauptzeile: Pulpo-Auftragsnummer (PA-…) wenn vorhanden, sonst
+                CMC-Ref. Drunter klein die Verkaufsauftrag-Nummer (302/305/…)
+                + CMC-Ref als Tech-Referenz. */}
+            <div style={{ fontSize: 16, fontWeight: 700,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {pkg.pulpoSequenceNumber || pkg.ref}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--clr-text-muted)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {pkg.pulpoSalesOrderNum && (
+                <code style={{ fontFamily: 'var(--font-mono)' }}>{pkg.pulpoSalesOrderNum}</code>
+              )}
+              {pkg.pulpoSalesOrderNum && <span> · </span>}
               {type === 'M' ? t('liveFlow.focus.multiOrder') : t('liveFlow.focus.singleOrder')}
+              {pkg.pulpoSequenceNumber && <span> · {pkg.ref}</span>}
             </div>
           </div>
         </div>

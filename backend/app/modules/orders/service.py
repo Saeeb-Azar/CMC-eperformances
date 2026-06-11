@@ -108,6 +108,50 @@ async def list_orders(
         proto = {mid: pid for mid, pid in rows}
         for o in orders:
             o.machine_id = proto.get(o.machine_db_id, "")  # type: ignore[attr-defined]
+
+        # Pulpo-Verknüpfung: über gescannten Barcode den passenden Pulpo-
+        # PackingOrder finden (Multi-Order: cart_box_barcode, Single: EAN
+        # auf einem Item). Eine Query für alle Barcodes der Order-Liste.
+        from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+        barcodes = {o.barcode for o in orders if o.barcode}
+        pulpo_by_bc: dict[str, tuple[str, str]] = {}
+        if barcodes:
+            # 1) Multi-Order: cart_box_barcode == barcode
+            res = await db.execute(
+                select(PulpoPackingOrder).where(
+                    PulpoPackingOrder.tenant_id == tenant_id,
+                    PulpoPackingOrder.cart_box_barcode.in_(barcodes),
+                )
+            )
+            for p in res.scalars().all():
+                sales = (p.raw_payload or {}).get("sales_order") or {}
+                pulpo_by_bc[p.cart_box_barcode] = (
+                    p.raw_payload.get("sequence_number", "") if isinstance(p.raw_payload, dict) else "",
+                    str(sales.get("order_num") or ""),
+                )
+            # 2) Single-Order: EAN auf einem Item
+            remaining = barcodes - set(pulpo_by_bc.keys())
+            if remaining:
+                res = await db.execute(
+                    select(PulpoOrderItem.ean, PulpoPackingOrder)
+                    .join(PulpoPackingOrder, PulpoOrderItem.order_db_id == PulpoPackingOrder.id)
+                    .where(
+                        PulpoPackingOrder.tenant_id == tenant_id,
+                        PulpoOrderItem.ean.in_(remaining),
+                    )
+                )
+                for ean, p in res.all():
+                    if ean in pulpo_by_bc:
+                        continue
+                    sales = (p.raw_payload or {}).get("sales_order") or {}
+                    pulpo_by_bc[ean] = (
+                        p.raw_payload.get("sequence_number", "") if isinstance(p.raw_payload, dict) else "",
+                        str(sales.get("order_num") or ""),
+                    )
+        for o in orders:
+            seq, son = pulpo_by_bc.get(o.barcode, ("", ""))
+            o.pulpo_sequence_number = seq  # type: ignore[attr-defined]
+            o.pulpo_sales_order_num = son  # type: ignore[attr-defined]
     return orders
 
 

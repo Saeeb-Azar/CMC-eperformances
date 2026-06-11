@@ -73,6 +73,12 @@ class OrderStateListItem(BaseModel):
     # ORM-Zeile gehängt (OrderState speichert nur machine_db_id), damit das
     # Dashboard nach seiner Maschinen-Auswahl filtern kann.
     machine_id: str = ""
+    # Pulpo-Identifikatoren, vom Service per Lookup nachgereicht (über
+    # gescannten Barcode → PulpoPackingOrder). Erlauben dem UI, neben dem
+    # CMC-internen ref0010 die echte Auftragsnummer (PA-…) und die
+    # Verkaufsauftrag-Nummer (z.B. 305-…) anzuzeigen.
+    pulpo_sequence_number: str = ""
+    pulpo_sales_order_num: str = ""
     tracking_number: str | None
     carrier: str | None
     final_weight_g: int | None

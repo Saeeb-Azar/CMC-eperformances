@@ -313,8 +313,33 @@ class PulpoClient:
         return self._as_list(result)
 
     async def get_packing_order(self, order_id: int | str) -> dict:
-        """Full packing order by ID (includes items)."""
+        """Full packing order by ID (includes items, packing_boxes,
+        attachments). Boxes existieren, wenn Pulpo den Auftrag bereits
+        gepackt hat (z.B. Pre-Label-Workflow); ihre ``attachments`` enthalten
+        dann eine ``label.pdf`` mit gültigem Versandlabel."""
         return await self._request("GET", f"/packing/orders/{order_id}")
+
+    async def download_attachment(self, attachment_id: int | str) -> tuple[bytes, str] | None:
+        """Roh-Bytes eines Attachments + Content-Type, oder None bei 404.
+
+        Endpoint-Pfad nach REST-Konvention; falls Pulpo einen abweichenden
+        Pfad nutzt, gibt es einen klaren PulpoError den der Aufrufer fängt.
+        """
+        try:
+            resp = await self._client.get(
+                f"{self.base_url}/attachments/{attachment_id}",
+                headers={"Authorization": f"Bearer {await self._ensure_token()}"},
+            )
+        except httpx.HTTPError as e:
+            raise PulpoError(f"download_attachment request failed: {e}") from e
+        if resp.status_code == 404:
+            return None
+        if resp.status_code >= 400:
+            raise PulpoError(
+                f"download_attachment {attachment_id} → HTTP {resp.status_code}",
+                status_code=resp.status_code,
+            )
+        return resp.content, resp.headers.get("content-type", "application/octet-stream")
 
     async def get_product(self, product_id: int | str) -> dict | None:
         """Product (with its ``barcodes``) by ID. Used to resolve a packing

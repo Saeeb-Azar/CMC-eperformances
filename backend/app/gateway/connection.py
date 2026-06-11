@@ -780,9 +780,28 @@ class ConnectionManager:
                 t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
                 tenant_id = t.id if t else ""
 
+            # ── Pulpo-Label-First ──────────────────────────────────────────
+            # Hat Pulpo zum gescannten Barcode bereits ein Label generiert?
+            # (Pre-Label-Workflow: Pulpo erstellt das DHL-Label, sobald die
+            #  Sales-Order in die Pack-Queue wandert. Dann müssen wir nicht
+            #  selbst DHL anrufen — risikoärmer, idempotent, kostenfrei.)
+            scanned_barcode = str(msg_data.get("barcode", "") or "").strip()
+            pulpo_hit = await self._try_pulpo_label(db, tenant_id, scanned_barcode)
+            if pulpo_hit is not None:
+                tracking, label_b64 = pulpo_hit
+                response["match_barcode"] = tracking
+                response["label_url"] = label_b64
+                response["status"] = ""
+                response["rejection_reason"] = None
+                logger.info(
+                    f"LAB1 enriched from Pulpo label: ref={ref} tracking={tracking}"
+                )
+                return
+
+            # ── Fallback: DHL direkt erzeugen ──────────────────────────────
             shipment = await create_label_for_order(
                 db, tenant_id=tenant_id, order_ref=ref,
-                order_state_id=None,  # OrderState-Verknüpfung kommt im nächsten Schritt
+                order_state_id=None,
                 recipient=recipient,
                 weight_g=weight_g, length_mm=length_mm,
                 width_mm=width_mm, height_mm=height_mm,
@@ -800,6 +819,68 @@ class ConnectionManager:
             f"LAB1 enriched with DHL: ref={ref} tracking={shipment.tracking_number} "
             f"test={shipment.is_test}"
         )
+
+    async def _try_pulpo_label(
+        self, db, tenant_id: str, barcode: str,
+    ) -> tuple[str, str] | None:
+        """Pulpo-Label für den gescannten Barcode finden (best-effort).
+        Liefert ``(tracking, label_b64)`` wenn Pulpo eine packing_box mit
+        Tracking + Label-Attachment hat, sonst None. Jeder Fehler unterwegs
+        → None, damit der DHL-Fallback greift."""
+        try:
+            from sqlalchemy import select
+            from app.modules.pulpo.client import pulpo as pulpo_client
+            from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+            import base64
+
+            # 1) Pulpo-PackingOrder zum Barcode finden (Multi-Box oder Single-EAN)
+            order = (await db.execute(
+                select(PulpoPackingOrder).where(
+                    PulpoPackingOrder.tenant_id == tenant_id,
+                    PulpoPackingOrder.cart_box_barcode == barcode,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if order is None and barcode:
+                order = (await db.execute(
+                    select(PulpoPackingOrder).join(
+                        PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
+                    ).where(
+                        PulpoPackingOrder.tenant_id == tenant_id,
+                        PulpoOrderItem.ean == barcode,
+                    ).limit(1)
+                )).scalar_one_or_none()
+            if order is None:
+                return None
+
+            # 2) Frische Order von Pulpo holen (packing_boxes + attachments
+            #    werden serverseitig befüllt, sobald ein Label existiert).
+            full = await pulpo_client.get_packing_order(order.pulpo_order_id)
+            boxes = (full or {}).get("packing_boxes") or []
+            if not boxes:
+                return None
+            # Erste Box mit Tracking + Label-Attachment auswählen.
+            for box in boxes:
+                tracking = str(box.get("tracking_number") or box.get("tracking_code") or "").strip()
+                attachments = box.get("attachments") or []
+                label_att = next(
+                    (a for a in attachments
+                     if "label" in str(a.get("name") or a.get("type") or "").lower()),
+                    None,
+                )
+                if not (tracking and label_att):
+                    continue
+                att_id = label_att.get("id")
+                if not att_id:
+                    continue
+                data = await pulpo_client.download_attachment(att_id)
+                if not data:
+                    continue
+                bytes_, _ctype = data
+                return tracking, base64.b64encode(bytes_).decode("ascii")
+            return None
+        except Exception as e:
+            logger.warning(f"Pulpo label lookup failed: {e!r} — falling back to DHL")
+            return None
 
     async def reap_stale_connections(self, max_idle_s: float = 300) -> int:
         """Close + drop sockets that have been silent for a long time.
