@@ -194,6 +194,12 @@ class MachineConnection:
         # surfaced to the dashboard, so the sidebar never shows a transient
         # `<ip>:<port>` entry.
         self.protocol_id: str | None = None
+        # Stationsflags aus der DB-Konfiguration der Maschine (lab1/lab2/inv).
+        # Wird einmalig nach dem ersten Frame mit machine_id geladen und in der
+        # ENQ-Antwort verwendet — die ECHTE CW1000 wirft Items aus mit
+        # "no LAB1 Reader selected" wenn wir lab1=1 anfordern, die Hardware
+        # aber keinen Labeler installiert hat.
+        self.station_flags: dict[str, bool] | None = None
 
     @property
     def idle_seconds(self) -> float:
@@ -652,6 +658,45 @@ class ConnectionManager:
                 return c
         return None
 
+    async def _load_station_flags(self, conn: "MachineConnection") -> None:
+        """Lab1/Lab2/Inv-Flags der Maschine aus der DB nachladen.
+
+        Wird einmalig getriggert, sobald die Maschine ihre protocol_id ("0001")
+        im ersten Frame deklariert. Bis die DB geantwortet hat, fällt die ENQ-
+        Antwort auf konservative Defaults zurück (lab1=False, lab2=False,
+        inv=False) — damit eine echte CW1000 OHNE Labeler kein Item mehr als
+        "no LAB1 Reader selected → INVALID" auswirft."""
+        from sqlalchemy import select
+        from app.core.database import async_session
+        from app.modules.machines.models import Machine
+
+        protocol_id = conn.protocol_id
+        if not protocol_id:
+            return
+        try:
+            async with async_session() as db:
+                m = (await db.execute(
+                    select(Machine).where(Machine.machine_id == protocol_id).limit(1)
+                )).scalar_one_or_none()
+            if m is None:
+                conn.station_flags = {"lab1": False, "lab2": False, "inv": False}
+                logger.info(
+                    f"Machine {protocol_id} not in registry — defaulting station "
+                    f"flags to all-off (item would be ejected otherwise)"
+                )
+                return
+            conn.station_flags = {
+                "lab1": bool(m.lab1_enabled),
+                "lab2": bool(m.lab2_enabled),
+                "inv": bool(m.inv_enabled),
+            }
+            logger.info(
+                f"Station flags for {protocol_id} loaded: {conn.station_flags}"
+            )
+        except Exception as e:
+            logger.warning(f"Could not load station flags for {protocol_id}: {e}")
+            conn.station_flags = {"lab1": False, "lab2": False, "inv": False}
+
     async def reap_stale_connections(self, max_idle_s: float = 300) -> int:
         """Close + drop sockets that have been silent for a long time.
 
@@ -758,6 +803,10 @@ class ConnectionManager:
                         declared = msg_data.get("machine_id")
                         if isinstance(declared, str) and declared.strip():
                             conn.protocol_id = declared.strip()
+                            # Stationsflags der Maschine aus der DB laden —
+                            # damit die ENQ-Antwort genau die LAB/INV-Stationen
+                            # ankündigt, die diese Hardware tatsächlich hat.
+                            asyncio.create_task(self._load_station_flags(conn))
 
                     # STEP 1 (latency-critical): answer the machine as fast
                     # as possible. The CMC simulator times out after ~2s, so
@@ -837,6 +886,7 @@ class ConnectionManager:
                                 matched_cw_list=matched_cw_list,
                                 multi_only=multi_only,
                                 pending_eject=eject_now,
+                                station_flags=conn.station_flags,
                             )
                             # Nach erfolgreicher ENQ-Annahme: verbrauchten
                             # CW-Slot abbuchen und Glitch-Memo setzen.

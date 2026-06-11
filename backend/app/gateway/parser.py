@@ -202,6 +202,7 @@ def build_response(
     matched_cw_list: str | None = None,
     multi_only: bool = False,
     pending_eject: bool = False,
+    station_flags: dict[str, bool] | None = None,
 ) -> dict:
     """Build a default CIS response for a CMC message type.
 
@@ -297,10 +298,17 @@ def build_response(
             # erwartet wird → "Wrong enq" + Out-of-Format-Auswurf.
             # Den Ablehnungsgrund halten wir intern in rejection_reason fest.
             "label_match": barcode,
-            "lab1_enabled": True,
-            "lab2_enabled": False,
+            # Stationsflags MÜSSEN zur tatsächlich installierten Hardware
+            # passen — sonst antwortet die echte CW1000 mit "no LAB1 Reader
+            # selected → INVALID" und wirft das Item aus. Werte kommen aus
+            # der DB (modules.machines.models.Machine.lab1/lab2/inv_enabled).
+            # Default ohne bekannte Maschine: konservativ alles AUS, dann
+            # läuft die Mechanik durch, ohne nicht-existierende Stationen
+            # anzufordern. lab3 ist noch nicht im Datenmodell — bleibt False.
+            "lab1_enabled": bool((station_flags or {}).get("lab1", False)),
+            "lab2_enabled": bool((station_flags or {}).get("lab2", False)),
             "lab3_enabled": False,
-            "inv_enabled": False,
+            "inv_enabled":  bool((station_flags or {}).get("inv",  False)),
             "sorter": 0,
             # Feeders-Bitmask (8 chars, je Bit = ein Karton-Formings-Feeder /
             # eine Pappe-Rolle). Die ECHTE CW1000 wirft den Auftrag als
