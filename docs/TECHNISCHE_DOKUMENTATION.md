@@ -210,6 +210,7 @@ DATABASE_URL · SECRET_KEY · CORS_ORIGINS · PORT (Railway setzt automatisch)
 CMC_TCP_PORT (15001) · EVENTS_PERSIST_ENABLED (Default true) · RETENTION_DAYS (30)
 PULPO_BASE_URL (https://eu.pulpo.co) · PULPO_USERNAME · PULPO_PASSWORD · PULPO_SCOPE (general)
 PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (8)
+WECLAPP_BASE_URL · WECLAPP_API_KEY (Produkt-Stammdaten, read-only)
 ```
 **Frontend-Env:** `VITE_API_URL` (Backend-URL, zur Laufzeit in `window.__ENV__` injiziert).
 
@@ -247,5 +248,6 @@ PULPO_WEBHOOK_SECRET · CW_SYNC_INTERVAL_S (8)
 
 - **Deferred-Writes-Flow** (Schreiben bei END an Pulpo) ist vorbereitet, aber noch nicht verdrahtet — „Test-Modus aus" hat erst dann Schreib-Wirkung.
 - **Persistenz** ist standardmäßig **an** (Aufträge/Audit werden gespeichert, 30-Tage-Retention). Im Test-Modus mit `is_test`-Flag. Eine dedizierte **Aufträge-Historie-Seite** fehlt noch.
+- **weclapp** (`modules/weclapp/`): read-only Produkt-Stammdaten per EAN (`AuthenticationToken`-Header, `ean-eq`-Filter, `articleNumber`-Fallback). Endpoints: `POST /products/lookup` (Batch, Fallback auf Pulpo-`product_name`) + `GET /products/{ean}/image` (Bild-Proxy mit Browser-Cache). Befüllt die Produktkarten im CW-Listen-Modal; Artikel + Misses werden cross-run gecacht.
 - **Multi-Maschinen-KPIs** auf einer Übersichtsseite fehlen noch.
 - Exakte Pulpo-Feldnamen sind defensiv gemappt und gegen Live-Daten verifiziert.

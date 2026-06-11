@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     # Pulpo-Queue neu aufbaut (Self-Heal für verpasste Webhooks).
     cw_sync_interval_s: int = 8
 
+    # ----- weclapp ERP (Produkt-Stammdaten per EAN) ---------------------
+    # Read-only Anbindung: liefert Name/SKU/Beschreibung/Bild zu einem EAN
+    # für die Produktkarten in den CW-Listen. base_url ist die Instanz-URL
+    # (z.B. https://firma.weclapp.com) — der /webapp/api/v1-Prefix wird vom
+    # Client automatisch ergänzt. Auth via "AuthenticationToken"-Header.
+    weclapp_base_url: str = ""
+    weclapp_api_key: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

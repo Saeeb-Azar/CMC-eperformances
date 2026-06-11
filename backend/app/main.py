@@ -33,6 +33,7 @@ from app.modules.simulator.router import router as simulator_router
 from app.modules.cmc_actions.router import router as cmc_actions_router
 from app.modules.pulpo.router import router as pulpo_router
 from app.modules.pulpo.runtime import pulpo_runtime
+from app.modules.weclapp.router import router as products_router
 
 settings = get_settings()
 
@@ -203,6 +204,8 @@ app.include_router(cmc_actions_router, prefix=API_PREFIX)
 # Pulpo Webhook-Empfang — prefix=API_PREFIX nicht nötig, der Router
 # bringt seinen vollen Pfad selbst mit.
 app.include_router(pulpo_router)
+# Produkt-Stammdaten (weclapp + Pulpo-Fallback) — voller Prefix im Router.
+app.include_router(products_router)
 
 
 @app.websocket("/ws/simulator")

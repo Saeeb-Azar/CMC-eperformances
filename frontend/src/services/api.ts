@@ -39,6 +39,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Produkt-Stammdaten zu einem EAN (weclapp; source "pulpo" = nur Name aus
+// dem Queue-Cache). image_url ist ein Backend-Proxy-Pfad (Auth-Header).
+export interface ProductInfo {
+  ean: string; article_id: string; name: string; sku: string;
+  description: string; unit: string; has_image: boolean;
+  source: 'weclapp' | 'pulpo'; image_url: string | null;
+}
+
+/** Absolute URL zum Artikelbild-Proxy (für <img src>). */
+export function productImageUrl(ean: string): string {
+  return `${BASE}/products/${encodeURIComponent(ean)}/image`;
+}
+
 // ── Types ────────────────────────────────────────────────────────────────
 export interface UserRead {
   id: string;
@@ -288,6 +301,12 @@ export const api = {
   triggerPulpoResync: () =>
     request<{ ok: boolean; orders?: number; locations?: Record<string, number>; error?: string }>(
       '/settings/pulpo/resync', { method: 'POST' },
+    ),
+
+  // Produkt-Stammdaten (weclapp, Fallback Pulpo-Cache) für die Produktkarten
+  lookupProducts: (eans: string[]) =>
+    request<{ products: Record<string, ProductInfo | null>; weclapp_configured: boolean }>(
+      '/products/lookup', { method: 'POST', body: JSON.stringify({ eans }) },
     ),
   setPulpoSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/pulpo', {

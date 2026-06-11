@@ -1022,6 +1022,12 @@ interface CWListModalProps {
   onDelete: () => void;
 }
 
+// Produkt-Stammdaten zu einem EAN (Backend: weclapp, Fallback Pulpo-Cache).
+interface ProductCard {
+  name: string; sku: string; description: string;
+  source: 'weclapp' | 'pulpo'; image_url: string | null;
+}
+
 function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
   const [draft, setDraft] = useState('');
   const [items, setItems] = useState<CWListItem[]>(list.items);
@@ -1029,6 +1035,27 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
   // der consumed-Zähler im offenen Modal mitwächst, wenn die Maschine
   // scannt während der Operator das Modal noch offen hat.
   useEffect(() => { setItems(list.items); }, [list.items]);
+
+  // Produktkarten: EANs → Stammdaten (einmal pro Barcode-Menge, nicht bei
+  // jedem consumed-Tick — deshalb der key über die sortierten Barcodes).
+  const [products, setProducts] = useState<Record<string, ProductCard | null>>({});
+  const barcodesKey = items.map((x) => x.barcode).sort().join(',');
+  useEffect(() => {
+    const eans = barcodesKey ? barcodesKey.split(',') : [];
+    if (eans.length === 0) return;
+    const token = localStorage.getItem('access_token');
+    fetch(`${API_BASE}/api/v1/products/lookup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ eans }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.products) setProducts(data.products); })
+      .catch(() => { /* Karten sind Komfort — Liste funktioniert auch ohne */ });
+  }, [barcodesKey]);
 
   const totalExpected = items.reduce((s, x) => s + x.expected, 0);
   const totalConsumed = items.reduce((s, x) => s + x.consumed, 0);
@@ -1179,6 +1206,7 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
           ) : (
             items.map((it) => {
               const full = it.consumed >= it.expected;
+              const product = products[it.barcode] ?? null;
               return (
                 <div key={it.barcode} style={{
                   display: 'flex', alignItems: 'center', gap: 8,
@@ -1187,11 +1215,32 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                   border: full ? '1px solid #bbf7d0' : '1px solid transparent',
                   borderRadius: 4,
                 }}>
-                  <code style={{
-                    flex: 1, minWidth: 0,
-                    fontFamily: 'var(--font-mono)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{it.barcode}</code>
+                  {product ? (
+                    <>
+                      <ProductThumb ean={it.barcode} hasImage={!!product.image_url} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 12, fontWeight: 600, color: '#0f172a',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }} title={product.description || product.name}>
+                          {product.name}
+                        </div>
+                        <div style={{
+                          fontSize: 10, color: 'var(--clr-text-muted)',
+                          fontFamily: 'var(--font-mono)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {product.sku ? `${product.sku} · ` : ''}{it.barcode}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <code style={{
+                      flex: 1, minWidth: 0,
+                      fontFamily: 'var(--font-mono)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{it.barcode}</code>
+                  )}
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 4,
                     fontSize: 11, fontWeight: 600,
@@ -1276,6 +1325,32 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Artikelbild-Thumbnail mit Fallback aufs Paket-Icon. Das Bild kommt über
+ *  den Backend-Proxy (weclapp braucht einen Auth-Header, <img> kann den
+ *  nicht setzen). */
+function ProductThumb({ ean, hasImage }: { ean: string; hasImage: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const showImg = hasImage && !failed;
+  return (
+    <span style={{
+      width: 34, height: 34, flexShrink: 0, borderRadius: 6,
+      background: '#fff', border: '1px solid var(--clr-border)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    }}>
+      {showImg ? (
+        <img
+          src={`${API_BASE}/api/v1/products/${encodeURIComponent(ean)}/image`}
+          alt="" loading="lazy" onError={() => setFailed(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
+      ) : (
+        <PackageIcon size={16} style={{ color: '#cbd5e1' }} />
+      )}
+    </span>
   );
 }
 
