@@ -609,5 +609,12 @@ def gateway_status():
         "port": actual_port,
         "configured_port": settings.cmc_tcp_port,
         "connected_machines": connection_manager.connected_machines,
+        # TCP-Sockets, die offen sind, aber noch keinen Frame gesendet haben —
+        # "etwas verbindet sich, hat sich aber noch nicht zu erkennen gegeben".
+        "pending_connections": connection_manager.pending_connections,
+        # Öffentliche Adresse, die an der MASCHINE einzutragen ist (Railway-
+        # TCP-Proxy, z.B. "xyz.proxy.rlwy.net:43521"). Wird im "Maschine
+        # hinzufügen"-Flow als Anleitung angezeigt.
+        "public_tcp_address": settings.public_tcp_address,
         "websocket_clients": ws_manager.client_count,
     }

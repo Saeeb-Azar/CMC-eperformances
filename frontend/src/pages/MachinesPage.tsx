@@ -21,6 +21,7 @@ export default function MachinesPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MachineRead | null>(null);
+  const [prefillId, setPrefillId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterState, setFilterState] = useState<FilterState>({ online: [], status: [] });
   const [connectedIds, setConnectedIds] = useState<string[]>([]);
@@ -54,6 +55,14 @@ export default function MachinesPage() {
   ), [machinesDb, connectedIds]);
 
   const statuses = useMemo(() => Array.from(new Set(machines.map((m) => m.status))).sort(), [machines]);
+
+  // Verbunden, aber nicht angelegt: die Maschine sendet bereits eine ID, die
+  // hier niemand kennt — der häufigste Stolperstein beim Anbinden. Wird als
+  // Banner mit Ein-Klick-Anlage angeboten.
+  const unknownIds = useMemo(
+    () => connectedIds.filter((id) => !machinesDb.some((m) => m.machine_id === id)),
+    [connectedIds, machinesDb],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -187,6 +196,41 @@ export default function MachinesPage() {
           </button>
         </div>
 
+        {/* Verbunden, aber noch nicht angelegt → Ein-Klick-Anlage */}
+        {unknownIds.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            padding: '12px 16px', borderRadius: 12, marginBottom: 20,
+            background: '#fffbeb', border: '1px solid #fde68a',
+          }}>
+            <Wifi size={18} style={{ color: '#d97706', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e' }}>
+                Maschine verbunden, aber noch nicht angelegt
+              </div>
+              <div style={{ fontSize: 12, color: '#a16207' }}>
+                Es sendet bereits eine Maschine mit unbekannter ID — übernehmen, um sie anzuzeigen.
+              </div>
+            </div>
+            {unknownIds.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => { setPrefillId(id); setModalOpen(true); }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                  border: '1px solid #d97706', background: '#fff',
+                  fontSize: 12.5, fontWeight: 700, color: '#92400e',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                <Plus size={13} /> ID {id} anlegen
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
           {(() => {
@@ -217,7 +261,8 @@ export default function MachinesPage() {
         <MachineFormModal
           open={modalOpen || !!editing}
           machine={editing}
-          onClose={() => { setModalOpen(false); setEditing(null); }}
+          initialMachineId={prefillId}
+          onClose={() => { setModalOpen(false); setEditing(null); setPrefillId(null); }}
           onCreated={(m) => {
             setMachines((prev) => {
               const idx = prev.findIndex((x) => x.id === m.id);

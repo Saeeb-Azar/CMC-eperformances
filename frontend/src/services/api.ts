@@ -287,7 +287,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMachineStatus: (id: string) => request<MachineStatusRead>(`/machines/${id}/status`),
-  getGatewayStatus: () => request<{ listening: boolean; port: number; connected_machines: string[] }>('/gateway/status'),
+  getGatewayStatus: () => request<{
+    listening: boolean; port: number; connected_machines: string[];
+    pending_connections?: number; public_tcp_address?: string;
+  }>('/gateway/status'),
   getNotifications: () => request<{ count: number; notifications: Array<{ id: string; severity: string; days_left: number; title: string; message: string }> }>('/notifications'),
 
   // Pulpo settings — Test-Modus = no writes reach Pulpo

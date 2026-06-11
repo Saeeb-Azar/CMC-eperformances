@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # CMC Gateway
     cmc_tcp_host: str = "0.0.0.0"
     cmc_tcp_port: int = 15001
+    # Öffentliche TCP-Adresse des Gateways aus Sicht der MASCHINE — bei
+    # Railway der TCP-Proxy ("xyz.proxy.rlwy.net:43521"), lokal "IP:15001".
+    # Rein informativ: wird im UI als Verbindungs-Anleitung angezeigt.
+    public_tcp_address: str = ""
     cmc_tcp_role: str = "server"  # "server" or "client"
 
     # Event persistence: when False, incoming machine events are only kept in
