@@ -25,11 +25,35 @@ async def get_machine_by_machine_id(db: AsyncSession, tenant_id: str, machine_id
     return result.scalar_one_or_none()
 
 
+# Muss zu MachineConnection.STALE_AFTER_S (gateway/connection.py) passen:
+# HBT kommt alle ~5s; >30s Funkstille heißt offline. Lokale Konstante statt
+# Import, um keinen Zyklus gateway ↔ machines aufzumachen.
+ONLINE_STALE_AFTER_S = 30
+
+
+def effective_online(machine: Machine) -> bool:
+    """is_online wird vom HBT nur GEsetzt, nie zurückgesetzt — die Wahrheit
+    ist deshalb immer is_online UND frischer Heartbeat. Der Sweep-Loop in
+    main.py flippt die DB nach; hier rechnen wir es für die API sofort aus,
+    damit das UI nie eine tote Maschine als online zeigt."""
+    if not machine.is_online:
+        return False
+    hb = machine.last_heartbeat_at
+    if hb is None:
+        return False
+    if hb.tzinfo is None:
+        hb = hb.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - hb).total_seconds() < ONLINE_STALE_AFTER_S
+
+
 async def list_machines(db: AsyncSession, tenant_id: str) -> list[Machine]:
     result = await db.execute(
         select(Machine).where(Machine.tenant_id == tenant_id).order_by(Machine.created_at.desc())
     )
-    return list(result.scalars().all())
+    machines = list(result.scalars().all())
+    for m in machines:
+        m.is_online = effective_online(m)
+    return machines
 
 
 async def update_machine(db: AsyncSession, machine_db_id: str, data: MachineUpdate) -> Machine | None:

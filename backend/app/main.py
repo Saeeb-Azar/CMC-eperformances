@@ -78,16 +78,64 @@ async def lifespan(app: FastAPI):
     # self-heal for missed webhooks. Defensive — never crashes the app.
     cw_sync_task = asyncio.create_task(_cw_sync_loop())
     retention_task = asyncio.create_task(_retention_loop())
+    online_sweep_task = asyncio.create_task(_online_sweep_loop())
 
     yield
 
     logger.info("Shutting down")
     cw_sync_task.cancel()
     retention_task.cancel()
+    online_sweep_task.cancel()
     try:
         await connection_manager.shutdown()
     except Exception:
         pass
+
+
+async def _online_sweep_loop() -> None:
+    """Online-Status-Wahrheit: HBT setzt is_online=True, aber nichts setzte es
+    je zurück — eine tote Maschine blieb in DB/UI ewig „online". Alle 10s:
+      1. DB: Maschinen ohne Heartbeat seit >30s auf offline flippen.
+      2. Gateway: lange stumme TCP-Sockets physisch wegräumen (>5 Min idle);
+         die Anzeige blendet stumme Verbindungen via is_live schon nach 30s aus.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update
+    from app.core.database import async_session
+    from app.modules.machines.models import Machine
+
+    while True:
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(
+                seconds=connection_manager_stale_after()
+            )
+            async with async_session() as db:
+                result = await db.execute(
+                    update(Machine)
+                    .where(
+                        Machine.is_online.is_(True),
+                        (Machine.last_heartbeat_at.is_(None)) | (Machine.last_heartbeat_at < cutoff),
+                    )
+                    .values(is_online=False, status="offline")
+                )
+                await db.commit()
+                if result.rowcount:
+                    logger.info(f"Online sweep: {result.rowcount} machine(s) marked offline")
+            await connection_manager.reap_stale_connections(max_idle_s=300)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:  # never let the loop die
+            logger.warning(f"online sweep iteration failed: {e}")
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            break
+
+
+def connection_manager_stale_after() -> int:
+    """Single source for the staleness threshold (gateway + DB sweep)."""
+    from app.gateway.connection import MachineConnection
+    return MachineConnection.STALE_AFTER_S
 
 
 async def _load_pulpo_test_mode() -> None:

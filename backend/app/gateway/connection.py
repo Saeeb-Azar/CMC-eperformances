@@ -175,6 +175,12 @@ class ActivePackageTracker:
 class MachineConnection:
     """Represents a single TCP connection to a CMC machine."""
 
+    # Maschine sendet HBT alle ~5s. Kommt 30s lang NICHTS mehr rein, gilt die
+    # Verbindung als tot — auch wenn der Socket (z.B. hinter dem Railway-TCP-
+    # Proxy oder nach Stromausfall der Maschine) nie sauber geschlossen wurde.
+    # Sonst zeigt das Dashboard "Verbunden", obwohl längst nichts mehr lebt.
+    STALE_AFTER_S = 30
+
     def __init__(self, machine_id: str, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self.machine_id = machine_id
         self.reader = reader
@@ -187,6 +193,15 @@ class MachineConnection:
         # surfaced to the dashboard, so the sidebar never shows a transient
         # `<ip>:<port>` entry.
         self.protocol_id: str | None = None
+
+    @property
+    def idle_seconds(self) -> float:
+        return (datetime.now(timezone.utc) - self.last_heartbeat).total_seconds()
+
+    @property
+    def is_live(self) -> bool:
+        """Alive AND recently heard from — the truth the dashboard shows."""
+        return self.is_alive and self.idle_seconds < self.STALE_AFTER_S
 
     async def send(self, data: bytes) -> None:
         self.writer.write(data)
@@ -597,7 +612,9 @@ class ConnectionManager:
         seen: set[str] = set()
         out: list[str] = []
         for conn in self._connections.values():
-            if not conn.is_alive or not conn.protocol_id:
+            # is_live statt is_alive: ein halboffener Socket ohne Traffic
+            # (>30s kein HBT) zählt NICHT mehr als verbunden.
+            if not conn.is_live or not conn.protocol_id:
                 continue
             if conn.protocol_id in seen:
                 continue
@@ -613,7 +630,7 @@ class ConnectionManager:
         """
         return sum(
             1 for c in self._connections.values()
-            if c.is_alive and not c.protocol_id
+            if c.is_live and not c.protocol_id
         )
 
     @property
@@ -627,12 +644,34 @@ class ConnectionManager:
         the protocol id; internal callers use the socket key.
         """
         conn = self._connections.get(machine_id)
-        if conn and conn.is_alive:
+        if conn and conn.is_live:
             return conn
         for c in self._connections.values():
-            if c.is_alive and c.protocol_id == machine_id:
+            if c.is_live and c.protocol_id == machine_id:
                 return c
         return None
+
+    async def reap_stale_connections(self, max_idle_s: float = 300) -> int:
+        """Close + drop sockets that have been silent for a long time.
+
+        is_live blendet stumme Verbindungen sofort aus der Anzeige aus;
+        hier räumen wir sie zusätzlich physisch weg (Socket schließen,
+        Eintrag entfernen), damit sich über Tage nichts ansammelt. Kommt
+        die Maschine zurück, baut sie ohnehin eine neue Verbindung auf."""
+        reaped = 0
+        for key in list(self._connections.keys()):
+            conn = self._connections.get(key)
+            if conn is None:
+                continue
+            if not conn.is_alive or conn.idle_seconds > max_idle_s:
+                await conn.close()
+                self._connections.pop(key, None)
+                reaped += 1
+                logger.info(
+                    f"Reaped stale machine connection {key} "
+                    f"(idle {conn.idle_seconds:.0f}s, protocol_id={conn.protocol_id})"
+                )
+        return reaped
 
     # ── Server mode: machines connect to us ───────────────────────────────
 

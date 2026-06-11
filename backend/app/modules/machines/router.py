@@ -40,6 +40,7 @@ async def get_machine(
     machine = await service.get_machine(db, machine_id)
     if not machine:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Machine not found")
+    machine.is_online = service.effective_online(machine)
     return machine
 
 
@@ -67,10 +68,12 @@ async def get_machine_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Machine not found")
 
     uptime = await service.get_uptime_24h(db, machine_id)
+    online = service.effective_online(machine)
     return MachineStatusRead(
         machine_id=machine.machine_id,
-        status=machine.status,
-        is_online=machine.is_online,
+        # Eine Maschine ohne frischen Heartbeat darf nie "running" melden.
+        status=machine.status if online else "offline",
+        is_online=online,
         last_heartbeat_at=machine.last_heartbeat_at,
         **uptime,
     )
