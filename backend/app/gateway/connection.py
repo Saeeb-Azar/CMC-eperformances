@@ -87,6 +87,11 @@ class ActivePackageTracker:
                 return True
         return False
 
+    def get_package(self, machine_id: str, ref: str) -> dict[str, object] | None:
+        """Aktiven Paket-Datensatz (barcode, state, seq, dims) abrufen oder
+        ``None``, wenn die Ref bereits terminal/unbekannt ist."""
+        return self._packages.get(machine_id, {}).get(ref)
+
     def clear(self, machine_id: str | None = None) -> int:
         """Tracker leeren — entweder pro Maschine oder global. Operator-
         Action wenn das Dashboard „Leeren" geklickt wird; ohne diesen
@@ -125,6 +130,15 @@ class ActivePackageTracker:
         elif msg_type == "ACK":
             good = data.get("good") in (1, "1", True, "true")
             pkg["state"] = "SCANNED" if good else "DELETED"
+            # 3D-Maße der Maschine merken — werden bei LAB1 für den
+            # DHL-Label-Call gebraucht.
+            for k_src, k_dst in (("length_mm", "length_mm"),
+                                 ("width_mm",  "width_mm"),
+                                 ("height_mm", "height_mm")):
+                v = data.get(k_src)
+                if v not in (None, ""):
+                    try: pkg[k_dst] = int(str(v).strip())
+                    except (TypeError, ValueError): pass
         elif msg_type in ("LAB1", "LAB2"):
             good = data.get("good") in (1, "1", True, "true")
             if good:
@@ -697,6 +711,84 @@ class ConnectionManager:
             logger.warning(f"Could not load station flags for {protocol_id}: {e}")
             conn.station_flags = {"lab1": False, "lab2": False, "inv": False}
 
+    async def _enrich_lab1_with_dhl(
+        self, response: dict, protocol_id: str, ref: str, msg_data: dict,
+    ) -> None:
+        """LAB1-Antwort um Tracking-Nummer + Label-Daten erweitern.
+
+        Erzeugt ein DHL-Sendungslabel über den modules.dhl.service. Im
+        Test-Modus → Mock-Tracking, kein API-Call. Empfänger kommt — falls
+        verfügbar — aus dem letzten Pulpo-Sales-Order; sonst Default-Adresse
+        aus den Settings (für die ersten Maschinen-Smokes auf der echten
+        CW1000 ohne realen Versand). Im Erfolgsfall wird:
+          - `match_barcode` auf die Tracking-Nummer gesetzt (Maschine prüft
+            damit das gedruckte Label am Exit-Reader)
+          - `label_url` mit dem Base64-Label gefüllt (ZPL2 für direkten
+            Druck am thermischen Labeler)
+        """
+        from app.core.config import get_settings
+        from app.core.database import async_session
+        from app.modules.dhl.client import Address
+        from app.modules.dhl.service import create_label_for_order
+        from app.modules.machines.models import Machine
+        from sqlalchemy import select
+
+        # Maße aus dem ACK übernehmen (Tracker speichert sie seit dem ACK-
+        # Handler). Gewicht trägt die Maschine erst im LAB1-Request bei.
+        pkg = self._tracker.get_package(protocol_id, ref) or {}
+        length_mm = int(pkg.get("length_mm") or msg_data.get("length_mm") or 200)
+        width_mm  = int(pkg.get("width_mm")  or msg_data.get("width_mm")  or 150)
+        height_mm = int(pkg.get("height_mm") or msg_data.get("height_mm") or 80)
+        # weight_scale ist im LAB1-Request enthalten; Fallback 500g.
+        weight_g = 500
+        for k in ("weight_scale", "weightScale", "weight"):
+            v = msg_data.get(k)
+            if v not in (None, ""):
+                try: weight_g = max(1, int(str(v).strip())); break
+                except (TypeError, ValueError): pass
+
+        s = get_settings()
+        recipient = Address(
+            name=s.dhl_default_recipient_name, street=s.dhl_default_recipient_street,
+            street_no=s.dhl_default_recipient_street_no, zip_code=s.dhl_default_recipient_zip,
+            city=s.dhl_default_recipient_city, country=s.dhl_default_recipient_country,
+        )
+
+        # tenant_id der Maschine ermitteln, damit die Sendung dem richtigen
+        # Mandanten gehört. Die TCP-Verbindung kennt den Tenant nicht direkt
+        # → über die Protocol-ID (= Machine.machine_id) auflösen, Fallback
+        # auf den ersten Tenant.
+        async with async_session() as db:
+            machine = (await db.execute(
+                select(Machine).where(Machine.machine_id == protocol_id).limit(1)
+            )).scalar_one_or_none()
+            tenant_id = machine.tenant_id if machine else None
+            if not tenant_id:
+                from app.modules.tenants.models import Tenant
+                t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
+                tenant_id = t.id if t else ""
+
+            shipment = await create_label_for_order(
+                db, tenant_id=tenant_id, order_ref=ref,
+                order_state_id=None,  # OrderState-Verknüpfung kommt im nächsten Schritt
+                recipient=recipient,
+                weight_g=weight_g, length_mm=length_mm,
+                width_mm=width_mm, height_mm=height_mm,
+            )
+            await db.commit()
+
+        response["match_barcode"] = shipment.tracking_number
+        # label_url = Label-Daten (Base64 ZPL2). Bei zu großem Frame ggf.
+        # später auf eine HTTP-URL umstellen; aktuell senden wir den ZPL
+        # direkt im Feld, weil der CW1000-Labeler das so erwartet.
+        response["label_url"] = shipment.label_b64
+        response["status"] = ""
+        response["rejection_reason"] = None
+        logger.info(
+            f"LAB1 enriched with DHL: ref={ref} tracking={shipment.tracking_number} "
+            f"test={shipment.is_test}"
+        )
+
     async def reap_stale_connections(self, max_idle_s: float = 300) -> int:
         """Close + drop sockets that have been silent for a long time.
 
@@ -888,6 +980,38 @@ class ConnectionManager:
                                 pending_eject=eject_now,
                                 station_flags=conn.station_flags,
                             )
+                            # ── DHL-Label bei LAB1 anfordern ───────────────
+                            # Nur wenn die Antwort akzeptiert (result=1) und
+                            # ein DHL-Konto konfiguriert ist; im Test-Modus
+                            # liefert der Service eine Mock-Tracking-Nummer.
+                            # Wir haben hier ein Hard-Timeout von 1.5 s, damit
+                            # wir innerhalb des 2-s-Antwortbudgets der CW1000
+                            # bleiben. Bei Timeout/Fehler wird das Item per
+                            # result=0 abgelehnt — sauberer Reject statt
+                            # blinder Annahme.
+                            if msg_type == "LAB1" and response.get("result") == 1 and conn.protocol_id:
+                                ref_for_label = str(response.get("reference_id") or "")
+                                try:
+                                    await asyncio.wait_for(
+                                        self._enrich_lab1_with_dhl(
+                                            response, conn.protocol_id, ref_for_label, msg_data,
+                                        ),
+                                        timeout=1.5,
+                                    )
+                                except asyncio.TimeoutError:
+                                    logger.warning(
+                                        f"DHL label timeout for {ref_for_label} — rejecting LAB1"
+                                    )
+                                    response["result"] = 0
+                                    response["status"] = "REJECTED"
+                                    response["rejection_reason"] = "dhl_timeout"
+                                except Exception as e:
+                                    logger.warning(
+                                        f"DHL label error for {ref_for_label}: {e} — rejecting LAB1"
+                                    )
+                                    response["result"] = 0
+                                    response["status"] = "REJECTED"
+                                    response["rejection_reason"] = "dhl_error"
                             # Nach erfolgreicher ENQ-Annahme: verbrauchten
                             # CW-Slot abbuchen und Glitch-Memo setzen.
                             if (

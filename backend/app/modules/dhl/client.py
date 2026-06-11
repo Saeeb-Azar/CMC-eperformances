@@ -91,15 +91,24 @@ class DhlClient:
         password: str | None = None,
         billing_number: str | None = None,
         *,
+        billing_number_international: str | None = None,
+        profile: str | None = None,
+        api_secret: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 15.0,
     ):
         s = get_settings()
         self.base_url = (base_url if base_url is not None else s.dhl_base_url).rstrip("/")
         self.api_key = api_key if api_key is not None else s.dhl_api_key
+        self.api_secret = api_secret if api_secret is not None else s.dhl_api_secret
         self.username = username if username is not None else s.dhl_username
         self.password = password if password is not None else s.dhl_password
         self.billing_number = billing_number if billing_number is not None else s.dhl_billing_number
+        self.billing_number_international = (
+            billing_number_international if billing_number_international is not None
+            else s.dhl_billing_number_international
+        )
+        self.profile = profile if profile is not None else s.dhl_profile
         self._client = httpx.AsyncClient(
             timeout=timeout, transport=transport,
             auth=(self.username, self.password) if self.username and self.password else None,
@@ -164,11 +173,20 @@ class DhlClient:
         if not self.configured:
             raise DhlError("DHL client is not configured (missing API key / credentials / billing number)")
 
+        # Abrechnungsnummer je Empfänger-Land: bei DEU die nationale, sonst
+        # die INT-Abrechnungsnummer (falls gesetzt — sonst nationale als
+        # Fallback, damit nicht-konfigurierte Tenants den Test trotzdem
+        # durchbekommen).
+        is_international = (recipient.country or "DEU").upper() != "DEU"
+        billing_number = (
+            self.billing_number_international if is_international and self.billing_number_international
+            else self.billing_number
+        )
         body = {
-            "profile": "STANDARD_GRUPPENPROFIL",
+            "profile": self.profile or "STANDARD_GRUPPENPROFIL",
             "shipments": [{
                 "product": product,
-                "billingNumber": self.billing_number,
+                "billingNumber": billing_number,
                 "refNo": order_ref[:35],  # DHL refNo max 35 Zeichen
                 "shipper": sender.to_dhl_dict(),
                 "consignee": recipient.to_dhl_dict(),

@@ -92,21 +92,44 @@ class Settings(BaseSettings):
     # billing_number = EKP + Verfahren + Teilnahme (z.B. "33333333330102"
     # für Sandbox-Tests, im Produktiv-Konto aus dem GK-Portal).
     dhl_base_url: str = "https://api-eu.dhl.com/parcel/de/shipping/v2"
+    # API-Key + Secret (aus DHL-Entwicklerportal → Geschäftskundenversand-App).
+    # `dhl_api_key` geht als Header "dhl-api-key" mit; `dhl_api_secret` ist
+    # bei der aktuellen API ungenutzt — manche Tenants brauchen es aber als
+    # 2. Auth-Faktor. Wir hinterlegen es, damit es später ohne Code-Änderung
+    # eingebunden werden kann.
     dhl_api_key: str = ""
+    dhl_api_secret: str = ""
+    # Geschäftskundenportal-Login (geschaeftskunden.dhl.de) — wird per HTTP
+    # Basic Auth gegen die Shipping-API gesendet.
     dhl_username: str = ""
     dhl_password: str = ""
+    # Abrechnungsnummer (EKP + Verfahren + Teilnahme). National und INT
+    # können sich unterscheiden — die richtige wird je nach Empfänger-Land
+    # ausgewählt (s. service.py).
     dhl_billing_number: str = ""
-    # Standard-Produkt = "V01PAK" (DHL Paket National). Andere: V53WPAK
-    # (Warenpost), V54EPAK (Europaket). Pro Sendung überschreibbar.
+    dhl_billing_number_international: str = ""
+    # Profilname aus dem GK-Portal (steht direkt im Body, ersetzt das
+    # bislang hartkodierte "STANDARD_GRUPPENPROFIL").
+    dhl_profile: str = "STANDARD_GRUPPENPROFIL"
+    # Standard-Produkt = "V01PAK" (DHL Paket National). V53WPAK Warenpost,
+    # V54EPAK Europaket. Pro Sendung überschreibbar.
     dhl_default_product: str = "V01PAK"
-    # Absender-Default (kann auch pro Sendung mitkommen). Leerlassen, dann
-    # muss der Aufrufer eine Adresse mitgeben.
+    # Absender (eure Firma).
     dhl_sender_name: str = ""
     dhl_sender_street: str = ""
     dhl_sender_street_no: str = ""
     dhl_sender_zip: str = ""
     dhl_sender_city: str = ""
     dhl_sender_country: str = "DEU"
+    # Fallback-Empfänger für Tests, solange wir die echte Lieferadresse
+    # nicht aus Pulpo holen — damit das LAB1-Label-Smoke an einer echten
+    # Maschine nicht an einer fehlenden Adresse stirbt. NICHT für Live!
+    dhl_default_recipient_name: str = "Test Empfänger"
+    dhl_default_recipient_street: str = "Sträßchensweg"
+    dhl_default_recipient_street_no: str = "10"
+    dhl_default_recipient_zip: str = "53113"
+    dhl_default_recipient_city: str = "Bonn"
+    dhl_default_recipient_country: str = "DEU"
     # Label-Format: ZPL2 für direkten Druck am thermischen Labeler der CW1000,
     # sonst "PDF" zum Anzeigen/Archivieren.
     dhl_label_format: str = "ZPL2"
