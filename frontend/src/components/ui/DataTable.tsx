@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode, type CSSProperties } from 'react';
 import { Search, Filter, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 export interface Column<T> {
   key: string;
@@ -80,6 +81,9 @@ export default function DataTable<T>({
   animateRows = false,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
+  // Mobile: Header umbrechen lassen (Suche volle Breite), Filter-Sidebar
+  // über statt neben der Tabelle, Tabelle horizontal scrollbar.
+  const isMobile = useIsMobile();
   const [showSidebar, setShowSidebar] = useState(false);
   const [internalExpanded, setInternalExpanded] = useState<string | null>(null);
 
@@ -119,7 +123,7 @@ export default function DataTable<T>({
   return (
     <div className="dt-panel">
       {showHeader && (
-        <div className="dt-panel__header">
+        <div className="dt-panel__header" style={isMobile ? { flexWrap: 'wrap' } : undefined}>
           {title && (
             <div>
               <h3 className="dt-panel__title">
@@ -143,7 +147,8 @@ export default function DataTable<T>({
           <div className="dt-panel__spacer" />
 
           {hasSearch && (
-            <div className="dt-search">
+            // Mobile: Suchfeld bricht als eigene, volle Zeile unter den Titel.
+            <div className="dt-search" style={isMobile ? { flexBasis: '100%', maxWidth: '100%', order: 10 } : undefined}>
               <Search className="dt-search__icon" size={14} />
               <input
                 type="text"

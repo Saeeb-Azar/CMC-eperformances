@@ -12,6 +12,9 @@
 @import "./styles/components/modal.css";
 @import "./styles/components/table.css";
 
+/* Mobile-Override-Layer ZULETZT, damit @media (max-width:767px) gewinnt. */
+@import "./styles/mobile.css";
+
 /* Tailwind theme overrides using tokens */
 @theme {
   --color-sidebar: var(--clr-brand);

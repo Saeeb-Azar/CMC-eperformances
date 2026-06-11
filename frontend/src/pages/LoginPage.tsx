@@ -50,8 +50,9 @@ export default function LoginPage() {
         <CartonWrapAnimation />
       </div>
 
-      {/* Right: sign-in form — 40% of viewport, content centered */}
-      <div className="relative w-full lg:w-[40%] flex items-center justify-center px-8 lg:px-14 py-12">
+      {/* Right: sign-in form — 40% of viewport, content centered.
+          Mobile: weniger Seiten-Padding, damit die Karte auf 360px voll sitzt */}
+      <div className="relative w-full lg:w-[40%] flex items-center justify-center px-5 sm:px-8 lg:px-14 py-12">
         {/* Language switcher, top right */}
         <div className="absolute top-5 right-6">
           <LanguageToggle />
@@ -61,7 +62,7 @@ export default function LoginPage() {
           className="w-full max-w-[400px] flex flex-col"
         >
           <h1
-            className="text-[40px] lg:text-[48px] leading-[1.05] font-semibold tracking-[-0.03em] text-slate-900"
+            className="text-[32px] sm:text-[40px] lg:text-[48px] leading-[1.05] font-semibold tracking-[-0.03em] text-slate-900"
           >
             {t('auth.signIn')}
           </h1>
@@ -145,7 +146,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={useDevCreds}
-                className="ml-auto text-[12.5px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                className="ml-auto py-2 -my-2 px-2 -mx-2 text-[12.5px] font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
               >
                 {t('auth.useDevCreds')} →
               </button>

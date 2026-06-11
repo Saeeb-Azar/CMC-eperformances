@@ -1,0 +1,60 @@
+/* ──────────────────────────────────────────────────────────────────────
+   Mobile-First-Override-Layer (Handy ≤ 767px)
+   Greift global für alle Seiten/Komponenten, die die Design-System-Klassen
+   nutzen (Modals, Seiten-Layout, Tabellen). Inline-Style-Layouts (z.B. das
+   Dashboard-Grid) werden zusätzlich per useIsMobile-Hook in den Komponenten
+   umgeschaltet — CSS allein kann Inline-Styles nicht überschreiben.
+   Desktop (≥ 768px) bleibt vollständig unverändert.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Tabellen, die auf schmalen Screens horizontal wischbar sein sollen.
+   Wrapper-Klasse, die Komponenten um eine <table> legen. */
+.table-scroll {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 767px) {
+  /* Kein horizontales Wackeln der ganzen Seite. */
+  html, body { overflow-x: hidden; max-width: 100%; }
+
+  /* iOS zoomt automatisch rein, wenn ein fokussiertes Input < 16px hat —
+     das verhindert font-size: 16px auf allen Eingabefeldern. */
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Seiten-Container: weniger Padding, Kopf darf umbrechen. */
+  .page-content { padding: 16px 14px !important; }
+  .page-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .page-header__title { font-size: 20px; }
+  /* Primär-Aktion im Seitenkopf (z.B. „Maschine hinzufügen") volle Breite. */
+  .page-header > .btn,
+  .page-header > button { width: 100%; justify-content: center; }
+
+  /* Modals: nahezu Vollbild, eigener Scroll, nichts ragt heraus. */
+  .modal-overlay { padding: 12px !important; align-items: flex-start; }
+  .modal,
+  .modal--sm, .modal--md, .modal--lg {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh !important;
+    margin-top: 8px;
+  }
+  .modal__body { padding: 16px !important; overflow-y: auto; }
+  /* Mehrspaltige Formular-Raster → einspaltig. */
+  .modal-grid-2, .modal-grid-3 { grid-template-columns: 1fr !important; }
+  /* Footer-Buttons dürfen umbrechen und werden vollbreit. */
+  .modal__footer { flex-wrap: wrap; gap: 8px; }
+  .modal__footer .modal-btn { flex: 1 1 auto; justify-content: center; }
+
+  /* Klassische Tabellen ohne expliziten Wrapper trotzdem scrollbar machen. */
+  .data-table__scroll { -webkit-overflow-scrolling: touch; }
+
+  /* Touch-Ziele: Mindesthöhe für Buttons/Links im Sinne der Fingerbedienung. */
+  .btn, .modal-btn { min-height: 40px; }
+}

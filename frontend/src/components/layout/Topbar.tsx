@@ -1,8 +1,10 @@
-import { Eye, Code } from 'lucide-react';
-import { useState } from 'react';
+import { Eye, Code, Menu } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import NotificationBell from './NotificationBell';
 import LanguageToggle from '../ui/LanguageToggle';
+import { useMobileNav } from './AppLayout';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface TopbarProps {
   title: string;
@@ -14,11 +16,28 @@ interface TopbarProps {
 export default function Topbar({ title, subtitle, liveStatus, showViewToggle = false }: TopbarProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<'operator' | 'technical'>('operator');
+  const isMobile = useIsMobile();
+  const { setOpen, registerTopbar } = useMobileNav();
+
+  // Beim Layout anmelden, damit es seinen Fallback-Hamburger (Floating-
+  // Button) ausblendet, solange diese Topbar sichtbar ist.
+  useEffect(() => registerTopbar(), [registerTopbar]);
 
   return (
     <div className="topbar">
       {/* Left */}
       <div className="topbar__left">
+        {/* Mobile: Hamburger öffnet den Sidebar-Drawer */}
+        {isMobile && (
+          <button
+            type="button"
+            className="topbar__menu-btn"
+            onClick={() => setOpen(true)}
+            aria-label="Navigation öffnen"
+          >
+            <Menu size={20} />
+          </button>
+        )}
         <span className="topbar__title">{title}</span>
         {subtitle && <span className="topbar__subtitle">&middot; {subtitle}</span>}
       </div>
@@ -33,7 +52,8 @@ export default function Topbar({ title, subtitle, liveStatus, showViewToggle = f
 
       {/* Right */}
       <div className="topbar__right">
-        {showViewToggle && (
+        {/* Operator/Technik-Umschalter passt nicht auf schmale Screens */}
+        {showViewToggle && !isMobile && (
           <div className="segmented">
             <button
               onClick={() => setView('operator')}

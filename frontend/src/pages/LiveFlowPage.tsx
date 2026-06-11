@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import TopStatusBar, { type MachineState } from '../components/liveflow/TopStatusBar';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   type PackageState,
   STATE_COLORS,
@@ -423,6 +424,9 @@ function eventLabel(ev: RawEvent, t: TFunction): string {
 
 export default function LiveFlowPage() {
   const { t } = useTranslation();
+  // Mobile-Layout (≤767px): eine Spalte, Sidebar als Chip-Leiste oben,
+  // Fokus-Panel als Vollbild-Overlay — Desktop bleibt unverändert.
+  const isMobile = useIsMobile();
   const [events, setEvents] = useState<RawEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [connectedMachines, setConnectedMachines] = useState<string[]>([]);
@@ -795,7 +799,12 @@ export default function LiveFlowPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    // Auf Mobile KEIN height:100vh — die Seite muss natürlich vertikal
+    // scrollen, statt das Scrollen in innere Panes zu zwingen.
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      ...(isMobile ? { minHeight: '100dvh' } : { height: '100vh' }),
+    }}>
       <TopStatusBar
         machineState={machineState}
         connectionActive={connected}
@@ -823,7 +832,14 @@ export default function LiveFlowPage() {
             : t('liveFlow.liveModeBanner')}
         </div>
       )}
-      <div style={{
+      <div style={isMobile ? {
+        // Eine Spalte: Maschinen-/CW-Chips oben, Hauptbereich darunter.
+        // FocusPanel rendert auf Mobile position:fixed und belegt keine Spalte.
+        flex: 1,
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gridTemplateRows: 'auto 1fr',
+      } : {
         flex: 1,
         display: 'grid',
         gridTemplateColumns: `${sidebarOpen ? '220px' : '44px'} 1fr ${selectedPackage ? '340px' : '0'}`,
@@ -909,8 +925,103 @@ function MachineSidebar({
   cwLists, onUpsertCwList, onDeleteCwList,
 }: MachineSidebarProps) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   // CW-Listen come exclusively from Pulpo now — no manual creation/editing.
   const [editingList, setEditingList] = useState<string | null>(null);
+
+  // Editor-Modal wird in beiden Layouts (Mobile-Leiste / Desktop-Sidebar)
+  // identisch gerendert — Tap auf Chip bzw. Klick auf Listeneintrag.
+  const editorModal = editingList && (() => {
+    const lst = cwLists.find((l) => l.name === editingList);
+    if (!lst) return null;
+    return (
+      <CWListModal
+        list={lst}
+        onClose={() => setEditingList(null)}
+        onSave={(barcodes) => onUpsertCwList(editingList, { barcodes })}
+        onDelete={() => { onDeleteCwList(editingList); setEditingList(null); }}
+      />
+    );
+  })();
+
+  if (isMobile) {
+    // Mobile: keine linke Spalte — kompakte, horizontal scrollbare
+    // Chip-Reihen oben (Maschinen, darunter CW-Listen).
+    return (
+      <div style={{
+        borderBottom: '1px solid var(--clr-border)',
+        background: 'var(--clr-bg-elevated, #fff)',
+        padding: '8px 10px',
+        display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        <div style={{
+          display: 'flex', gap: 6, overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch', paddingBottom: 2,
+        }}>
+          {machines.length === 0 ? (
+            <span style={{ fontSize: 11, color: 'var(--clr-text-muted)', padding: '10px 4px', whiteSpace: 'nowrap' }}>
+              {t('liveFlow.sidebar.noMachines')}
+            </span>
+          ) : machines.map((m) => {
+            const isActive = m === selected;
+            const isOnline = connectedIds.includes(m);
+            const s = stats.get(m) ?? { total: 0, singles: 0, multi: 0 };
+            return (
+              <button
+                key={m}
+                onClick={() => onSelect(m)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  minHeight: 40, padding: '6px 12px', flexShrink: 0,
+                  background: isActive ? 'var(--clr-bg-subtle, #f4f6fa)' : 'transparent',
+                  border: `1px solid ${isActive ? '#3b82f6' : 'var(--clr-border)'}`,
+                  borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                <span style={{
+                  width: 7, height: 7, borderRadius: 99, flexShrink: 0,
+                  background: isOnline ? '#10b981' : '#94a3b8',
+                }} />
+                <code style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                  {displayMachineId(m)}
+                </code>
+                <span style={{ fontSize: 10, color: 'var(--clr-text-muted)' }}>{s.total}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {selected && cwLists.length > 0 && (
+          <div style={{
+            display: 'flex', gap: 6, overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch', paddingBottom: 2,
+          }}>
+            {[...cwLists].sort((a, b) => naturalCw(a.name, b.name)).map((lst) => (
+              <button
+                key={lst.name}
+                onClick={() => setEditingList(lst.name)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  minHeight: 40, padding: '6px 12px', flexShrink: 0,
+                  border: `1px solid ${lst.active ? '#3b82f6' : 'var(--clr-border)'}`,
+                  borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
+                  background: lst.active ? '#eff6ff' : 'transparent',
+                }}
+              >
+                <span style={{ fontSize: 11, fontWeight: 600 }}>{lst.name}</span>
+                <span style={{ fontSize: 10, color: 'var(--clr-text-muted)' }} className="tabular-nums">
+                  {lst.total_consumed}/{lst.total_expected}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {editorModal}
+      </div>
+    );
+  }
+
   return (
     <aside style={{
       borderRight: '1px solid var(--clr-border)',

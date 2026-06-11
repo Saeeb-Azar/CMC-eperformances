@@ -5,13 +5,22 @@ import { LayoutDashboard, Plug, LogOut, Zap, Server, Settings, ScrollText } from
 // Sidebar nav. Dashboard + Simulator are the day-to-day views; Maschinen and
 // Einstellungen are needed to configure the Pulpo pick-location and the
 // Test-Modus. Further pages exist as routes but stay hidden for now.
-export default function Sidebar() {
+//
+// Mobile: per CSS off-canvas (translateX), AppLayout steuert `mobileOpen`.
+// `onNavigate` schließt den Drawer beim Klick auf einen Nav-Link/Logout.
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onNavigate?: () => void;
+}
+
+export default function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    onNavigate?.();
     navigate('/login', { replace: true });
   };
 
@@ -24,7 +33,7 @@ export default function Sidebar() {
   ];
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${mobileOpen ? 'sidebar--mobile-open' : ''}`}>
       <div className="sidebar__logo">
         <div className="sidebar__logo-mark">
           <Zap size={12} color="#1a1a1a" />
@@ -44,6 +53,7 @@ export default function Sidebar() {
               className={({ isActive }) =>
                 `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`
               }
+              onClick={onNavigate}
             >
               <Icon size={15} className="sidebar__link-icon" />
               <span>{label}</span>
