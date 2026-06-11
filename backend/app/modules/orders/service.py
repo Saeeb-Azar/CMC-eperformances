@@ -66,11 +66,17 @@ async def get_order_by_reference(db: AsyncSession, reference_id: str) -> OrderSt
     return result.scalar_one_or_none()
 
 
-async def list_orders(db: AsyncSession, tenant_id: str, filters: OrderFilterParams, *, include_test: bool = False) -> list[OrderState]:
+async def list_orders(
+    db: AsyncSession, tenant_id: str, filters: OrderFilterParams,
+    *, include_test: bool = False, only_test: bool = False,
+) -> list[OrderState]:
     query = select(OrderState).where(OrderState.tenant_id == tenant_id)
 
-    if not include_test:
-        # Test-Aufträge sind gespeichert, aber standardmäßig ausgeblendet.
+    if only_test:
+        # Test-Modus-Ansicht: NUR Test-Aufträge (Produktiv-Daten bleiben außen vor).
+        query = query.where(OrderState.is_test.is_(True))
+    elif not include_test:
+        # Produktiv-Ansicht: Test-Aufträge sind gespeichert, aber ausgeblendet.
         query = query.where(OrderState.is_test.is_(False))
     if filters.state:
         query = query.where(OrderState.state == filters.state)
@@ -89,7 +95,20 @@ async def list_orders(db: AsyncSession, tenant_id: str, filters: OrderFilterPara
 
     query = query.order_by(OrderState.created_at.desc()).offset(filters.offset).limit(filters.limit)
     result = await db.execute(query)
-    return list(result.scalars().all())
+    orders = list(result.scalars().all())
+
+    # Protokoll-ID ("0001") je Maschine anhängen — das Dashboard filtert
+    # nach dieser ID, OrderState kennt aber nur die DB-UUID der Maschine.
+    if orders:
+        from app.modules.machines.models import Machine  # local: avoid cycle
+        db_ids = {o.machine_db_id for o in orders}
+        rows = (await db.execute(
+            select(Machine.id, Machine.machine_id).where(Machine.id.in_(db_ids))
+        )).all()
+        proto = {mid: pid for mid, pid in rows}
+        for o in orders:
+            o.machine_id = proto.get(o.machine_db_id, "")  # type: ignore[attr-defined]
+    return orders
 
 
 async def transition_state(db: AsyncSession, order_id: str, new_state: str, **extra_fields) -> OrderState:

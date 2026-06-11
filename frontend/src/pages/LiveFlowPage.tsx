@@ -344,6 +344,64 @@ function aggregatePackages(events: RawEvent[]): PackageRow[] {
   );
 }
 
+// ── DB-Hydration: gespeicherte Aufträge → PackageRow ────────────────────
+// Die Tabelle lebt vom Live-Event-Stream; nach Reload/Deploy wäre sie leer.
+// Deshalb werden die in der DB persistierten Aufträge (orders-API, gefiltert
+// nach Test/Produktiv-Modus) als Basis geladen — Live-Events überlagern sie.
+
+interface DbOrderRow {
+  reference_id: string; barcode: string; state: string;
+  machine_id: string; is_test: boolean;
+  final_weight_g: number | null;
+  final_length_mm: number | null; final_width_mm: number | null; final_height_mm: number | null;
+  dimension_length_mm: number | null; dimension_width_mm: number | null; dimension_height_mm: number | null;
+  ejection_reason: string | null;
+  enq_at: string | null; completed_at: string | null; created_at: string;
+}
+
+const PACKAGE_STATES: readonly PackageState[] = [
+  'ASSIGNED', 'INDUCTED', 'SCANNED', 'LABELED', 'COMPLETED', 'FAILED', 'EJECTED', 'DELETED',
+];
+
+// Stations-Anzeige aus dem gespeicherten Endzustand rekonstruieren (die
+// einzelnen Events sind nach einem Reload nicht mehr im Speicher).
+function stationsFromState(state: PackageState): Record<StationId, StationStatus> {
+  const s = emptyStations();
+  const pass = (...ids: StationId[]) => ids.forEach((i) => { s[i] = 'passed'; });
+  switch (state) {
+    case 'ASSIGNED':  pass('scanner'); break;
+    case 'INDUCTED':  pass('scanner', 'induction'); break;
+    case 'SCANNED':   pass('scanner', 'induction', 'sensor'); break;
+    case 'LABELED':   pass('scanner', 'induction', 'sensor', 'wrapper', 'labeler'); break;
+    case 'COMPLETED': pass('scanner', 'induction', 'sensor', 'wrapper', 'labeler', 'exit'); break;
+    case 'FAILED':    pass('scanner', 'induction', 'sensor', 'wrapper'); s.labeler = 'failed'; break;
+    case 'EJECTED':   pass('scanner', 'induction'); s.exit = 'failed'; break;
+    case 'DELETED':   break;
+  }
+  return s;
+}
+
+function dbRowToPackage(r: DbOrderRow): PackageRow {
+  const state: PackageState = PACKAGE_STATES.includes(r.state as PackageState)
+    ? (r.state as PackageState) : 'ASSIGNED';
+  return {
+    ref: r.reference_id,
+    machine_id: r.machine_id || undefined,
+    barcode: r.barcode || undefined,
+    state,
+    stations: stationsFromState(state),
+    removed: state === 'DELETED',
+    firstSeen: r.enq_at ?? r.created_at,
+    lastSeen: r.completed_at ?? r.enq_at ?? r.created_at,
+    length_mm: r.final_length_mm ?? r.dimension_length_mm ?? undefined,
+    width_mm:  r.final_width_mm  ?? r.dimension_width_mm  ?? undefined,
+    height_mm: r.final_height_mm ?? r.dimension_height_mm ?? undefined,
+    weight_g:  r.final_weight_g ?? undefined,
+    rejectionReason: r.ejection_reason ?? undefined,
+    events: [],
+  };
+}
+
 // Translate ENQ/IND/... to operator-readable verbs for the Verlauf timeline.
 function eventLabel(ev: RawEvent): string {
   const d = ev.data ?? {};
@@ -444,8 +502,38 @@ export default function LiveFlowPage() {
     return () => clearInterval(id);
   }, []);
 
+  // Persistierte Aufträge (DB) als Basis der Tabelle — gefiltert nach dem
+  // aktuellen Modus: Test-Modus zeigt NUR Test-Aufträge, Produktiv NUR echte.
+  const [dbPackages, setDbPackages] = useState<PackageRow[]>([]);
+  useEffect(() => {
+    if (pulpoTestMode === null) return;
+    let cancelled = false;
+    const token = localStorage.getItem('access_token');
+    fetch(`${API_BASE}/api/v1/orders?limit=200${pulpoTestMode ? '&only_test=true' : ''}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: DbOrderRow[]) => {
+        if (!cancelled && Array.isArray(rows)) setDbPackages(rows.map(dbRowToPackage));
+      })
+      .catch(() => { /* Live-Stream funktioniert auch ohne Hydration */ });
+    return () => { cancelled = true; };
+  }, [pulpoTestMode]);
+
   // All packages (across machines), used to compute per-machine stats.
-  const allPackages = useMemo(() => aggregatePackages(events), [events]);
+  // Live-Events gewinnen über DB-Zeilen mit derselben Ref; Events aus dem
+  // jeweils anderen Modus (is_test-Flag) werden ausgeblendet.
+  const allPackages = useMemo(() => {
+    const visible = pulpoTestMode === null ? events : events.filter((ev) => {
+      const flag = ev.data?.is_test as boolean | undefined;
+      return flag === undefined || flag === pulpoTestMode;
+    });
+    const live = aggregatePackages(visible);
+    const liveRefs = new Set(live.map((p) => p.ref));
+    return [...live, ...dbPackages.filter((p) => !liveRefs.has(p.ref))].sort(
+      (a, b) => new Date(a.firstSeen).getTime() - new Date(b.firstSeen).getTime(),
+    );
+  }, [events, dbPackages, pulpoTestMode]);
 
   // Build a synthetic machine list: any machine we've seen events from,
   // plus those reported as connected by the gateway.
@@ -1552,23 +1640,6 @@ function MainPane(p: MainPaneProps) {
               </>
             )}
           </div>
-          <button
-            onClick={p.onClearTable}
-            disabled={p.packages.length === 0}
-            title="Live-Ansicht leeren — Backend-Historie bleibt"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              padding: '6px 10px', fontSize: 12, fontWeight: 600,
-              border: '1px solid #fecaca',
-              background: p.packages.length === 0 ? '#fef2f2' : '#fef2f2',
-              color: '#991b1b',
-              borderRadius: 6,
-              cursor: p.packages.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: p.packages.length === 0 ? 0.5 : 1,
-            }}
-          >
-            <Trash2 size={13} /> Leeren
-          </button>
           <NotificationBell />
         </div>
       </header>
@@ -1912,7 +1983,6 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
   const weight = pkg.weight_g != null ? `${pkg.weight_g} g` : '—';
   const canResolve = pkg.state === 'EJECTED' || pkg.state === 'FAILED';
   const canRetry   = pkg.state === 'FAILED';
-  const canDelete  = pkg.state !== 'DELETED';
 
   return (
     <aside style={{
@@ -2057,11 +2127,6 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
         {canRetry && (
           <ActionBigBtn tone="info" icon={<RefreshCw size={14} />} onClick={() => onAction('retry', pkg)}>
             Wiederholen
-          </ActionBigBtn>
-        )}
-        {canDelete && (
-          <ActionBigBtn tone="danger" icon={<Trash2 size={14} />} onClick={() => onAction('delete', pkg)}>
-            Soft-Delete
           </ActionBigBtn>
         )}
       </div>

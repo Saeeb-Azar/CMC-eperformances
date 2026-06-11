@@ -68,9 +68,20 @@ class OrderStateListItem(BaseModel):
     barcode: str
     state: str
     enq_sequence: int
+    is_test: bool = False
+    # Protokoll-ID der Maschine ("0001") — vom Service nachträglich an die
+    # ORM-Zeile gehängt (OrderState speichert nur machine_db_id), damit das
+    # Dashboard nach seiner Maschinen-Auswahl filtern kann.
+    machine_id: str = ""
     tracking_number: str | None
     carrier: str | None
     final_weight_g: int | None
+    final_length_mm: int | None = None
+    final_width_mm: int | None = None
+    final_height_mm: int | None = None
+    dimension_length_mm: int | None = None
+    dimension_width_mm: int | None = None
+    dimension_height_mm: int | None = None
     ejection_reason: str | None
     enq_at: datetime | None
     completed_at: datetime | None

@@ -16,6 +16,7 @@ from app.core.logging import logger
 from app.gateway.parser import parse_message, build_response, serialize_response
 from app.gateway.persistence import persist_event
 from app.gateway.websocket import ws_manager
+from app.modules.pulpo.runtime import pulpo_runtime
 
 
 def sanitize_barcode(raw: str) -> str:
@@ -733,6 +734,12 @@ class ConnectionManager:
                 for event in events:
                     msg_type = event["type"]
                     msg_data = event["data"]
+
+                    # Jedes Event trägt den Modus, in dem es entstand — das
+                    # Frontend blendet damit Test-Aufträge im Produktiv-Modus
+                    # aus (und umgekehrt), auch im Live-Stream/Ringbuffer.
+                    if isinstance(msg_data, dict):
+                        msg_data["is_test"] = pulpo_runtime.test_mode
 
                     # Capture the protocol id ("0001") from the first frame
                     # that carries one, so the sidebar shows the CW#### label

@@ -23,6 +23,7 @@ async def list_orders(
     reference_id: str | None = None,
     carrier: str | None = None,
     include_test: bool = False,
+    only_test: bool = False,
     limit: int = Query(50, le=200),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -37,7 +38,10 @@ async def list_orders(
         limit=limit,
         offset=offset,
     )
-    return await service.list_orders(db, user["tenant_id"], filters, include_test=include_test)
+    return await service.list_orders(
+        db, user["tenant_id"], filters,
+        include_test=include_test, only_test=only_test,
+    )
 
 
 @router.get("/active", response_model=list[OrderStateRead])
