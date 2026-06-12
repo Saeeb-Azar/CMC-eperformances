@@ -11,7 +11,7 @@
  * Klick öffnet die Einstellungen.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Printer, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Printer, X, CheckCircle2, AlertCircle, Loader2, Trash2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { qzConnect, qzIsConnected, qzPrintLabel, type PrinterTarget } from '../../services/qzTray';
 
@@ -49,6 +49,26 @@ export default function PrintAgent() {
   const [lastMsg, setLastMsg] = useState<string>('');
   const [lastErr, setLastErr] = useState<string>('');
   const busy = useRef(false);
+
+  // Fehlgeschlagene Druckjobs (zum Aufräumen / erneut drucken).
+  type Problem = { id: string; reference_id: string; tracking_number: string; print_error: string; created_at: string };
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const loadProblems = useCallback(async () => {
+    try { setProblems(await api.getPrintProblems()); } catch { /* ignore */ }
+  }, []);
+  const doRetry = async (id: string) => {
+    try { await api.retryPrint(id); await loadProblems(); }
+    catch (e) { setLastErr(e instanceof Error ? e.message : String(e)); }
+  };
+  const doDelete = async (id: string) => {
+    try { await api.deletePrintEntry(id); await loadProblems(); }
+    catch (e) { setLastErr(e instanceof Error ? e.message : String(e)); }
+  };
+  const doClearAll = async () => {
+    if (!window.confirm('Alle fehlgeschlagenen Druckjobs unwiderruflich löschen?')) return;
+    try { const r = await api.clearPrintProblems(); setLastMsg(`${r.deleted} Druck-Probleme gelöscht`); await loadProblems(); }
+    catch (e) { setLastErr(e instanceof Error ? e.message : String(e)); }
+  };
 
   const save = (next: AgentCfg) => {
     setCfg(next);
@@ -105,6 +125,14 @@ export default function PrintAgent() {
     const id = setInterval(tick, 2000);
     return () => clearInterval(id);
   }, [cfg.enabled, tick]);
+
+  // Druck-Probleme laden, solange das Panel offen ist.
+  useEffect(() => {
+    if (!open) return;
+    loadProblems();
+    const id = setInterval(loadProblems, 4000);
+    return () => clearInterval(id);
+  }, [open, loadProblems]);
 
   // Badge-Farbe je Zustand
   const state: 'off' | 'connecting' | 'ok' | 'error' =
@@ -229,6 +257,57 @@ export default function PrintAgent() {
                 </div>
                 {lastMsg && <div style={{ color: '#059669', marginTop: 6 }}>{lastMsg}</div>}
                 {lastErr && <div style={{ color: '#dc2626', marginTop: 6, wordBreak: 'break-all' }}>{lastErr}</div>}
+              </div>
+
+              {/* Druck-Probleme: aufräumen / erneut drucken */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 13 }}>Druck-Probleme ({problems.length})</strong>
+                  {problems.length > 0 && (
+                    <button type="button" onClick={doClearAll}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+                        background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
+                        fontSize: 12, fontWeight: 600,
+                      }}>
+                      <Trash2 size={13} /> Alle löschen
+                    </button>
+                  )}
+                </div>
+                {problems.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--clr-text-muted)' }}>
+                    Keine fehlgeschlagenen Druckjobs. 👍
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: 190, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {problems.map((p) => (
+                      <div key={p.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                        padding: '8px 10px', borderRadius: 8, border: '1px solid var(--clr-border)', background: '#fff',
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>
+                            {p.reference_id} · {p.tracking_number}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#dc2626', wordBreak: 'break-all' }}>{p.print_error}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button type="button" title="Erneut drucken" onClick={() => doRetry(p.id)}
+                            style={{ display: 'inline-flex', padding: 6, borderRadius: 7, cursor: 'pointer',
+                              background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8' }}>
+                            <RefreshCw size={14} />
+                          </button>
+                          <button type="button" title="Löschen" onClick={() => doDelete(p.id)}
+                            style={{ display: 'inline-flex', padding: 6, borderRadius: 7, cursor: 'pointer',
+                              background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <p style={{ fontSize: 11, color: 'var(--clr-text-muted)', marginTop: 12, lineHeight: 1.5 }}>

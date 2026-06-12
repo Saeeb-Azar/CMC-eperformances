@@ -343,6 +343,19 @@ export const api = {
       `/print-queue/${encodeURIComponent(shipmentId)}/mark-printed`,
       { method: 'POST', body: JSON.stringify({ error: error ?? null }) },
     ),
+  // Druck-Probleme aufräumen / erneut versuchen.
+  retryPrint: (shipmentId: string) =>
+    request<{ ok: boolean; requeued: boolean }>(
+      `/print-queue/${encodeURIComponent(shipmentId)}/retry`, { method: 'POST' },
+    ),
+  deletePrintEntry: (shipmentId: string) =>
+    request<{ ok: boolean; deleted: number }>(
+      `/print-queue/${encodeURIComponent(shipmentId)}`, { method: 'DELETE' },
+    ),
+  clearPrintProblems: () =>
+    request<{ ok: boolean; deleted: number }>(
+      `/print-queue/problems`, { method: 'DELETE' },
+    ),
   setDhlSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
       method: 'PUT', body: JSON.stringify({ test_mode }),

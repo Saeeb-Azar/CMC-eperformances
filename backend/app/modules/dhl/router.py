@@ -13,7 +13,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -263,6 +263,74 @@ async def mark_printed(
 
     await db.commit()
     return {"ok": True, "printed": sh.printed_at is not None}
+
+
+@router.post("/print-queue/{shipment_id}/retry")
+async def retry_print(
+    shipment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Fehlgeschlagenen Druckjob erneut einreihen: ``print_error`` zurücksetzen
+    → der Eintrag landet beim nächsten Poll wieder in ``/print-queue`` und wird
+    neu gedruckt. (Sinnvoll, seit das Signieren funktioniert.)"""
+    sh = (await db.execute(
+        select(Shipment).where(
+            Shipment.tenant_id == user["tenant_id"],
+            Shipment.id == shipment_id,
+        )
+    )).scalar_one_or_none()
+    if not sh:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found")
+    sh.print_error = ""
+    await db.commit()
+    logger.info(f"PRINT RETRY: ref={sh.reference_id} tracking={sh.tracking_number} re-queued")
+    return {"ok": True, "requeued": True}
+
+
+@router.delete("/print-queue/problems")
+async def clear_print_problems(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role(Role.TENANT_ADMIN)),
+):
+    """Alle fehlgeschlagenen, noch nicht gedruckten Druckjobs des Tenants
+    löschen (Aufräumen alter Einträge). Trifft NUR Einträge mit gesetztem
+    ``print_error`` und ``printed_at IS NULL`` — erfolgreich gedruckte oder
+    offene Sendungen bleiben unangetastet. Admin-only (destruktiv)."""
+    res = await db.execute(
+        sa_delete(Shipment).where(
+            Shipment.tenant_id == user["tenant_id"],
+            Shipment.printed_at.is_(None),
+            Shipment.print_error != "",
+            Shipment.print_error.isnot(None),
+        )
+    )
+    await db.commit()
+    deleted = int(res.rowcount or 0)
+    logger.info(f"PRINT PROBLEMS CLEARED: tenant={user['tenant_id']} deleted={deleted}")
+    return {"ok": True, "deleted": deleted}
+
+
+@router.delete("/print-queue/{shipment_id}")
+async def delete_print_entry(
+    shipment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Einen einzelnen Druck-/Sendungseintrag löschen (Aufräumen). Tenant-
+    geschützt: nur Einträge des eigenen Mandanten."""
+    sh = (await db.execute(
+        select(Shipment).where(
+            Shipment.tenant_id == user["tenant_id"],
+            Shipment.id == shipment_id,
+        )
+    )).scalar_one_or_none()
+    if not sh:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found")
+    await db.delete(sh)
+    await db.commit()
+    logger.info(f"PRINT ENTRY DELETED: ref={sh.reference_id} tracking={sh.tracking_number}")
+    return {"ok": True, "deleted": 1}
 
 
 @router.post("/shipments/test-label")
