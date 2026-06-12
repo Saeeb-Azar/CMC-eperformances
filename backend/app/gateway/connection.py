@@ -880,7 +880,23 @@ class ConnectionManager:
             # alten Shipment eines ANDEREN Pakets wiederverwendet (sonst:
             # falsches Tracking/Label + falsche/fehlende Pulpo-Refs).
             scanned_barcode = str(msg_data.get("barcode") or pkg.get("barcode") or "").strip()
-            cached = (await db.execute(
+
+            # Genau EINEN Pulpo-Auftrag an diese ref binden (wichtig bei
+            # mehrfach vorkommendem Single-Order-Barcode → richtige Adresse).
+            claimed_order = await self._claim_pulpo_order(
+                db, protocol_id, tenant_id, ref, scanned_barcode,
+            )
+
+            # Im Test-Modus (Demo) bzw. für TEST-Aufträge NIE ein gecachtes oder
+            # von Pulpo vorerzeugtes Label wiederverwenden — IMMER frisch aus den
+            # (Test-)Daten rendern. Sonst zeigt/druckt die Demo ein altes oder
+            # fremdes ECHTES Label (z.B. „Leonard") statt der Testadresse.
+            is_test_ctx = pulpo_runtime.test_mode or (
+                claimed_order is not None
+                and str(claimed_order.pulpo_order_id or "").startswith("TEST-")
+            )
+
+            cached = None if is_test_ctx else (await db.execute(
                 select(Shipment).where(
                     Shipment.tenant_id == tenant_id,
                     Shipment.reference_id == ref,
@@ -901,18 +917,15 @@ class ConnectionManager:
                 )
                 return
 
-            # Genau EINEN Pulpo-Auftrag an diese ref binden (wichtig bei
-            # mehrfach vorkommendem Single-Order-Barcode → richtige Adresse).
-            claimed_order = await self._claim_pulpo_order(
-                db, protocol_id, tenant_id, ref, scanned_barcode,
-            )
-
             # ── Pulpo-Label-First ──────────────────────────────────────────
             # Hat Pulpo zum gescannten Barcode bereits ein Label generiert?
             # (Pre-Label-Workflow: Pulpo erstellt das DHL-Label, sobald die
             #  Sales-Order in die Pack-Queue wandert. Dann müssen wir nicht
             #  selbst DHL anrufen — risikoärmer, idempotent, kostenfrei.)
-            pulpo_hit = await self._try_pulpo_label(db, tenant_id, scanned_barcode, order=claimed_order)
+            # Im Test-Kontext übersprungen → frisches Test-Label.
+            pulpo_hit = None if is_test_ctx else await self._try_pulpo_label(
+                db, tenant_id, scanned_barcode, order=claimed_order,
+            )
             if pulpo_hit is not None:
                 tracking, label_b64 = pulpo_hit
                 response["match_barcode"] = tracking
@@ -961,6 +974,7 @@ class ConnectionManager:
                 recipient=recipient,
                 weight_g=weight_g, length_mm=length_mm,
                 width_mm=width_mm, height_mm=height_mm,
+                barcode=scanned_barcode,
             )
             await db.commit()
 

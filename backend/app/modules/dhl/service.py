@@ -33,6 +33,7 @@ async def create_label_for_order(
     width_mm: int,
     height_mm: int,
     product: str | None = None,
+    barcode: str = "",
 ) -> Shipment:
     """Label erzeugen + persistieren. Idempotent über ``order_state_id``:
     existiert bereits eine Sendung für diesen OrderState, wird sie
@@ -63,6 +64,7 @@ async def create_label_for_order(
         tenant_id=tenant_id,
         order_state_id=order_state_id,
         reference_id=order_ref,  # für die Druck-Queue (QZ-Agent findet darüber)
+        barcode=barcode,         # zum (ref, barcode)-Matching in der Detail-/Cache-Logik
         carrier="DHL",
         product=product or "V01PAK",
         tracking_number=result["tracking"],

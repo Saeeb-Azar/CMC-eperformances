@@ -293,8 +293,22 @@ async def demo_cleanup(
         await db.execute(delete(PulpoOrderItem).where(PulpoOrderItem.order_db_id.in_(test_orders)))
         await db.execute(delete(PulpoPackingOrder).where(PulpoPackingOrder.id.in_(test_orders)))
 
+    # Refs der Test-OrderStates einsammeln — darüber löschen wir AUCH
+    # versehentlich darunter gelandete „echte" Shipments (is_test=False),
+    # falls aus früheren Läufen ein fremdes Label (z.B. „Leonard") an einer
+    # Demo-Referenz klebt.
+    test_refs = (await db.execute(
+        select(OrderState.reference_id).where(
+            OrderState.tenant_id == tenant_id, OrderState.is_test.is_(True),
+        )
+    )).scalars().all()
+
+    from sqlalchemy import or_ as _or
+    sh_filter = [Shipment.is_test.is_(True), Shipment.barcode.like("DEMO-%")]
+    if test_refs:
+        sh_filter.append(Shipment.reference_id.in_(list(set(test_refs))))
     sh = await db.execute(delete(Shipment).where(
-        Shipment.tenant_id == tenant_id, Shipment.is_test.is_(True),
+        Shipment.tenant_id == tenant_id, _or(*sh_filter),
     ))
     os_ = await db.execute(delete(OrderState).where(
         OrderState.tenant_id == tenant_id, OrderState.is_test.is_(True),
