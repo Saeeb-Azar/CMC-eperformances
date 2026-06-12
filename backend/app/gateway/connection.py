@@ -976,8 +976,37 @@ class ConnectionManager:
             if order is None:
                 return None
 
-            # 2) Boxen + Tracking aus dem gecachten raw_payload extrahieren
+            # 2) Boxen + Tracking aus dem gecachten raw_payload extrahieren.
+            # Falls der Cache nichts hat oder die Box noch ohne Tracking ist,
+            # frisch nachfragen — der Sync läuft alle 8s, manchmal hat
+            # Pulpo gerade in den letzten Sekunden noch ein Label erzeugt.
             raw = order.raw_payload if isinstance(order.raw_payload, dict) else {}
+            def _has_tracking(rp: dict) -> bool:
+                for b in rp.get("packing_boxes") or []:
+                    if isinstance(b, dict):
+                        st = b.get("shipment_tracking") or {}
+                        if isinstance(st, dict) and st.get("tracking_code"):
+                            return True
+                return False
+            if not _has_tracking(raw):
+                try:
+                    fresh = await pulpo_client.get_packing_order(order.pulpo_order_id)
+                    if isinstance(fresh, dict) and _has_tracking(fresh):
+                        raw = fresh
+                        # Cache nachziehen (best-effort), damit der nächste Scan
+                        # ohne Round-Trip auskommt.
+                        try:
+                            order.raw_payload = fresh
+                            await db.flush()
+                        except Exception: pass
+                        logger.info(
+                            f"Pulpo refresh hit: order_id={order.pulpo_order_id} "
+                            f"now has shipment_tracking"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Pulpo refresh for label lookup failed: {e!r} (continuing with cache)"
+                    )
             boxes = raw.get("packing_boxes") or []
             for box in boxes:
                 if not isinstance(box, dict):
