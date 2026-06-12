@@ -1716,7 +1716,13 @@ function MainPane(p: MainPaneProps) {
   const pageCount = Math.max(1, Math.ceil(p.packages.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageStart = safePage * PAGE_SIZE;
-  const pageRows = p.packages.slice(pageStart, pageStart + PAGE_SIZE);
+  // Anzeige umgekehrt: neueste Aufträge oben, älteste unten. Die Position-
+  // Spalte zeigt weiterhin die ursprüngliche Sequenz (= Reihenfolge, in der
+  // die Pakete tatsächlich auf dem Band waren), nur die VISUAL-Sortierung
+  // ist absteigend — so sieht der Operator immer zuerst, was gerade frisch
+  // reinkam, ohne nach unten scrollen zu müssen.
+  const reversed = [...p.packages].reverse();
+  const pageRows = reversed.slice(pageStart, pageStart + PAGE_SIZE);
   // Reset to first page if the result set shrank below the current page.
   useEffect(() => { if (page > pageCount - 1) setPage(0); }, [pageCount, page]);
 
@@ -1904,7 +1910,9 @@ function MainPane(p: MainPaneProps) {
                 <TableRow
                   key={pkg.ref}
                   pkg={pkg}
-                  position={pageStart + idx + 1}
+                  // Position = ursprüngliche Auftrags-Sequenz; bei umgekehrter
+                  // Anzeige sind hohe Zahlen oben (neueste), niedrige unten.
+                  position={p.packages.length - pageStart - idx}
                   selected={pkg.ref === p.selectedRef}
                   onClick={() => p.onSelectRef(pkg.ref === p.selectedRef ? null : pkg.ref)}
                   nowTs={p.nowTs}
