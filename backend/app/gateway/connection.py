@@ -346,7 +346,15 @@ class ConnectionManager:
             active_with_remaining or active_consumed
             or inactive_with_remaining or inactive_consumed
         )
-        filter_passed = not has_active or active_with_remaining is not None
+        if has_active:
+            # Aktive Liste(n) gewählt → nur durchlassen, wenn der Barcode in
+            # einer AKTIVEN Liste mit Restmenge vorkommt.
+            filter_passed = active_with_remaining is not None
+        else:
+            # Keine Liste aktiv → in ALLEN CW-Listen suchen; nur durchlassen,
+            # wenn der Barcode in IRGENDEINER CW-Liste vorkommt. Kein Treffer =
+            # Reject (vorher lief der Artikel ungematcht durch → gefährlich).
+            filter_passed = matched is not None
         return matched, filter_passed, has_active
 
     def consume_cw_entry(self, protocol_id: str, list_name: str, barcode: str) -> bool:
@@ -825,24 +833,13 @@ class ConnectionManager:
                 response["label_url"] = label_b64 if get_settings().cmc_lab_label_mode == "base64" else ""
                 response["status"] = ""
                 response["rejection_reason"] = None
-                # Shipment anlegen, damit der QZ-Agent das Label drucken kann
-                # (Pre-Creation hat hier offenbar nichts hinterlegt — z.B. weil
-                # IND verpasst wurde oder das Label erst jetzt da ist).
+                # Shipment für GENAU dieses (ref, barcode) anlegen/aktualisieren
+                # und alte Inkarnationen (recycelte ref) supersedieren — sonst
+                # druckt der QZ-Agent ein altes/falsches Label.
                 try:
-                    existing = (await db.execute(
-                        select(Shipment).where(
-                            Shipment.tenant_id == tenant_id,
-                            Shipment.reference_id == ref,
-                        ).limit(1)
-                    )).scalar_one_or_none()
-                    if existing is None:
-                        db.add(Shipment(
-                            tenant_id=tenant_id, reference_id=ref,
-                            barcode=scanned_barcode, tracking_number=tracking,
-                            label_b64=label_b64, label_format="PDF",
-                            carrier="DHL", product="V01PAK", is_test=False,
-                        ))
-                        await db.commit()
+                    await self._store_shipment(
+                        db, tenant_id, ref, scanned_barcode, tracking, label_b64,
+                    )
                 except Exception as e:
                     logger.warning(f"LAB1 shipment persist failed for {ref}: {e!r}")
                 logger.info(
@@ -990,6 +987,53 @@ class ConnectionManager:
             logger.warning(f"Pulpo recipient lookup failed: {e!r} — using default")
             return None
 
+    async def _store_shipment(
+        self, db, tenant_id: str, ref: str, barcode: str,
+        tracking: str, label_b64: str, *,
+        seq: str = "", sales: str = "", label_format: str = "PDF",
+    ) -> None:
+        """Shipment für (ref, barcode) anlegen/aktualisieren — UND alte,
+        ungedruckte Shipments DESSELBEN refs mit ANDEREM Barcode supersedieren.
+
+        Hintergrund: reference_ids werden je Maschinen-Session recycelt
+        (ref0001 …). Ohne Supersede würde der QZ-Agent das ALTE Label eines
+        früheren Pakets drucken → falsches Label trotz korrektem Pulpo-Label.
+        """
+        from app.modules.dhl.models import Shipment
+        from sqlalchemy import select as _sel, update as _upd
+        from datetime import datetime as _dt
+        # 1) Alte Inkarnationen (anderer Barcode, noch nicht gedruckt) aus der
+        #    Druck-Queue nehmen → markieren als „superseded".
+        await db.execute(
+            _upd(Shipment).where(
+                Shipment.tenant_id == tenant_id,
+                Shipment.reference_id == ref,
+                Shipment.barcode != barcode,
+                Shipment.printed_at.is_(None),
+            ).values(printed_at=_dt.utcnow(), print_error="superseded: reference_id recycelt")
+        )
+        # 2) Vorhandenes (ref, barcode) aktualisieren oder neu anlegen.
+        sh = (await db.execute(
+            _sel(Shipment).where(
+                Shipment.tenant_id == tenant_id,
+                Shipment.reference_id == ref,
+                Shipment.barcode == barcode,
+            ).order_by(Shipment.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if sh is None:
+            db.add(Shipment(
+                tenant_id=tenant_id, reference_id=ref, barcode=barcode,
+                tracking_number=tracking, label_b64=label_b64, label_format=label_format,
+                carrier="DHL", product="V01PAK", is_test=False,
+                pulpo_sequence_number=seq, pulpo_sales_order_num=sales,
+            ))
+        else:
+            if tracking: sh.tracking_number = tracking
+            if label_b64: sh.label_b64 = label_b64
+            if seq: sh.pulpo_sequence_number = seq
+            if sales: sh.pulpo_sales_order_num = sales
+        await db.commit()
+
     async def _precreate_label(
         self, protocol_id: str, ref: str, msg_data: dict,
     ) -> None:
@@ -1032,15 +1076,20 @@ class ConnectionManager:
                     _note(False, f"ref={ref}: kein Tenant auflösbar")
                     return
 
+                # Nur skippen, wenn schon ein Shipment für GENAU dieses
+                # (ref, barcode) existiert. Bei recyceltem ref (anderer Barcode)
+                # NICHT skippen → frisch anlegen + altes supersedieren.
                 existing = (await db.execute(
                     select(Shipment).where(
                         Shipment.tenant_id == tenant_id,
                         Shipment.reference_id == ref,
+                        Shipment.barcode == barcode,
                     ).order_by(Shipment.created_at.desc()).limit(1)
                 )).scalar_one_or_none()
                 if existing and existing.tracking_number:
                     logger.info(
-                        f"PRECREATE skip: ref={ref} already has tracking={existing.tracking_number}"
+                        f"PRECREATE skip: ref={ref} barcode={barcode} already has "
+                        f"tracking={existing.tracking_number}"
                     )
                     _note(True, f"ref={ref}: bereits vorhanden ({existing.tracking_number})")
                     return
@@ -1076,18 +1125,10 @@ class ConnectionManager:
                                 or rp.get("sales_order_ref") or ""
                             )
                     except Exception: pass
-                    sh = Shipment(
-                        tenant_id=tenant_id, reference_id=ref,
-                        barcode=barcode,
-                        pulpo_sequence_number=seq_num,
-                        pulpo_sales_order_num=sales_num,
-                        tracking_number=tracking,
-                        label_b64=label_b64, label_format="PDF",
-                        carrier="DHL", product="V01PAK",
-                        is_test=False,
+                    await self._store_shipment(
+                        db, tenant_id, ref, barcode, tracking, label_b64,
+                        seq=seq_num, sales=sales_num,
                     )
-                    db.add(sh)
-                    await db.commit()
                     bytes_est = len(label_b64) * 3 // 4 if label_b64 else 0
                     logger.info(
                         f"PRECREATE OK (Pulpo): ref={ref} tracking={tracking} "
