@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { Outlet, useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
+import PrintAgent from '../print/PrintAgent';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
 // Mobile-Navigation: auf dem Handy wird die Sidebar zum Off-Canvas-Drawer.
@@ -88,6 +89,9 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      {/* Browser-Druck-Agent (QZ Tray) — läuft im offenen Tab, druckt
+          fertige Labels automatisch an den LAN-Drucker. */}
+      <PrintAgent />
     </MobileNavContext.Provider>
   );
 }

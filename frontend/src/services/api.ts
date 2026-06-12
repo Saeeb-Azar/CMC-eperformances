@@ -332,6 +332,17 @@ export const api = {
     id: string; reference_id: string; tracking_number: string;
     print_error: string; created_at: string;
   }>>('/print-queue/problems'),
+  // Druckqueue für den Browser-Druck-Agenten (QZ Tray) — gleiche Endpunkte
+  // wie der optionale LAN-Daemon, nur aus dem offenen Dashboard-Tab bedient.
+  getPrintQueue: () => request<Array<{
+    id: string; reference_id: string; tracking_number: string;
+    label_b64: string; label_format: string; created_at: string;
+  }>>('/print-queue'),
+  markPrinted: (shipmentId: string, error?: string | null) =>
+    request<{ ok: boolean; printed: boolean }>(
+      `/print-queue/${encodeURIComponent(shipmentId)}/mark-printed`,
+      { method: 'POST', body: JSON.stringify({ error: error ?? null }) },
+    ),
   setDhlSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
       method: 'PUT', body: JSON.stringify({ test_mode }),
