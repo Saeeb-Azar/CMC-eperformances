@@ -74,27 +74,42 @@ export function qzIsConnected(): boolean {
 }
 
 export interface PrinterTarget {
-  host: string;   // z.B. 192.168.1.120
-  port: number;   // z.B. 51236 (oder 9100)
-  format: "pdf" | "raw"; // pdf = Standard-/Pixeldruck, raw = ZPL etc.
+  /** Windows/macOS Druckername wie er im System installiert ist (z.B. „DR_CW").
+   *  Das ist der Standardweg bei QZ Tray; QZ findet den Drucker über den
+   *  installierten Treiber. Hat Vorrang vor host/port wenn gesetzt. */
+  name?: string;
+  /** Direkte Netzwerk-Adresse (Raw-TCP, z.B. Zebra). Nur Fallback, falls
+   *  der Drucker NICHT im OS installiert ist und du wirklich direkt per
+   *  TCP an host:port schreiben willst. */
+  host?: string;
+  port?: number;
+  /** pdf = Pixel-Druck (Standard, was Pulpo liefert),
+   *  raw = ZPL/Roh-Bytes direkt. */
+  format: "pdf" | "raw";
 }
 
 /**
  * Ein Label drucken. `labelB64` ist Base64 (PDF von Pulpo, oder ZPL).
- *  - format "pdf": als PDF an einen Netzwerk-Drucker (Pixel-Rendering)
- *  - format "raw": Roh-Bytes (ZPL) direkt an host:port
+ *  - format "pdf": als PDF an den OS-Drucker (Pixel-Rendering)
+ *  - format "raw": Roh-Bytes (ZPL) direkt an den Drucker
+ *
+ * Drucker-Auswahl: bevorzugt `name` (im OS installierter Drucker, was die
+ * bestehende Pulpo-Integration auch nutzt — siehe QZ-Log: `printer.name=DR_CW`).
+ * Nur wenn kein Name gesetzt ist, wird `host:port` als Raw-TCP-Fallback verwendet.
  */
 export async function qzPrintLabel(labelB64: string, target: PrinterTarget): Promise<void> {
   const qz = await loadQz();
   await qzConnect();
-  // Netzwerk-Drucker per host/port ansprechen (raw socket). QZ akzeptiert
-  // ein Config-Objekt mit host+port für direkten TCP-Druck.
-  const config = qz.configs.create({ host: target.host, port: target.port });
+  // Drucker-Konfig: Name hat Vorrang (= so druckt Pulpo auch); host:port
+  // ist nur ein Fallback für nicht-installierte Netzwerk-Thermo-Drucker.
+  const printerSpec: Record<string, unknown> =
+    target.name ? { name: target.name }
+    : target.host ? { host: target.host, port: target.port ?? 9100 }
+    : { name: "default" };
+  const config = qz.configs.create(printerSpec, { jobName: `CMC Label ${Date.now()}` });
   if (target.format === "raw") {
-    // ZPL/Roh — base64 so an den Drucker geben.
     await qz.print(config, [{ type: "raw", format: "base64", data: labelB64 }]);
   } else {
-    // PDF — als Dokument rendern und drucken.
     await qz.print(config, [{ type: "pixel", format: "pdf", flavor: "base64", data: labelB64 }]);
   }
 }

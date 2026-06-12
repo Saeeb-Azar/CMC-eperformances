@@ -17,13 +17,22 @@ import { qzConnect, qzIsConnected, qzPrintLabel, type PrinterTarget } from '../.
 
 interface AgentCfg {
   enabled: boolean;
+  /** Windows-Druckername (z.B. "DR_CW") — bevorzugter Weg, wie Pulpo es auch macht. */
+  printerName: string;
+  /** Direkte Netzwerk-Adresse — nur falls Drucker NICHT im OS installiert ist. */
   host: string;
   port: number;
+  /** "name" = via Windows-Druckername (Standard), "host" = direkt per TCP. */
+  mode: 'name' | 'host';
   format: 'pdf' | 'raw';
 }
 
 const LS_KEY = 'cmc.printAgent';
-const DEFAULT_CFG: AgentCfg = { enabled: false, host: '192.168.1.120', port: 51236, format: 'pdf' };
+const DEFAULT_CFG: AgentCfg = {
+  enabled: false, printerName: 'DR_CW',
+  host: '192.168.1.120', port: 9100,
+  mode: 'name', format: 'pdf',
+};
 
 function loadCfg(): AgentCfg {
   try {
@@ -66,7 +75,9 @@ export default function PrintAgent() {
         setConnected(true);
       }
       const queue = await api.getPrintQueue();
-      const target: PrinterTarget = { host: cfg.host, port: cfg.port, format: cfg.format };
+      const target: PrinterTarget = cfg.mode === 'name'
+        ? { name: cfg.printerName, format: cfg.format }
+        : { host: cfg.host, port: cfg.port, format: cfg.format };
       for (const job of queue) {
         if (!job.label_b64) continue;
         try {
@@ -153,18 +164,44 @@ export default function PrintAgent() {
                   style={{ width: 18, height: 18, cursor: 'pointer' }} />
               </label>
 
-              <div className="modal-grid-2">
+              <label className="modal-field">
+                <span className="modal-field__label">Drucker-Auswahl</span>
+                <select className="modal-input" value={cfg.mode}
+                  onChange={(e) => save({ ...cfg, mode: e.target.value as 'name' | 'host' })}>
+                  <option value="name">Über Windows-Druckername (empfohlen)</option>
+                  <option value="host">Direkt über Netzwerk-Adresse (host:port)</option>
+                </select>
+                <span className="modal-field__hint">
+                  Pulpo druckt über den installierten Druckernamen (im QZ-Log:
+                  {' '}<code>printer.name=DR_CW</code>). Das ist der zuverlässigste Weg.
+                </span>
+              </label>
+
+              {cfg.mode === 'name' ? (
                 <label className="modal-field">
-                  <span className="modal-field__label">Drucker-IP</span>
-                  <input className="modal-input" value={cfg.host}
-                    onChange={(e) => save({ ...cfg, host: e.target.value.trim() })} />
+                  <span className="modal-field__label">Drucker-Name (Windows)</span>
+                  <input className="modal-input" value={cfg.printerName}
+                    onChange={(e) => save({ ...cfg, printerName: e.target.value.trim() })}
+                    placeholder="DR_CW" />
+                  <span className="modal-field__hint">
+                    Exakt wie in Windows → „Geräte und Drucker" angezeigt.
+                  </span>
                 </label>
-                <label className="modal-field">
-                  <span className="modal-field__label">Port</span>
-                  <input className="modal-input" type="number" value={cfg.port}
-                    onChange={(e) => save({ ...cfg, port: Number(e.target.value) })} />
-                </label>
-              </div>
+              ) : (
+                <div className="modal-grid-2">
+                  <label className="modal-field">
+                    <span className="modal-field__label">Drucker-IP</span>
+                    <input className="modal-input" value={cfg.host}
+                      onChange={(e) => save({ ...cfg, host: e.target.value.trim() })} />
+                  </label>
+                  <label className="modal-field">
+                    <span className="modal-field__label">Port</span>
+                    <input className="modal-input" type="number" value={cfg.port}
+                      onChange={(e) => save({ ...cfg, port: Number(e.target.value) })} />
+                  </label>
+                </div>
+              )}
+
               <label className="modal-field">
                 <span className="modal-field__label">Format</span>
                 <select className="modal-input" value={cfg.format}
@@ -173,8 +210,7 @@ export default function PrintAgent() {
                   <option value="raw">RAW / ZPL (Zebra-Thermodrucker)</option>
                 </select>
                 <span className="modal-field__hint">
-                  Pulpo liefert PDF. Falls der Drucker nur ZPL versteht → RAW wählen
-                  (dann ggf. Konvertierung nötig — sag uns Bescheid).
+                  Pulpo liefert PDF. Falls der Drucker nur ZPL versteht → RAW wählen.
                 </span>
               </label>
 
