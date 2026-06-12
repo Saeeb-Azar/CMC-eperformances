@@ -177,8 +177,15 @@ async def demo_run(
 
     await _ensure_demo_machine(db, tenant_id, machine_id)
 
-    # Eindeutiger Barcode pro Durchlauf → kein Duplicate-/Glitch-Reject.
-    barcode = (req.barcode or "").strip() or f"DEMO{int(time.time())}"
+    # WICHTIG: Der Scan-Barcode des Demo-Durchlaufs muss EINDEUTIG und KEIN
+    # echter Produkt-EAN sein. Sonst kollidiert er mit echten Pulpo-Aufträgen
+    # (gleicher Artikel) und die LAB1-Auflösung zieht deren echtes Label/
+    # Empfänger (z.B. „Leonard Fink"). Wir generieren deshalb IMMER einen
+    # eindeutigen DEMO-Barcode als Karton-Scan — der echte Produkt-EAN bleibt
+    # nur am Artikel (fürs Bild/die Anzeige). Ein optional eingegebener Barcode
+    # wird mit „DEMO-" präfixiert, damit er ebenfalls eindeutig bleibt.
+    user_bc = (req.barcode or "").strip()
+    barcode = f"DEMO-{user_bc}" if user_bc else f"DEMO-{uuid.uuid4().hex[:10].upper()}"
     seq = f"TEST-{uuid.uuid4().hex[:8].upper()}"
 
     # Alte Demo-Aufträge schließen, damit die CW-Liste schlank bleibt.

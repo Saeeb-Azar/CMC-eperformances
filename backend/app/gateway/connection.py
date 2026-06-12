@@ -931,15 +931,32 @@ class ConnectionManager:
                 return None
 
             raw = order.raw_payload if isinstance(order.raw_payload, dict) else {}
-            sales_order_id = raw.get("sales_order_id")
-            if not sales_order_id:
-                return None
 
-            # 2) Sales-Order von Pulpo holen
-            so = await pulpo_client.get_sales_order(sales_order_id)
-            if not so:
-                return None
-            ship_to = (so.get("ship_to") or {}) if isinstance(so, dict) else {}
+            # 2) Empfänger ZUERST aus dem lokalen raw_payload lesen
+            #    (sales_order.ship_to). Das deckt Demo-/Testaufträge ab (die
+            #    KEINE echte sales_order_id und keinen Pulpo-API-Zugriff haben)
+            #    und spart bei echten Aufträgen, deren Webhook-Payload ship_to
+            #    bereits mitbringt, einen API-Round-Trip. Nur wenn lokal nichts
+            #    Brauchbares steht, wird die Sales-Order von Pulpo nachgeladen.
+            ship_to = {}
+            local_st = (raw.get("sales_order") or {}).get("ship_to") if isinstance(raw.get("sales_order"), dict) else None
+            if isinstance(local_st, dict):
+                local_addr = local_st.get("address") if isinstance(local_st.get("address"), dict) else {}
+                if local_addr and str(local_addr.get("street") or "").strip() and str(local_addr.get("zip") or "").strip():
+                    ship_to = local_st
+
+            if not ship_to:
+                # TEST-/Demo-Aufträge nie gegen die echte Pulpo-API auflösen.
+                if str(order.pulpo_order_id or "").startswith("TEST-"):
+                    return None
+                sales_order_id = raw.get("sales_order_id")
+                if not sales_order_id:
+                    return None
+                so = await pulpo_client.get_sales_order(sales_order_id)
+                if not so:
+                    return None
+                ship_to = (so.get("ship_to") or {}) if isinstance(so, dict) else {}
+
             addr = (ship_to.get("address") or {}) if isinstance(ship_to, dict) else {}
             if not isinstance(addr, dict):
                 return None
@@ -1185,6 +1202,12 @@ class ConnectionManager:
                     ).limit(1)
                 )).scalar_one_or_none()
             if order is None:
+                return None
+
+            # Demo-/Test-Aufträge haben NIE ein echtes Pulpo-Label und keine
+            # echte pulpo_order_id — kein API-Call, direkt auf den DHL-Fallback
+            # (rendert im Test-Modus das Test-PDF mit den Testdaten).
+            if str(order.pulpo_order_id or "").startswith("TEST-"):
                 return None
 
             # 2) Boxen + Tracking aus dem gecachten raw_payload extrahieren.

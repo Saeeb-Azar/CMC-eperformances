@@ -141,7 +141,7 @@ export default function DemoPage() {
                 <input style={inputStyle} value={form.product_sku}
                   onChange={(e) => setForm({ ...form, product_sku: e.target.value })} />
               </Field>
-              <Field label="EAN / Barcode-Scan">
+              <Field label="EAN (nur Artikel/Bild)">
                 <input style={inputStyle} value={form.product_ean}
                   onChange={(e) => setForm({ ...form, product_ean: e.target.value })} />
               </Field>
@@ -155,8 +155,8 @@ export default function DemoPage() {
                 <input type="number" min={1} style={inputStyle} value={form.quantity}
                   onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) || 1 })} />
               </Field>
-              <Field label="Scan-Barcode (leer = auto)">
-                <input style={inputStyle} placeholder="auto" value={form.barcode}
+              <Field label="Karton-Scan (auto, isoliert)">
+                <input style={inputStyle} placeholder="DEMO-… (automatisch)" value={form.barcode}
                   onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
               </Field>
             </div>
