@@ -59,6 +59,14 @@ class Shipment(Base):
     printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     print_error: Mapped[str] = mapped_column(Text, default="")
 
+    # Pulpo-Verknüpfung (vom Pre-Creation gespeichert) — wird gebraucht, um
+    # OrderStates zu rekonstruieren, wenn ENQ die DB verpasst hat und erst
+    # LAB1/ACK durchkommt. Ohne diese Felder bleibt der UI-Eintrag „nackt"
+    # (nur ref, kein Barcode, kein Produkt).
+    barcode: Mapped[str] = mapped_column(String(255), default="", index=True)
+    pulpo_sequence_number: Mapped[str] = mapped_column(String(50), default="")
+    pulpo_sales_order_num: Mapped[str] = mapped_column(String(100), default="")
+
     # Rohes DHL-Response-Payload — Debugging + spätere Felder.
     raw_response: Mapped[dict] = mapped_column(JSON, default=dict)
 

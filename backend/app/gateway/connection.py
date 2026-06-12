@@ -1015,8 +1015,35 @@ class ConnectionManager:
                 pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode)
                 if pulpo_hit:
                     tracking, label_b64 = pulpo_hit
+                    # Pulpo-IDs für die OrderState-Reconstruction speichern
+                    # (siehe persistence.py: wenn ENQ verpasst wurde, baut
+                    # ein späterer Event-Handler den OrderState aus diesen
+                    # Feldern wieder zusammen — Barcode/PA/Verkaufsauftrag).
+                    seq_num = ""; sales_num = ""
+                    try:
+                        from sqlalchemy import select as _sel
+                        from app.modules.pulpo.models import PulpoPackingOrder as _PO, PulpoOrderItem as _PI
+                        po = (await db.execute(
+                            _sel(_PO).where(
+                                _PO.tenant_id == tenant_id,
+                                _PO.cart_box_barcode == barcode,
+                            ).limit(1)
+                        )).scalar_one_or_none()
+                        if po is None and barcode:
+                            po = (await db.execute(
+                                _sel(_PO).join(_PI, _PI.order_db_id == _PO.id).where(
+                                    _PO.tenant_id == tenant_id, _PI.ean == barcode,
+                                ).limit(1)
+                            )).scalar_one_or_none()
+                        if po and isinstance(po.raw_payload, dict):
+                            seq_num = str(po.raw_payload.get("sequence_number") or "")
+                            sales_num = str((po.raw_payload.get("sales_order") or {}).get("order_num") or "")
+                    except Exception: pass
                     sh = Shipment(
                         tenant_id=tenant_id, reference_id=ref,
+                        barcode=barcode,
+                        pulpo_sequence_number=seq_num,
+                        pulpo_sales_order_num=sales_num,
                         tracking_number=tracking,
                         label_b64=label_b64, label_format="PDF",
                         carrier="DHL", product="V01PAK",

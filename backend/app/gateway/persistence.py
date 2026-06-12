@@ -231,7 +231,39 @@ async def _apply_event(
 
     order = await _find_order(db, machine, ref)
     if order is None:
-        return None, None
+        # Kein OrderState? Üblich nur, wenn ENQ unsere DB verpasst hat
+        # (Backend-Restart genau zwischen ENQ und IND/ACK/LAB1). Aus dem
+        # Shipment-Cache rekonstruieren — der hat barcode + Pulpo-Refs,
+        # die der Pre-Creation-Hook bei IND eingetragen hat.
+        from app.modules.dhl.models import Shipment
+        from app.modules.pulpo.runtime import pulpo_runtime
+        sh = (await db.execute(
+            select(Shipment).where(
+                Shipment.tenant_id == machine.tenant_id,
+                Shipment.reference_id == ref,
+            ).order_by(Shipment.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if sh and (sh.barcode or sh.tracking_number):
+            machine.enq_sequence = (machine.enq_sequence or 0) + 1
+            order = OrderState(
+                tenant_id=machine.tenant_id,
+                machine_db_id=machine.id,
+                reference_id=ref,
+                barcode=sh.barcode or sh.tracking_number,
+                barcode_source="reconstructed",
+                state="ASSIGNED",
+                enq_sequence=machine.enq_sequence,
+                enq_at=now,
+                tracking_number=sh.tracking_number or None,
+                is_test=pulpo_runtime.test_mode,
+            )
+            db.add(order)
+            logger.info(
+                f"OrderState reconstructed from shipment for ref={ref} "
+                f"barcode={sh.barcode} tracking={sh.tracking_number}"
+            )
+        else:
+            return None, None
 
     prev_state = order.state
 
