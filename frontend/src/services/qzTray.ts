@@ -16,6 +16,8 @@
  */
 
 const QZ_CDN = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js";
+// jsrsasign für die RSA-SHA512-Signierung der QZ-Anfragen (wie qz-tray-Demo).
+const JSRSASIGN_CDN = "https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js";
 
 // Minimal getypter Ausschnitt der globalen qz-API (vom CDN-Script gesetzt).
 interface QZ {
@@ -29,11 +31,25 @@ interface QZ {
   security: {
     setCertificatePromise: (fn: (resolve: (v: string) => void, reject: (e: unknown) => void) => void) => void;
     setSignaturePromise: (fn: (toSign: string) => (resolve: (v: string) => void, reject: (e: unknown) => void) => void) => void;
+    setSignatureAlgorithm?: (alg: string) => void;
   };
 }
 
+// Minimal getypter Ausschnitt der jsrsasign-Globals (vom CDN-Script gesetzt).
+interface JsRsaSignSig {
+  init: (key: unknown) => void;
+  updateString: (s: string) => void;
+  sign: () => string;
+}
+interface JsRsaSign {
+  KEYUTIL: { getKey: (pem: string) => unknown };
+  KJUR: { crypto: { Signature: new (params: { alg: string }) => JsRsaSignSig } };
+  hextorstr: (hex: string) => string;
+  stob64: (s: string) => string;
+}
+
 declare global {
-  interface Window { qz?: QZ }
+  interface Window { qz?: QZ; KJUR?: unknown; KEYUTIL?: unknown }
 }
 
 let loadPromise: Promise<QZ> | null = null;
@@ -74,6 +90,45 @@ R2cmeC/05ggFvL4qIqoawdSJK530T7AtFh5CmXl97TTkL8J7e7U1fQPYEhTvJ9Ww
 oEn16k/1aNgERPdP8DgTMLzA+Y4MYBHeJl2y1QNbZg==
 -----END CERTIFICATE-----`;
 
+/**
+ * Privater Schlüssel zum obigen Zertifikat (QZ Tray Demo Cert). Wird genutzt,
+ * um die QZ-Anfragen mit RSA-SHA512 zu SIGNIEREN → QZ meldet „Valid signature
+ * from QZ Tray Demo Cert" und druckt LAUTLOS, ganz ohne Allow-Dialog (exakt
+ * wie die bestehende Pulpo-Integration).
+ *
+ * HINWEIS: Es ist der QZ-DEMO-Key (öffentlich, derselbe den Pulpo nutzt) →
+ * im Frontend hinterlegt unkritisch. Würde hier ein ECHTER Produktiv-Key
+ * verwendet, gehörte das Signieren ins Backend (Key nie im Browser-Bundle).
+ */
+const QZ_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCbhzCN9cz6Eh47
+ZECdYTm9XQnaKqgNyr2nE8bBOrxmtrNhKU0IqUhta+v7TajmWWKQIGdG+85PVi1g
+0UCM5jXHg75KoKl8T36uoxjeqi0Ht3j00gzXTmwevomY280WmpQS14hM9licDPes
+WaAKDqLtw/CBASGe2lgppk4UqGA2PjqlZcuB30jQmccsf9CvKfa7f9pvC0Q8ngBK
+mGP6VJT2spBq4+68SFcUS3GiYECZXSi6ZpcxA9SRn1zIcukLcFxfrzztG8LO2DqE
+tlxIGatTBkD15w+Uvql1FP0owTKAZ/dx8qaNSh4ANdm+dFUNZcYeGTQHXoYIFqVt
+4dEBkhLlAgMBAAECggEAGYv6SMdAVS9WsfDEwFUxE87NiH2LP0C3KFOSSTkpq0GF
+c4dCNRMBZ5/bklruTHAQRZZdAIbqG5QPPiEBFmPWH6CfSEjdriKsr2jw89pGLUdQ
+4f4Cx/cEwYQQvAAWzwizG+k1ZVbttSxYHoJWTHCdCKsvvTD/YcWBx82ec7w4mZAb
+k0TB0+10dv0imfXjlDHcdJC11xMjSm8Tgr2FXFp3VBYeR8EZU/QEQMlaJRyJJHgg
+9BS4Nqk8bsqeGDCY87LnpHhFHsPYgzKpTPbM4eym10PvvypGT3d7N3Pg++z0XBqw
+lXuOh8aEkWvEsIoX/kpJdl9wGU/GOhQR3CoFqPdxXQKBgQDSVuJrEwfRycocLkdI
+rmR+KgvCVnG25LlKf39kmDTWp/In0XokpIKTs7Htnj6egWWngWoyKDXsOy/9ERwu
+VSiqg0NNQ5zG+gbq1JPgJIdu4WfuYThKeGSoal+QoGBUCXc14rAoYupKLlnMjG/e
+ruqxLHcAd7eTPtd7Ntcvixg5mwKBgQC9SkvMefz1OHmXXyO76hkLf9oOcjrlXbwY
+CTxttI1hW/aMdrVEg9kRemMtoiNvOfeEvLcjV8UC5m0qPOAJQLwwS2KBRVsjtewZ
+sNiBr7ju2WEWOQf11/yf4Asw2P8lo5l88q8NPxwpt6Ups4JGFcClfdLYfJtUn6u/
+1oq97bvtfwKBgF+d34+NNyDG+nmVEBKaNFSmCHJvmYHqt9CF5QN1rY9nCU3QjBXc
+Mv+x0FCUfyLO78cVrZDfdqPMxCPmg0kMrU/WG+IjukE5p6tYt2BNOsPM89IJn+06
+jYeB06+LOD77jpWQV0QEszzFlUzHCpPQMCAadn5f7bOh/ZKle2zBbmHBAoGAY4Ex
+1VxvGC1G5cbSjw7heYUNCLkNstMSdIQuavEVvQ9NzMr+QPUaX7C5gBySif6r2fAm
+SYLzArJEwoZbsyF/i9elAZWG8n/IjDzFo27PRWeqPLdgMuEGYLiyyUvY3F1i6ybb
+1JfPYzKxtPkzS0pWCejZtInUUajZ7S+HoY3eU1sCgYEAq5MvrEXlorgIW/2sZCQy
+9LkIA4G22zYWPgbzJjpz6GmaZQDytl8gAjnRaqW1mq79bc5u4zwxUU8P3bW6f8fS
+dWsTzhKolKHf/JKTOH3L0GAuIx5Ngcg0kJds0HGOthYTbWgQei1otdvFzTR7dIHS
+1qHfHYeM7IYiLPe9wrUnzB4=
+-----END PRIVATE KEY-----`;
+
 /** qz-tray.js einmalig vom CDN laden. */
 function loadQz(): Promise<QZ> {
   if (window.qz) return Promise.resolve(window.qz);
@@ -92,18 +147,47 @@ function loadQz(): Promise<QZ> {
   return loadPromise;
 }
 
+let jsrsasignPromise: Promise<void> | null = null;
+
+/** jsrsasign einmalig vom CDN laden (für die RSA-Signierung). */
+function loadJsrsasign(): Promise<void> {
+  if (window.KJUR && window.KEYUTIL) return Promise.resolve();
+  if (jsrsasignPromise) return jsrsasignPromise;
+  jsrsasignPromise = new Promise<void>((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = JSRSASIGN_CDN;
+    s.async = true;
+    s.onload = () => (window.KJUR ? resolve() : reject(new Error("jsrsasign geladen, aber KJUR fehlt")));
+    s.onerror = () => reject(new Error("jsrsasign konnte nicht geladen werden (CDN/Offline?)"));
+    document.head.appendChild(s);
+  });
+  return jsrsasignPromise;
+}
+
 /** Verbindung zum lokalen QZ Tray sicherstellen. */
 export async function qzConnect(): Promise<void> {
   const qz = await loadQz();
-  // Zertifikat liefern, damit QZ Tray den Absender erkennt (Allow-Dialog mit
-  // „Remember this decision" merkt sich die Freigabe pro Zertifikat).
+  await loadJsrsasign();
+  const jr = window as unknown as JsRsaSign;
+  // Zertifikat liefern, damit QZ Tray den Absender erkennt.
   qz.security.setCertificatePromise((resolve) => resolve(QZ_CERTIFICATE));
-  // Signatur LEER auflösen (resolve, NICHT reject!). reject() erzeugte zuvor
-  // „Failed to sign request" und ließ jeden Druck scheitern, bevor er QZ
-  // erreichte. Mit leerer Signatur akzeptiert QZ die Anfrage (ggf. einmaliger
-  // Allow-Dialog → „Remember"); für vollständig stille, signierte Anfragen
-  // müsste serverseitig mit dem zugehörigen Private Key signiert werden.
-  qz.security.setSignaturePromise(() => (resolve) => resolve(""));
+  // Signatur-Algorithmus auf SHA512 (QZ-Default in 2.1+, Pulpo nutzt ebenfalls
+  // SHA512 — siehe QZ-Log "signAlgorithm":"SHA512").
+  qz.security.setSignatureAlgorithm?.("SHA512");
+  // ECHT signieren mit dem privaten Schlüssel (RSA-SHA512). Damit meldet QZ
+  // „Valid signature from QZ Tray Demo Cert" und druckt LAUTLOS — kein
+  // Allow-Dialog mehr, exakt wie die Pulpo-Integration.
+  qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
+    try {
+      const key = jr.KEYUTIL.getKey(QZ_PRIVATE_KEY);
+      const sig = new jr.KJUR.crypto.Signature({ alg: "SHA512withRSA" });
+      sig.init(key);
+      sig.updateString(toSign);
+      resolve(jr.stob64(jr.hextorstr(sig.sign())));
+    } catch (e) {
+      reject(e);
+    }
+  });
   if (!qz.websocket.isActive()) {
     await qz.websocket.connect({ retries: 2, delay: 1 });
   }
