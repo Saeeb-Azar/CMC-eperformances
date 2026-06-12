@@ -22,3 +22,6 @@ code, .mono { font-family: var(--font-mono); }
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.55; }
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }

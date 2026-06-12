@@ -175,8 +175,22 @@ class DhlClient:
                 f"DHL test-mode: skip API call, mock tracking={tracking} "
                 f"(product={product}, weight={weight_g}g, dim={length_mm}x{width_mm}x{height_mm}mm)"
             )
+            # Gerendertes Test-Label (PDF mit den Testdaten), damit man im
+            # Demo-Durchlauf ein echtes Label SIEHT — statt eines leeren Felds.
+            from .test_label import render_test_label_pdf
+            sender_line = f"{sender.name}, {sender.street} {sender.street_no}, {sender.zip_code} {sender.city}"
+            label_b64 = render_test_label_pdf(
+                tracking=tracking, order_ref=order_ref,
+                recipient_name=recipient.name,
+                recipient_street=recipient.street, recipient_house_no=recipient.street_no,
+                recipient_zip=recipient.zip_code, recipient_city=recipient.city,
+                recipient_country=recipient.country,
+                sender_line=sender_line, product=product,
+                weight_g=weight_g, length_mm=length_mm,
+                width_mm=width_mm, height_mm=height_mm,
+            )
             return {
-                "tracking": tracking, "label_b64": "", "label_format": label_format,
+                "tracking": tracking, "label_b64": label_b64, "label_format": "PDF",
                 "raw": {"test_mode": True, "order_ref": order_ref},
             }
 

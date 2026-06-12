@@ -33,6 +33,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.simulator.router import router as simulator_router
 from app.modules.cmc_actions.router import router as cmc_actions_router
+from app.modules.demo.router import router as demo_router
 from app.modules.pulpo.router import router as pulpo_router
 from app.modules.pulpo.runtime import pulpo_runtime
 from app.modules.weclapp.router import router as products_router
@@ -254,6 +255,7 @@ app.include_router(audit_router, prefix=API_PREFIX)
 app.include_router(analytics_router, prefix=API_PREFIX)
 app.include_router(simulator_router, prefix=API_PREFIX)
 app.include_router(cmc_actions_router, prefix=API_PREFIX)
+app.include_router(demo_router, prefix=API_PREFIX)
 # Pulpo Webhook-Empfang — prefix=API_PREFIX nicht nötig, der Router
 # bringt seinen vollen Pfad selbst mit.
 app.include_router(pulpo_router)

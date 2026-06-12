@@ -11,6 +11,7 @@ import AuditPage from './pages/AuditPage';
 import SimulatorPage from './pages/SimulatorPage';
 import ProtokollPage from './pages/ProtokollPage';
 import SystemLogsPage from './pages/SystemLogsPage';
+import DemoPage from './pages/DemoPage';
 
 // Settings (Tenant Admin)
 import SettingsCompanyPage from './pages/settings/SettingsCompanyPage';
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/simulator" element={<SimulatorPage />} />
+            <Route path="/demo" element={<DemoPage />} />
             <Route path="/protokoll" element={<ProtokollPage />} />
             <Route path="/logs" element={<SystemLogsPage />} />
 

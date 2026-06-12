@@ -198,6 +198,9 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
             .where(
                 PulpoPackingOrder.tenant_id == tenant_id,
                 PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
+                # Demo-/Test-Aufträge (lokal angelegt, nie in Pulpos Queue) vom
+                # Self-Heal ausnehmen — sonst schließt der Resync sie sofort.
+                ~PulpoPackingOrder.pulpo_order_id.like("TEST-%"),
             )
             .values(state="closed", updated_at=datetime.now(timezone.utc))
         )

@@ -456,4 +456,53 @@ export const api = {
 
   // Gateway status
   gatewayStatus: () => request<GatewayStatus>('/gateway/status'),
+
+  // Demo / Test — kompletter simulierter Durchlauf ohne Maschine/Lager.
+  demoStatus: () => request<DemoStatus>('/demo/status'),
+  demoRun: (body: DemoRunRequest) =>
+    request<DemoRunResult>('/demo/run', { method: 'POST', body: JSON.stringify(body) }),
+  demoCleanup: () =>
+    request<{ ok: boolean; removed: { packing_orders: number; shipments: number; order_states: number } }>(
+      '/demo/cleanup', { method: 'POST' },
+    ),
 };
+
+export interface DemoStatus {
+  pulpo_test_mode: boolean;
+  dhl_test_mode: boolean;
+  gateway_port: number;
+  demo_machine_id: string;
+  open_test_orders: number;
+}
+
+export interface DemoRunRequest {
+  product_name: string;
+  product_sku: string;
+  product_ean: string;
+  product_image_url?: string;
+  quantity: number;
+  barcode?: string;
+  recipient: {
+    name: string; company?: string; street: string; house_nr: string;
+    zip: string; city: string; country: string; email?: string; phone?: string;
+  };
+  weight_g: number;
+  length_mm: number;
+  width_mm: number;
+  height_mm: number;
+}
+
+export interface DemoRunResult {
+  ok: boolean;
+  error: string;
+  reference_id: string;
+  barcode: string;
+  machine_id: string;
+  packing_order: string;
+  order_state: { state: string; is_test: boolean } | null;
+  shipment: {
+    tracking_number: string; label_format: string;
+    has_label: boolean; is_test: boolean;
+  } | null;
+  steps: Array<{ sent: string; reply: string }>;
+}
