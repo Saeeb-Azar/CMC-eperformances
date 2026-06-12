@@ -392,6 +392,7 @@
       "close": "Schließen"
     },
     "activeBadge": "AKTIV",
+    "tabs": { "active": "Aktiv", "deleted": "Gelöscht" },
     "noMachineSelected": "Keine Maschine ausgewählt",
     "multiToggle": {
       "selectMachine": "Maschine wählen, um den Modus zu setzen",

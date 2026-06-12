@@ -392,6 +392,7 @@
       "close": "Close"
     },
     "activeBadge": "ACTIVE",
+    "tabs": { "active": "Active", "deleted": "Deleted" },
     "noMachineSelected": "No machine selected",
     "multiToggle": {
       "selectMachine": "Select a machine to set the mode",

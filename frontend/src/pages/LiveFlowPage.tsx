@@ -451,6 +451,8 @@ export default function LiveFlowPage() {
   const [search, setSearch] = useState('');
   // Filter auf Tabelle: nur Pakete dieser CW-Liste anzeigen (oder alle).
   const [cwListFilter, setCwListFilter] = useState<string | null>(null);
+  // Ansicht: aktive Aufträge vs. gelöschte (eigener Tab → bessere Übersicht).
+  const [viewTab, setViewTab] = useState<'aktiv' | 'geloescht'>('aktiv');
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Cutoff für „Tabelle geleert" wird in localStorage gespiegelt, damit
@@ -586,8 +588,9 @@ export default function LiveFlowPage() {
     }
   }, [machineList, selectedMachine, registeredIds]);
 
-  // Packages for the focused machine, filtered by search and CW-Liste.
-  const packages = useMemo(() => {
+  // Basisliste für die fokussierte Maschine, gefiltert nach Suche + CW-Liste
+  // (noch OHNE Aktiv/Gelöscht-Trennung).
+  const baseList = useMemo(() => {
     let list = selectedMachine
       ? visiblePackages.filter((p) => p.machine_id === selectedMachine)
       : visiblePackages;
@@ -600,6 +603,17 @@ export default function LiveFlowPage() {
       (p.barcode ?? '').toLowerCase().includes(q),
     );
   }, [visiblePackages, selectedMachine, search, cwListFilter]);
+
+  // Gelöschte separat — Anzahl für den Tab + eigentliche Tabellenliste je Tab.
+  const deletedCount = useMemo(
+    () => baseList.filter((p) => p.state === 'DELETED').length,
+    [baseList],
+  );
+  const packages = useMemo(
+    () => baseList.filter((p) =>
+      viewTab === 'geloescht' ? p.state === 'DELETED' : p.state !== 'DELETED'),
+    [baseList, viewTab],
+  );
 
   // CW-Listen-Filteroptionen = nur die CWs, die als Auftrag vorkommen
   // (aus den aktuellen Aufträgen der Maschine), nicht alle Pulpo-Listen.
@@ -950,6 +964,9 @@ export default function LiveFlowPage() {
           onEject={ejectPackage}
           onCancelEject={cancelEject}
           onClearTable={handleClearTable}
+          viewTab={viewTab}
+          onViewTabChange={setViewTab}
+          deletedCount={deletedCount}
         />
         <FocusPanel
           pkg={selectedPackage}
@@ -1737,6 +1754,9 @@ interface MainPaneProps {
   onEject: (machineId: string, ref: string) => void;
   onCancelEject: (machineId: string, ref: string) => void;
   onClearTable: () => void;
+  viewTab: 'aktiv' | 'geloescht';
+  onViewTabChange: (t: 'aktiv' | 'geloescht') => void;
+  deletedCount: number;
 }
 
 const PAGE_SIZE = 25;
@@ -1866,6 +1886,22 @@ function MainPane(p: MainPaneProps) {
           <NotificationBell />
         </div>
       </header>
+
+      {/* Tabs: aktive Aufträge vs. gelöschte (eigene Ansicht → bessere Übersicht). */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {([
+          ['aktiv', t('liveFlow.tabs.active', 'Aktiv')],
+          ['geloescht', `${t('liveFlow.tabs.deleted', 'Gelöscht')} (${p.deletedCount})`],
+        ] as const).map(([key, label]) => (
+          <button key={key} type="button" onClick={() => p.onViewTabChange(key as 'aktiv' | 'geloescht')}
+            style={{
+              padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              border: `1px solid ${p.viewTab === key ? '#2563eb' : 'var(--clr-border)'}`,
+              background: p.viewTab === key ? '#2563eb' : 'var(--clr-bg-elevated, #fff)',
+              color: p.viewTab === key ? '#fff' : 'var(--clr-text)',
+            }}>{label}</button>
+        ))}
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {(['IN_PROGRESS', 'WAITING', 'PROBLEM', 'DONE'] as Bucket[]).map((b) => {
