@@ -823,18 +823,18 @@ class ConnectionManager:
     async def _try_pulpo_label(
         self, db, tenant_id: str, barcode: str,
     ) -> tuple[str, str] | None:
-        """Pulpo-Label für den gescannten Barcode finden (best-effort).
+        """Pulpo-Label für den gescannten Barcode finden.
 
-        Endpoint-Kette gemäß Pulpo WMS Swagger v4.6:
-          1. PulpoPackingOrder zum Barcode finden (lokal aus dem Cache)
-          2. GET /packing/orders/{order_id}/boxes  → list of boxes
-          3. GET /packing/orders/{order_id}/boxes/{box_id}/shipment_tracking
-             → tracking_code (= das, was die Maschine als match_barcode
-               braucht), tracking_url
-          4. (optional) GET /attachment/{id} + Download-URL → ZPL/PDF-Bytes
+        Pulpo schreibt Tracking + Label-Attachment direkt in
+        ``PulpoPackingOrder.raw_payload['packing_boxes'][n]`` — sobald die
+        Order in Pulpo „packed" ist:
+          - ``shipment_tracking.tracking_code`` → DHL-Sendungsnummer
+          - ``attachments[].url``               → vorsignierte S3-URL (PDF)
 
-        Liefert ``(tracking_code, label_b64)`` wenn beide Schritte greifen,
-        sonst None → DHL-Fallback. Jeder Fehler unterwegs → None.
+        Wir lesen direkt aus dem Cache (kein zusätzlicher API-Call → bleibt
+        im 2-s-LAB1-Budget), laden das PDF nur, wenn eine URL da ist.
+        Liefert ``(tracking, label_b64)`` bei Treffer, sonst None → DHL
+        wird als Fallback versucht.
         """
         try:
             from sqlalchemy import select
@@ -861,48 +861,58 @@ class ConnectionManager:
             if order is None:
                 return None
 
-            # 2) Boxen der Packing-Order abfragen
-            boxes = await pulpo_client.list_packing_order_boxes(order.pulpo_order_id)
-            if not boxes:
-                return None
-
-            # 3) Pro Box die Shipment-Trackings holen, erste verwertbare nehmen
+            # 2) Boxen + Tracking aus dem gecachten raw_payload extrahieren
+            raw = order.raw_payload if isinstance(order.raw_payload, dict) else {}
+            boxes = raw.get("packing_boxes") or []
             for box in boxes:
-                box_id = box.get("id")
-                if not box_id:
+                if not isinstance(box, dict):
                     continue
-                trackings = await pulpo_client.list_box_shipment_trackings(
-                    order.pulpo_order_id, box_id,
-                )
-                for tr in trackings:
-                    tracking = str(tr.get("tracking_code") or "").strip()
-                    if not tracking:
-                        continue
+                tracking_info = box.get("shipment_tracking") or {}
+                if not isinstance(tracking_info, dict):
+                    continue
+                tracking = str(tracking_info.get("tracking_code") or "").strip()
+                if not tracking:
+                    continue
 
-                    # 4) Label-PDF laden, sofern Pulpo eine URL anbietet.
-                    # Pulpo verknüpft das Label-Attachment direkt mit dem
-                    # ShipmentTracking; oft steht es schon in `tracking_url`,
-                    # manche Tenants liefern eine separate attachment_id.
-                    label_b64 = ""
-                    label_url = str(tr.get("tracking_url") or "")
-                    if label_url:
+                # 3) Label-PDF-URL aus den Attachments suchen (type=label oder
+                #    .pdf-Endung). Pulpo liefert eine vorsignierte S3-URL —
+                #    ohne Auth-Header herunterladbar.
+                label_url = ""
+                for att in box.get("attachments") or []:
+                    if not isinstance(att, dict):
+                        continue
+                    is_label = str(att.get("type") or "").lower() == "label"
+                    is_pdf   = str(att.get("name") or "").lower().endswith(".pdf")
+                    if is_label or is_pdf:
+                        label_url = str(att.get("url") or "")
+                        if label_url:
+                            break
+
+                label_b64 = ""
+                if label_url:
+                    try:
                         dl = await pulpo_client.download_url(label_url)
                         if dl:
                             label_b64 = base64.b64encode(dl[0]).decode("ascii")
-                    else:
-                        att_id = tr.get("attachment_id") or tr.get("label_attachment_id")
-                        if att_id:
-                            att = await pulpo_client.get_attachment(att_id)
-                            url = (att or {}).get("url") or (att or {}).get("download_url")
-                            dl = await pulpo_client.download_url(url) if url else None
-                            if dl:
-                                label_b64 = base64.b64encode(dl[0]).decode("ascii")
+                    except Exception as e:
+                        logger.warning(
+                            f"Pulpo label PDF download failed for {tracking}: {e!r}"
+                        )
+                        # Kein label_b64, aber Tracking ist trotzdem gültig —
+                        # Maschine kann mit match_barcode allein arbeiten.
 
-                    # Auch wenn das Label-PDF (noch) nicht ladbar ist —
-                    # der Tracking-Code allein reicht der CW1000 als
-                    # match_barcode am Exit-Reader. Label-URL als Hinweis.
-                    return tracking, label_b64
+                logger.info(
+                    f"Pulpo label hit: barcode={barcode} order_id={order.pulpo_order_id} "
+                    f"tracking={tracking} label_pdf={'yes' if label_b64 else 'no'}"
+                )
+                return tracking, label_b64
 
+            # Order gefunden, aber noch keine packing_box mit Tracking
+            # (Pulpo hat das Label noch nicht erzeugt) → Fallback auf DHL.
+            logger.info(
+                f"Pulpo order found but no shipment_tracking yet "
+                f"(order_id={order.pulpo_order_id}) — falling back to DHL"
+            )
             return None
         except Exception as e:
             logger.warning(f"Pulpo label lookup failed: {e!r} — falling back to DHL")
@@ -1145,8 +1155,14 @@ class ConnectionManager:
                                         dhl_runtime.last_error_at = _dt.utcnow()
                                     except Exception: pass
                                 except Exception as e:
+                                    # DHL liefert den Validation-Body als
+                                    # .payload mit — der zeigt EXAKT, welches
+                                    # Feld DHL beanstandet. Ohne den Body ist
+                                    # ein 400 nicht diagnostizierbar.
+                                    payload = getattr(e, "payload", None)
                                     logger.warning(
-                                        f"DHL label error for {ref_for_label}: {e!r} — rejecting LAB1",
+                                        f"DHL label error for {ref_for_label}: {e!r} "
+                                        f"body={payload!r} — rejecting LAB1",
                                         exc_info=True,
                                     )
                                     response["result"] = 0
