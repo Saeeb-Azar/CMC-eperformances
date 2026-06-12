@@ -281,6 +281,14 @@ class ConnectionManager:
         # **behalten**, wenn er sauber durchläuft (COMPLETED). So verzählt sich
         # die Liste nicht, wenn ein Paket ausgeworfen und neu aufgelegt wird.
         self._cw_consumption: dict[str, dict[str, tuple[str, str]]] = {}
+        # Welcher KONKRETE Pulpo-Auftrag gehört zu einem Scan? protocol_id →
+        # ref → pulpo_order_id. Entscheidend für Single-Orders, bei denen
+        # DERSELBE Barcode (Artikel-EAN) mehrfach in der CW-Liste steht — jedes
+        # Vorkommen ist ein ANDERER Auftrag mit ANDERER Lieferadresse. Wir
+        # binden jeden Scan (reference_id) an genau einen, noch nicht belegten
+        # Auftrag, damit DHL die RICHTIGE Adresse bekommt — nicht eine beliebige
+        # oder veraltete. Bindung wird bei Eject/Complete wieder freigegeben.
+        self._ref_pulpo_order: dict[str, dict[str, str]] = {}
 
     def get_mode(self, protocol_id: str) -> str | None:
         return self._machine_modes.get(protocol_id)
@@ -384,6 +392,9 @@ class ConnectionManager:
         per_machine = self._cw_consumption.get(protocol_id)
         if not per_machine:
             return False
+        # Auftragsbindung freigeben → ein erneut aufgelegtes Paket darf den
+        # Auftrag sauber neu beanspruchen.
+        self._ref_pulpo_order.get(protocol_id, {}).pop(ref, None)
         entry = per_machine.pop(ref, None)
         if not entry:
             return False
@@ -401,6 +412,75 @@ class ConnectionManager:
         per_machine = self._cw_consumption.get(protocol_id)
         if per_machine:
             per_machine.pop(ref, None)
+        # Auftrag ist verpackt → Bindung wird nicht mehr gebraucht.
+        self._ref_pulpo_order.get(protocol_id, {}).pop(ref, None)
+
+    async def _claim_pulpo_order(
+        self, db, protocol_id: str, tenant_id: str, ref: str, barcode: str,
+    ):
+        """Den KONKRETEN Pulpo-Auftrag für genau diesen Scan (reference_id)
+        zurückgeben — und ihn fest an die ``ref`` binden.
+
+        Hintergrund: Bei Single-Orders kann derselbe Artikel-Barcode mehrfach in
+        der CW-Liste stehen (N Aufträge, N verschiedene Empfänger). Ein einfacher
+        ``.limit(1)``-Lookup würde immer denselben (evtl. falschen) Auftrag
+        liefern. Stattdessen vergeben wir die Aufträge der Reihe nach: jeder Scan
+        bekommt den nächsten, noch nicht von einer anderen aktiven ``ref``
+        belegten Auftrag. So trägt jedes Label die richtige, eigene Adresse.
+
+        Liefert den ``PulpoPackingOrder`` oder ``None`` (kein passender Auftrag).
+        """
+        from sqlalchemy import select, or_
+        from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+
+        bound_map = self._ref_pulpo_order.setdefault(protocol_id, {})
+        # Schon gebunden? Denselben Auftrag deterministisch zurückgeben.
+        if ref in bound_map:
+            oid = bound_map[ref]
+            o = (await db.execute(
+                select(PulpoPackingOrder).where(PulpoPackingOrder.id == oid).limit(1)
+            )).scalar_one_or_none()
+            if o is not None:
+                return o
+            bound_map.pop(ref, None)  # Auftrag verschwunden → neu beanspruchen
+
+        if not barcode:
+            return None
+
+        rows = (await db.execute(
+            select(PulpoPackingOrder)
+            .outerjoin(PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id)
+            .where(
+                PulpoPackingOrder.tenant_id == tenant_id,
+                PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
+                or_(
+                    PulpoPackingOrder.cart_box_barcode == barcode,
+                    PulpoOrderItem.ean == barcode,
+                ),
+            )
+            .order_by(PulpoPackingOrder.created_at, PulpoPackingOrder.id)
+        )).scalars().unique().all()
+        if not rows:
+            return None
+
+        # Aufträge, die bereits von ANDEREN aktiven Refs belegt sind, überspringen.
+        claimed = {oid for r, oid in bound_map.items() if r != ref}
+        for o in rows:
+            if o.id not in claimed:
+                bound_map[ref] = o.id
+                logger.info(
+                    f"Auftrag gebunden: ref={ref} → pulpo_order={o.pulpo_order_id} "
+                    f"(barcode={barcode}, {len(rows)} Kandidat(en))"
+                )
+                return o
+        # Mehr Scans als Aufträge (sollte die CW-Mengenprüfung verhindern) —
+        # defensiv den ersten nehmen, statt eine falsche Default-Adresse.
+        bound_map[ref] = rows[0].id
+        logger.warning(
+            f"Auftragsbindung: alle {len(rows)} Kandidaten für barcode={barcode} "
+            f"belegt — ref={ref} nutzt ersten ({rows[0].pulpo_order_id})"
+        )
+        return rows[0]
 
     def is_scan_glitch(self, protocol_id: str, barcode: str, *, now: float) -> bool:
         """True wenn derselbe Barcode innerhalb des Glitch-Fensters
@@ -572,12 +652,14 @@ class ConnectionManager:
             self._pending_ejections.clear()
             self._last_scan.clear()
             self._cw_consumption.clear()
+            self._ref_pulpo_order.clear()
         else:
             s = self._pending_ejections.pop(protocol_id, None)
             if s:
                 cleared_ejections = len(s)
             self._last_scan.pop(protocol_id, None)
             self._cw_consumption.pop(protocol_id, None)
+            self._ref_pulpo_order.pop(protocol_id, None)
         cleared_consumed = self.reset_cw_consumed(protocol_id)
         return {
             "packages": cleared_packages,
@@ -819,12 +901,18 @@ class ConnectionManager:
                 )
                 return
 
+            # Genau EINEN Pulpo-Auftrag an diese ref binden (wichtig bei
+            # mehrfach vorkommendem Single-Order-Barcode → richtige Adresse).
+            claimed_order = await self._claim_pulpo_order(
+                db, protocol_id, tenant_id, ref, scanned_barcode,
+            )
+
             # ── Pulpo-Label-First ──────────────────────────────────────────
             # Hat Pulpo zum gescannten Barcode bereits ein Label generiert?
             # (Pre-Label-Workflow: Pulpo erstellt das DHL-Label, sobald die
             #  Sales-Order in die Pack-Queue wandert. Dann müssen wir nicht
             #  selbst DHL anrufen — risikoärmer, idempotent, kostenfrei.)
-            pulpo_hit = await self._try_pulpo_label(db, tenant_id, scanned_barcode)
+            pulpo_hit = await self._try_pulpo_label(db, tenant_id, scanned_barcode, order=claimed_order)
             if pulpo_hit is not None:
                 tracking, label_b64 = pulpo_hit
                 response["match_barcode"] = tracking
@@ -853,7 +941,7 @@ class ConnectionManager:
             # Order). Die hardcodierte Test-Adresse oben würde DHL beim
             # echten Tenant mit HTTP 400 ablehnen.
             pulpo_recipient = await self._resolve_pulpo_recipient(
-                db, tenant_id, scanned_barcode,
+                db, tenant_id, scanned_barcode, order=claimed_order,
             )
             if pulpo_recipient is not None:
                 recipient = pulpo_recipient
@@ -891,9 +979,14 @@ class ConnectionManager:
         )
 
     async def _resolve_pulpo_recipient(
-        self, db, tenant_id: str, barcode: str,
+        self, db, tenant_id: str, barcode: str, order=None,
     ):
         """Empfängeradresse aus Pulpos Sales-Order holen (ship_to-Feld).
+
+        ``order`` (optional): der konkret an diese ``ref`` gebundene Auftrag.
+        Wenn gesetzt, wird GENAU dessen Adresse verwendet — verhindert, dass bei
+        mehrfach vorkommendem Single-Order-Barcode die Adresse eines fremden
+        Auftrags aufs Label gerät.
         Genutzt vom DHL-Fallback, damit DHL die ECHTE Lieferadresse sieht
         statt der Standard-Testadresse — sonst HTTP 400 vom DHL-API.
 
@@ -911,22 +1004,24 @@ class ConnectionManager:
             from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
             from app.modules.dhl.client import Address
 
-            # 1) Pulpo-Order finden (analog _try_pulpo_label)
-            order = (await db.execute(
-                select(PulpoPackingOrder).where(
-                    PulpoPackingOrder.tenant_id == tenant_id,
-                    PulpoPackingOrder.cart_box_barcode == barcode,
-                ).limit(1)
-            )).scalar_one_or_none()
-            if order is None and barcode:
+            # 1) Pulpo-Order finden (analog _try_pulpo_label) — sofern nicht
+            #    bereits ein konkret gebundener Auftrag übergeben wurde.
+            if order is None:
                 order = (await db.execute(
-                    select(PulpoPackingOrder).join(
-                        PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
-                    ).where(
+                    select(PulpoPackingOrder).where(
                         PulpoPackingOrder.tenant_id == tenant_id,
-                        PulpoOrderItem.ean == barcode,
+                        PulpoPackingOrder.cart_box_barcode == barcode,
                     ).limit(1)
                 )).scalar_one_or_none()
+                if order is None and barcode:
+                    order = (await db.execute(
+                        select(PulpoPackingOrder).join(
+                            PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
+                        ).where(
+                            PulpoPackingOrder.tenant_id == tenant_id,
+                            PulpoOrderItem.ean == barcode,
+                        ).limit(1)
+                    )).scalar_one_or_none()
             if order is None:
                 return None
 
@@ -1111,7 +1206,12 @@ class ConnectionManager:
                     _note(True, f"ref={ref}: bereits vorhanden ({existing.tracking_number})")
                     return
 
-                pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode)
+                # Konkreten Auftrag an diese ref binden (Single-Order-Mehrfach-
+                # Barcode → eindeutige Zuordnung, richtige Adresse/Label).
+                claimed_order = await self._claim_pulpo_order(
+                    db, protocol_id, tenant_id, ref, barcode,
+                )
+                pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode, order=claimed_order)
                 if pulpo_hit:
                     tracking, label_b64 = pulpo_hit
                     # Pulpo-IDs für die OrderState-Reconstruction speichern
@@ -1120,20 +1220,7 @@ class ConnectionManager:
                     # Feldern wieder zusammen — Barcode/PA/Verkaufsauftrag).
                     seq_num = ""; sales_num = ""
                     try:
-                        from sqlalchemy import select as _sel
-                        from app.modules.pulpo.models import PulpoPackingOrder as _PO, PulpoOrderItem as _PI
-                        po = (await db.execute(
-                            _sel(_PO).where(
-                                _PO.tenant_id == tenant_id,
-                                _PO.cart_box_barcode == barcode,
-                            ).limit(1)
-                        )).scalar_one_or_none()
-                        if po is None and barcode:
-                            po = (await db.execute(
-                                _sel(_PO).join(_PI, _PI.order_db_id == _PO.id).where(
-                                    _PO.tenant_id == tenant_id, _PI.ean == barcode,
-                                ).limit(1)
-                            )).scalar_one_or_none()
+                        po = claimed_order
                         if po and isinstance(po.raw_payload, dict):
                             rp = po.raw_payload
                             seq_num = str(rp.get("sequence_number") or "")  # „PA-…"
@@ -1164,9 +1251,14 @@ class ConnectionManager:
             _note(False, f"ref={ref}: Ausnahme {e!r}"[:300])
 
     async def _try_pulpo_label(
-        self, db, tenant_id: str, barcode: str,
+        self, db, tenant_id: str, barcode: str, order=None,
     ) -> tuple[str, str] | None:
         """Pulpo-Label für den gescannten Barcode finden.
+
+        ``order`` (optional): der bereits an diese ``ref`` gebundene konkrete
+        Auftrag (siehe ``_claim_pulpo_order``). Wenn gesetzt, wird GENAU dieser
+        verwendet — kein eigener ``.limit(1)``-Lookup, der bei mehrfach
+        vorkommendem Barcode den falschen Auftrag treffen könnte.
 
         Pulpo schreibt Tracking + Label-Attachment direkt in
         ``PulpoPackingOrder.raw_payload['packing_boxes'][n]`` — sobald die
@@ -1186,21 +1278,23 @@ class ConnectionManager:
             import base64
 
             # 1) Pulpo-PackingOrder zum Barcode finden (Multi-Box oder Single-EAN)
-            order = (await db.execute(
-                select(PulpoPackingOrder).where(
-                    PulpoPackingOrder.tenant_id == tenant_id,
-                    PulpoPackingOrder.cart_box_barcode == barcode,
-                ).limit(1)
-            )).scalar_one_or_none()
-            if order is None and barcode:
+            #    — sofern nicht bereits ein konkret gebundener Auftrag übergeben.
+            if order is None:
                 order = (await db.execute(
-                    select(PulpoPackingOrder).join(
-                        PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
-                    ).where(
+                    select(PulpoPackingOrder).where(
                         PulpoPackingOrder.tenant_id == tenant_id,
-                        PulpoOrderItem.ean == barcode,
+                        PulpoPackingOrder.cart_box_barcode == barcode,
                     ).limit(1)
                 )).scalar_one_or_none()
+                if order is None and barcode:
+                    order = (await db.execute(
+                        select(PulpoPackingOrder).join(
+                            PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
+                        ).where(
+                            PulpoPackingOrder.tenant_id == tenant_id,
+                            PulpoOrderItem.ean == barcode,
+                        ).limit(1)
+                    )).scalar_one_or_none()
             if order is None:
                 return None
 
