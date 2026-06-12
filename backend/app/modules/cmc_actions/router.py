@@ -63,12 +63,51 @@ async def _broadcast_action(
     return {"ok": True, "action": action, "reference_id": reference_id}
 
 
+async def _persist_order_action(
+    db: AsyncSession, user: dict, reference_id: str, kind: str, reason: str,
+) -> None:
+    """OrderState zur Ref finden und persistent abschließen/löschen.
+      - kind="complete" → COMPLETED (auch für offene/veraltete Aufträge)
+      - kind="delete"   → DELETED (Soft-Delete, jeder Zustand)
+    Kein DB-Eintrag (reine Live-Session) → No-Op (nur der Broadcast wirkt)."""
+    tenant_id = user.get("tenant_id")
+    res = await db.execute(
+        select(OrderState).where(
+            OrderState.tenant_id == tenant_id,
+            OrderState.reference_id == reference_id,
+        ).order_by(OrderState.created_at.desc()).limit(1)
+    )
+    order = res.scalar_one_or_none()
+    if order is None:
+        return
+    uid = user.get("sub") or user.get("email") or "unknown"
+    try:
+        if kind == "complete":
+            await orders_service.manual_complete_order(db, order.id, uid, reason)
+        else:
+            await orders_service.soft_delete_order(db, order.id, uid, reason)
+        await db.commit()
+    except InvalidStateTransition as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Auftrag ist bereits {order.state} — Aktion nicht möglich.",
+        ) from e
+    except OrderNotFound as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Auftrag nicht gefunden",
+        ) from e
+
+
 @router.post("/{reference_id}/resolve")
 async def resolve_package(
     reference_id: str,
     data: ActionRequest,
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    """Auftrag manuell als ERLEDIGT/beendet markieren (→ COMPLETED), auch für
+    offene/veraltete Aufträge. Persistiert in der DB + broadcastet RESOLVE."""
+    await _persist_order_action(db, user, reference_id, "complete", data.reason)
     return await _broadcast_action("RESOLVE", reference_id, data, user)
 
 
@@ -85,8 +124,12 @@ async def retry_package(
 async def delete_package(
     reference_id: str,
     data: ActionRequest,
+    db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
+    """Auftrag löschen (Soft-Delete → DELETED), jeder Zustand. Persistiert in
+    der DB + broadcastet DELETE."""
+    await _persist_order_action(db, user, reference_id, "delete", data.reason)
     return await _broadcast_action("DELETE", reference_id, data, user)
 
 

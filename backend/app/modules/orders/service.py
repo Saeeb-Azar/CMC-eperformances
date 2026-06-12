@@ -266,6 +266,28 @@ async def resolve_order(
     return order
 
 
+async def manual_complete_order(
+    db: AsyncSession, order_id: str, user_id: str, reason: str,
+) -> OrderState:
+    """Auftrag manuell als ERLEDIGT (COMPLETED) markieren — auch für offene/
+    aktive (veraltete) Aufträge, nicht nur EJECTED/FAILED. Reiner Buchhaltungs-
+    Abschluss durch den Operator (kein Pulpo-/Label-Nebeneffekt). Nur blockiert,
+    wenn der Auftrag bereits DELETED ist (oder schon COMPLETED → idempotent)."""
+    order = await get_order(db, order_id)
+    if not order:
+        raise OrderNotFound(order_id)
+    if order.state == "DELETED":
+        raise InvalidStateTransition(order.state, "COMPLETED")
+    order.state = "COMPLETED"
+    order.resolved_by = user_id
+    order.resolved_at = datetime.now(timezone.utc)
+    order.resolution_reason = (reason or "").strip() or "manuell beendet"
+    order.failure_resolved = True
+    order.completed_at = datetime.now(timezone.utc)
+    await db.flush()
+    return order
+
+
 async def soft_delete_order(db: AsyncSession, order_id: str, user_id: str, reason: str) -> OrderState:
     """Soft-delete an order state via Dashboard."""
     order = await get_order(db, order_id)

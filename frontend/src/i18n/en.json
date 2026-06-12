@@ -299,6 +299,10 @@
       "retry": "Reason for retry:",
       "delete": "Deletion reason:"
     },
+    "actionConfirm": {
+      "delete": "Really delete this order? This action cannot be undone.",
+      "resolve": "Finish this order as done?"
+    },
     "actionFailed": "Action failed: {{error}}",
     "state": {
       "ASSIGNED": "Assigned",
@@ -440,7 +444,9 @@
       "history": "History (messages)",
       "markResolved": "Mark as resolved",
       "retry": "Retry",
-      "manualEject": "Mark as manually ejected"
+      "manualEject": "Mark as manually ejected",
+      "complete": "Finish (mark as done)",
+      "delete": "Delete order"
     },
     "manualEject": {
       "title": "Mark as manually ejected?",

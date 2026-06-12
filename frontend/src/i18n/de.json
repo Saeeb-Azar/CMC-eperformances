@@ -299,6 +299,10 @@
       "retry": "Grund für Wiederholung:",
       "delete": "Lösch-Grund:"
     },
+    "actionConfirm": {
+      "delete": "Auftrag wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "resolve": "Auftrag als erledigt beenden?"
+    },
     "actionFailed": "Aktion fehlgeschlagen: {{error}}",
     "state": {
       "ASSIGNED": "Zugewiesen",
@@ -440,7 +444,9 @@
       "history": "Verlauf (Messages)",
       "markResolved": "Als gelöst markieren",
       "retry": "Wiederholen",
-      "manualEject": "Manuell als ausgeworfen markieren"
+      "manualEject": "Manuell als ausgeworfen markieren",
+      "complete": "Beenden (als erledigt markieren)",
+      "delete": "Auftrag löschen"
     },
     "manualEject": {
       "title": "Wirklich manuell ausgeworfen?",

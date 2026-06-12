@@ -810,8 +810,15 @@ export default function LiveFlowPage() {
       setConfirmEject(pkg);
       return;
     }
-    const reason = window.prompt(t(`liveFlow.actionPrompt.${action}`));
-    if (!reason || !reason.trim()) return;
+    // Destruktive Aktionen extra bestätigen.
+    if (action === 'delete' && !window.confirm(
+      t('liveFlow.actionConfirm.delete', `Auftrag ${pkg.ref} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)
+    )) return;
+    if (action === 'resolve' && !window.confirm(
+      t('liveFlow.actionConfirm.resolve', `Auftrag ${pkg.ref} als erledigt beenden?`)
+    )) return;
+    const reason = window.prompt(t(`liveFlow.actionPrompt.${action}`)) ?? '';
+    if (!reason.trim()) return;
     try {
       const token = localStorage.getItem('access_token');
       const res = await fetch(`${API_BASE}/api/v1/packages/${encodeURIComponent(pkg.ref)}/${action}`, {
@@ -2393,6 +2400,19 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
         {(['ASSIGNED','INDUCTED','SCANNED','LABELED','FAILED'] as PackageState[]).includes(pkg.state) && (
           <ActionBigBtn tone="warning" icon={<AlertCircle size={14} />} onClick={() => onAction('manualEject', pkg)}>
             {t('liveFlow.focus.manualEject', 'Manuell als ausgeworfen markieren')}
+          </ActionBigBtn>
+        )}
+        {/* Veraltete/offene Aufträge manuell BEENDEN (→ erledigt). Auch für
+            aktive Zustände, in denen der Auftrag hängengeblieben ist. */}
+        {(['ASSIGNED','INDUCTED','SCANNED','LABELED'] as PackageState[]).includes(pkg.state) && (
+          <ActionBigBtn tone="success" icon={<CheckCircle2 size={14} />} onClick={() => onAction('resolve', pkg)}>
+            {t('liveFlow.focus.complete', 'Beenden (als erledigt markieren)')}
+          </ActionBigBtn>
+        )}
+        {/* Auftrag LÖSCHEN (Soft-Delete) — jeder Zustand außer bereits gelöscht. */}
+        {pkg.state !== 'DELETED' && (
+          <ActionBigBtn tone="danger" icon={<Trash2 size={14} />} onClick={() => onAction('delete', pkg)}>
+            {t('liveFlow.focus.delete', 'Auftrag löschen')}
           </ActionBigBtn>
         )}
       </div>
