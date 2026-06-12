@@ -1219,7 +1219,7 @@ function MachineSidebar({
                           onClick={() => cwLists.forEach((l) => { if (!l.active) onUpsertCwList(l.name, { active: true }); })}
                           style={{ flex: 1, padding: '4px 6px', fontSize: 10, fontWeight: 600, cursor: 'pointer',
                             borderRadius: 4, border: '1px solid #3b82f6', background: '#eff6ff', color: '#1d4ed8' }}
-                        >{t('liveFlow.cwLists.selectAll', 'Alle aktivieren')} ({cwLists.length})</button>
+                        >{t('liveFlow.cwLists.selectAll', 'Alle CWs')}</button>
                         <button
                           type="button"
                           onClick={() => cwLists.forEach((l) => { if (l.active) onUpsertCwList(l.name, { active: false }); })}

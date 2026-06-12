@@ -373,7 +373,7 @@
       "consumed": "{{consumed}} / {{expected}} verbraucht",
       "items_one": "{{count}} Artikel",
       "items_other": "{{count}} Artikel",
-      "selectAll": "Alle aktivieren",
+      "selectAll": "Alle CWs",
       "selectNone": "Keine",
       "allHint": "Keine aktiv → Treffer wird in allen Listen gesucht (Quell-Liste wird vermerkt)."
     },

@@ -373,7 +373,7 @@
       "consumed": "{{consumed}} / {{expected}} consumed",
       "items_one": "{{count}} item",
       "items_other": "{{count}} items",
-      "selectAll": "Activate all",
+      "selectAll": "All CWs",
       "selectNone": "None",
       "allHint": "None active → match is searched across all lists (source list is tagged)."
     },
