@@ -148,8 +148,36 @@ async def list_orders(
                         p.raw_payload.get("sequence_number", "") if isinstance(p.raw_payload, dict) else "",
                         str(sales.get("order_num") or ""),
                     )
+        # Fallback: Wenn der Live-Match scheitert (Pulpo-Auftrag hat die Queue
+        # verlassen, sobald gepackt/abgeschlossen), die beim Precreate
+        # PERSISTIERTEN Pulpo-Refs aus dem Shipment ziehen. Sonst würde die
+        # Sequenz/Auftragsnummer „verschwinden", obwohl sie mal gematcht wurde
+        # (genau der Bug: alte Aufträge zeigen Daten, neue nicht mehr).
+        unmatched_refs = {
+            o.reference_id for o in orders
+            if o.reference_id and not any(pulpo_by_bc.get(o.barcode, ("", "")))
+        }
+        ship_by_ref: dict[str, tuple[str, str]] = {}
+        if unmatched_refs:
+            from app.modules.dhl.models import Shipment
+            sres = await db.execute(
+                select(
+                    Shipment.reference_id,
+                    Shipment.pulpo_sequence_number,
+                    Shipment.pulpo_sales_order_num,
+                ).where(
+                    Shipment.tenant_id == tenant_id,
+                    Shipment.reference_id.in_(unmatched_refs),
+                ).order_by(Shipment.created_at.desc())
+            )
+            for ref, seq, son in sres.all():
+                if ref not in ship_by_ref and (seq or son):
+                    ship_by_ref[ref] = (seq or "", son or "")
+
         for o in orders:
             seq, son = pulpo_by_bc.get(o.barcode, ("", ""))
+            if not seq and not son:
+                seq, son = ship_by_ref.get(o.reference_id, ("", ""))
             o.pulpo_sequence_number = seq  # type: ignore[attr-defined]
             o.pulpo_sales_order_num = son  # type: ignore[attr-defined]
     return orders
