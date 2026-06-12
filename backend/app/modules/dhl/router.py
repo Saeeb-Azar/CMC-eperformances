@@ -32,10 +32,22 @@ router = APIRouter(prefix="/api/v1", tags=["dhl"])
 
 @router.get("/settings/dhl/status")
 async def get_dhl_status(db: AsyncSession = Depends(get_db)):
-    """Zustandskarte für die Einstellungen-Seite."""
+    """Zustandskarte für die Einstellungen-Seite. Liefert genug
+    Telemetrie, dass der Operator den ganzen Label-Pfad ohne Log-Wühlen
+    diagnostizieren kann (Pre-Creation, Druck-Queue, letzte Fehler)."""
     total = (await db.execute(select(func.count()).select_from(Shipment))).scalar() or 0
     live = (await db.execute(
         select(func.count()).select_from(Shipment).where(Shipment.is_test.is_(False))
+    )).scalar() or 0
+    queue_open = (await db.execute(
+        select(func.count()).select_from(Shipment).where(
+            Shipment.printed_at.is_(None), Shipment.label_b64 != "",
+        )
+    )).scalar() or 0
+    print_problems = (await db.execute(
+        select(func.count()).select_from(Shipment).where(
+            Shipment.printed_at.is_(None), Shipment.print_error != "",
+        )
     )).scalar() or 0
     return {
         "test_mode": dhl_runtime.test_mode,
@@ -48,6 +60,16 @@ async def get_dhl_status(db: AsyncSession = Depends(get_db)):
         "last_error_at": dhl_runtime.last_error_at.isoformat() if dhl_runtime.last_error_at else None,
         "shipments_total": int(total),
         "shipments_live": int(live),
+        # Pre-Creation-Telemetrie (siehe gateway/connection.py _precreate_label)
+        "precreate_total": dhl_runtime.precreate_total,
+        "precreate_ok": dhl_runtime.precreate_ok,
+        "precreate_last_msg": dhl_runtime.precreate_last_msg,
+        "precreate_last_at": (
+            dhl_runtime.precreate_last_at.isoformat() if dhl_runtime.precreate_last_at else None
+        ),
+        # Druckqueue-Telemetrie (Mini-Daemon)
+        "print_queue_open": int(queue_open),
+        "print_problems": int(print_problems),
     }
 
 
@@ -124,6 +146,40 @@ class MarkPrintedRequest(BaseModel):
     error: str | None = None  # leer = erfolgreich; sonst Fehler vom Drucker
 
 
+class PrintProblemItem(BaseModel):
+    id: str
+    reference_id: str
+    tracking_number: str
+    print_error: str
+    created_at: datetime
+
+
+@router.get("/print-queue/problems", response_model=list[PrintProblemItem])
+async def get_print_problems(
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Sendungen mit aktuellem Druckfehler — für die UI-Übersicht. Wird im
+    Sekundentakt vom Frontend gepollt, damit der Operator Druck-Probleme
+    sofort sieht."""
+    res = await db.execute(
+        select(Shipment).where(
+            Shipment.tenant_id == user["tenant_id"],
+            Shipment.printed_at.is_(None),
+            Shipment.print_error != "",
+        ).order_by(Shipment.created_at.desc()).limit(limit)
+    )
+    return [
+        PrintProblemItem(
+            id=s.id, reference_id=s.reference_id,
+            tracking_number=s.tracking_number,
+            print_error=s.print_error, created_at=s.created_at,
+        )
+        for s in res.scalars().all()
+    ]
+
+
 @router.post("/print-queue/{shipment_id}/mark-printed")
 async def mark_printed(
     shipment_id: str,
@@ -133,7 +189,18 @@ async def mark_printed(
 ):
     """Daemon meldet zurück: erfolgreich gedruckt (``error`` leer) oder
     Druckfehler. Im Fehlerfall bleibt printed_at NULL → der Eintrag landet
-    beim nächsten Poll wieder in der Queue."""
+    beim nächsten Poll wieder in der Queue.
+
+    Erfolg + Fehler werden zusätzlich:
+      • ins App-Log (logger.info / .warning) geschrieben
+      • über WebSocket broadcastet (Live-Protokoll → grünes / rotes Event)
+      • bei Fehler in dhl_runtime.last_error gespiegelt (DHL-Status-Karte)
+    """
+    from app.core.logging import logger
+    from app.gateway.websocket import ws_manager
+    from datetime import datetime as _dt
+    from .runtime import dhl_runtime
+
     sh = (await db.execute(
         select(Shipment).where(
             Shipment.tenant_id == user["tenant_id"],
@@ -142,11 +209,46 @@ async def mark_printed(
     )).scalar_one_or_none()
     if not sh:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found")
+
     if body.error:
         sh.print_error = body.error[:1000]
+        msg = (
+            f"Druckfehler ref={sh.reference_id} tracking={sh.tracking_number}: "
+            f"{body.error[:200]}"
+        )
+        logger.warning(f"PRINT FAILED: {msg}")
+        await ws_manager.broadcast({
+            "type": "PRINT_FAILED",
+            "severity": "error",
+            "message": msg,
+            "data": {
+                "reference_id": sh.reference_id,
+                "tracking_number": sh.tracking_number,
+                "shipment_id": sh.id,
+                "error": body.error[:500],
+            },
+        })
+        # Auch in der DHL-Statuskarte sichtbar machen — Operator sieht's
+        # ohne ins Protokoll wechseln zu müssen.
+        dhl_runtime.last_error = f"Druck: {body.error[:300]}"
+        dhl_runtime.last_error_at = _dt.utcnow()
     else:
-        sh.printed_at = datetime.utcnow()
+        sh.printed_at = _dt.utcnow()
         sh.print_error = ""
+        logger.info(
+            f"PRINT OK: ref={sh.reference_id} tracking={sh.tracking_number}"
+        )
+        await ws_manager.broadcast({
+            "type": "PRINT_OK",
+            "severity": "success",
+            "message": f"Label gedruckt: {sh.reference_id} ({sh.tracking_number})",
+            "data": {
+                "reference_id": sh.reference_id,
+                "tracking_number": sh.tracking_number,
+                "shipment_id": sh.id,
+            },
+        })
+
     await db.commit()
     return {"ok": True, "printed": sh.printed_at is not None}
 

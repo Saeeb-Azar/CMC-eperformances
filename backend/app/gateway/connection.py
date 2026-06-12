@@ -963,16 +963,30 @@ class ConnectionManager:
         """Hintergrund-Task: Label nach IND vorab generieren und in der
         ``shipments``-Tabelle ablegen. So braucht LAB1 nur noch ein
         SELECT auf reference_id — keine externen API-Calls mehr im 2-s-
-        Antwortbudget. Wird per ``asyncio.create_task`` aus dem IND-Handler
-        gefeuert (fire & forget); jeder Fehler bleibt lokal."""
+        Antwortbudget.
+
+        Jeder Pfad wird klar geloggt (PRECREATE-Präfix) UND in
+        dhl_runtime.precreate_* gespiegelt, damit der Operator den letzten
+        Status in der DHL-Statuskarte sehen kann (kein Logwühlen).
+        """
         from app.core.database import async_session
         from app.modules.dhl.models import Shipment
+        from app.modules.dhl.runtime import dhl_runtime
         from app.modules.machines.models import Machine
         from app.modules.tenants.models import Tenant
         from sqlalchemy import select
+        from datetime import datetime as _dt
+
+        def _note(ok: bool, msg: str) -> None:
+            dhl_runtime.precreate_total += 1
+            if ok: dhl_runtime.precreate_ok += 1
+            dhl_runtime.precreate_last_msg = msg[:300]
+            dhl_runtime.precreate_last_at = _dt.utcnow()
+
+        barcode = str(msg_data.get("barcode", "") or "").strip()
+        logger.info(f"PRECREATE start: ref={ref} barcode={barcode} machine={protocol_id}")
         try:
             async with async_session() as db:
-                # tenant_id auflösen
                 machine = (await db.execute(
                     select(Machine).where(Machine.machine_id == protocol_id).limit(1)
                 )).scalar_one_or_none()
@@ -980,8 +994,11 @@ class ConnectionManager:
                 if not tenant_id:
                     t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
                     tenant_id = t.id if t else ""
+                if not tenant_id:
+                    logger.warning(f"PRECREATE no-tenant: ref={ref}")
+                    _note(False, f"ref={ref}: kein Tenant auflösbar")
+                    return
 
-                # Schon vorhanden? (z.B. doppeltes IND)
                 existing = (await db.execute(
                     select(Shipment).where(
                         Shipment.tenant_id == tenant_id,
@@ -989,11 +1006,12 @@ class ConnectionManager:
                     ).order_by(Shipment.created_at.desc()).limit(1)
                 )).scalar_one_or_none()
                 if existing and existing.tracking_number:
-                    logger.info(f"Pre-create skipped: ref={ref} already has shipment {existing.tracking_number}")
+                    logger.info(
+                        f"PRECREATE skip: ref={ref} already has tracking={existing.tracking_number}"
+                    )
+                    _note(True, f"ref={ref}: bereits vorhanden ({existing.tracking_number})")
                     return
 
-                # Versuch: Pulpo-Label-Lookup
-                barcode = str(msg_data.get("barcode", "") or "").strip()
                 pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode)
                 if pulpo_hit:
                     tracking, label_b64 = pulpo_hit
@@ -1006,18 +1024,22 @@ class ConnectionManager:
                     )
                     db.add(sh)
                     await db.commit()
+                    bytes_est = len(label_b64) * 3 // 4 if label_b64 else 0
                     logger.info(
-                        f"Pre-create OK (Pulpo): ref={ref} tracking={tracking} "
-                        f"label_len={len(label_b64)}"
+                        f"PRECREATE OK (Pulpo): ref={ref} tracking={tracking} "
+                        f"label_bytes~{bytes_est}"
                     )
+                    _note(True, f"ref={ref}: Pulpo-Label {tracking}")
                     return
 
-                logger.info(
-                    f"Pre-create: no Pulpo label yet for ref={ref} barcode={barcode} "
-                    f"— will retry on LAB1 (DHL fallback path)"
+                logger.warning(
+                    f"PRECREATE miss: ref={ref} barcode={barcode} — Pulpo hat noch "
+                    f"kein Label, LAB1 wird DHL-Fallback versuchen"
                 )
+                _note(False, f"ref={ref}: kein Pulpo-Label, DHL-Fallback bei LAB1")
         except Exception as e:
-            logger.warning(f"Pre-create label failed for ref={ref}: {e!r}")
+            logger.exception(f"PRECREATE crash: ref={ref}: {e!r}")
+            _note(False, f"ref={ref}: Ausnahme {e!r}"[:300])
 
     async def _try_pulpo_label(
         self, db, tenant_id: str, barcode: str,

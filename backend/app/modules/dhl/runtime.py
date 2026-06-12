@@ -21,6 +21,13 @@ class DhlRuntime:
         # Letzter Fehler aus dem DHL-API (für die UI).
         self.last_error: str | None = None
         self.last_error_at: datetime | None = None
+        # Pre-Creation-Telemetrie für die DHL-Statuskarte: Anzahl
+        # Pre-Creates seit Start, davon erfolgreich, plus letzte Nachricht.
+        # Bewusst In-Memory — Server-Restart resettet die Zähler, das ist OK.
+        self.precreate_total: int = 0
+        self.precreate_ok: int = 0
+        self.precreate_last_msg: str = ""
+        self.precreate_last_at: datetime | None = None
 
     @property
     def test_mode(self) -> bool:

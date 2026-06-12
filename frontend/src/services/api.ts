@@ -323,7 +323,14 @@ export const api = {
     last_label_at: string | null; last_label_tracking: string;
     last_error: string | null; last_error_at: string | null;
     shipments_total: number; shipments_live: number;
+    precreate_total: number; precreate_ok: number;
+    precreate_last_msg: string; precreate_last_at: string | null;
+    print_queue_open: number; print_problems: number;
   }>('/settings/dhl/status'),
+  getPrintProblems: () => request<Array<{
+    id: string; reference_id: string; tracking_number: string;
+    print_error: string; created_at: string;
+  }>>('/print-queue/problems'),
   setDhlSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
       method: 'PUT', body: JSON.stringify({ test_mode }),
