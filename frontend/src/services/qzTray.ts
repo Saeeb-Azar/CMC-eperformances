@@ -121,12 +121,17 @@ export async function qzPrintLabel(labelB64: string, target: PrinterTarget): Pro
   // selbst in ein Bitmap mit korrekter Dichte/Größe RASTERN zu lassen
   // (rasterize:true). Der Treiber bekommt dann ein sauberes Vollbild, exakt
   // so wie beim funktionierenden Windows-Testdruck (GDI).
+  // ACHTUNG units↔density: Bei units:"mm" interpretiert QZ `density` als
+  // Punkte pro MILLIMETER (dpmm), NICHT als dpi. density:300 + mm ergab eine
+  // 64770×97155-px-Bitmap → QZ-Fehler „Dimensions too large", nichts kam raus.
+  // Darum hier units:"in" + density:300 (echte DPI) und die Standard-
+  // 4×6-Zoll-Versandlabelgröße (≈101×152 mm, deckt das 100×150-Label ab).
   const config = qz.configs.create(printerSpec, {
     jobName: `CMC Label ${Date.now()}`,
     rasterize: true,        // PDF vor dem Senden zu Bitmap rendern (nicht nativ durchreichen)
-    density: 300,           // dpi passend zum Zebra ZE511 LH-300dpi-Treiber
-    units: "mm",
-    size: { width: 100, height: 150 }, // 100×150-mm-Label (MediaBox 283×422 pt)
+    density: 300,           // 300 DPI passend zum Zebra ZE511 LH-300dpi-Treiber
+    units: "in",            // density wird hier als echte DPI interpretiert
+    size: { width: 4, height: 6 }, // 4×6"-Versandlabel (300 dpi → 1200×1800 px)
     scaleContent: true,     // Inhalt auf die Labelfläche skalieren
     margins: 0,
     colorType: "grayscale", // Thermodruck ist monochrom — Graustufen statt Farbe
