@@ -58,8 +58,8 @@ export interface PackageDetails {
   barcode: string;
   order: null | {
     state: string; barcode: string; machine_db_id: string;
-    dimensions: { length_mm: number; width_mm: number; height_mm: number };
-    weight_g: number; rejection_reason: string | null; created_at: string | null;
+    dimensions: { length_mm: number | null; width_mm: number | null; height_mm: number | null };
+    weight_g: number | null; rejection_reason: string | null; created_at: string | null;
   };
   dhl: null | {
     tracking_number: string; carrier: string; product: string;

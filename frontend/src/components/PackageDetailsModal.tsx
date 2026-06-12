@@ -162,8 +162,15 @@ export default function PackageDetailsModal({ referenceId, onClose }: {
 
                 <Card icon={<Package size={16} />} title="Maschine / Status" accent="#475569">
                   <Row label="Status" value={order?.state} />
-                  <Row label="Maße (L×B×H)" value={order ? `${order.dimensions.length_mm}×${order.dimensions.width_mm}×${order.dimensions.height_mm} mm` : '—'} />
-                  <Row label="Gewicht" value={order?.weight_g ? `${order.weight_g} g` : '—'} />
+                  <Row
+                    label="Maße (L×B×H)"
+                    value={
+                      order?.dimensions && (order.dimensions.length_mm || order.dimensions.width_mm || order.dimensions.height_mm)
+                        ? `${order.dimensions.length_mm ?? '?'}×${order.dimensions.width_mm ?? '?'}×${order.dimensions.height_mm ?? '?'} mm`
+                        : '—'
+                    }
+                  />
+                  <Row label="Gewicht" value={(order?.weight_g ?? dhl?.weight_g) ? `${order?.weight_g ?? dhl?.weight_g} g` : '—'} />
                   {order?.rejection_reason && <Row label="Reject-Grund" value={<span style={{ color: '#dc2626' }}>{order.rejection_reason}</span>} />}
                 </Card>
 

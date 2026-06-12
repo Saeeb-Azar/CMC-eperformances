@@ -224,16 +224,23 @@ async def package_details(
 
     order_block = None
     if os_row:
+        # Maße: finale (END) bevorzugt, sonst 3D-Sensor (ACK). Gewicht: finale
+        # Waage bzw. LAB1-Waage. Diese Felder leben auf OrderState — NICHT die
+        # generischen length_mm/weight_g (die gibt es nur am Shipment).
+        length_mm = os_row.final_length_mm or os_row.dimension_length_mm
+        width_mm = os_row.final_width_mm or os_row.dimension_width_mm
+        height_mm = os_row.final_height_mm or os_row.dimension_height_mm
+        weight_g = os_row.final_weight_g or os_row.lab1_weight_scale
         order_block = {
             "state": os_row.state,
             "barcode": os_row.barcode,
             "machine_db_id": os_row.machine_db_id,
             "dimensions": {
-                "length_mm": os_row.length_mm, "width_mm": os_row.width_mm,
-                "height_mm": os_row.height_mm,
+                "length_mm": length_mm, "width_mm": width_mm,
+                "height_mm": height_mm,
             },
-            "weight_g": os_row.weight_g,
-            "rejection_reason": os_row.ejection_reason or os_row.rejection_reason,
+            "weight_g": weight_g,
+            "rejection_reason": os_row.ejection_reason,
             "created_at": os_row.created_at.isoformat() if os_row.created_at else None,
         }
 
