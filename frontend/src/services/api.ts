@@ -326,6 +326,7 @@ export const api = {
     precreate_total: number; precreate_ok: number;
     precreate_last_msg: string; precreate_last_at: string | null;
     print_queue_open: number; print_problems: number;
+    daemon_last_seen: string | null;
   }>('/settings/dhl/status'),
   getPrintProblems: () => request<Array<{
     id: string; reference_id: string; tracking_number: string;

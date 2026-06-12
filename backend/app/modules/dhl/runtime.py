@@ -28,6 +28,9 @@ class DhlRuntime:
         self.precreate_ok: int = 0
         self.precreate_last_msg: str = ""
         self.precreate_last_at: datetime | None = None
+        # Wann hat der Print-Daemon zuletzt die Queue gepollt? So sieht der
+        # Operator in der UI sofort, ob der Daemon im LAN überhaupt läuft.
+        self.daemon_last_seen: datetime | None = None
 
     @property
     def test_mode(self) -> bool:

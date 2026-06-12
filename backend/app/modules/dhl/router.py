@@ -70,6 +70,9 @@ async def get_dhl_status(db: AsyncSession = Depends(get_db)):
         # Druckqueue-Telemetrie (Mini-Daemon)
         "print_queue_open": int(queue_open),
         "print_problems": int(print_problems),
+        "daemon_last_seen": (
+            dhl_runtime.daemon_last_seen.isoformat() if dhl_runtime.daemon_last_seen else None
+        ),
     }
 
 
@@ -124,6 +127,8 @@ async def get_print_queue(
     """Offene Druckaufträge des Tenants — vom Mini-Daemon im LAN gepollt.
     Liefert nur Shipments, die noch nicht ``printed_at`` haben und ein
     Label-Base64 enthalten (sonst nichts zu drucken)."""
+    from datetime import datetime as _dt
+    dhl_runtime.daemon_last_seen = _dt.utcnow()  # „Daemon lebt"-Marker für die UI
     res = await db.execute(
         select(Shipment).where(
             Shipment.tenant_id == user["tenant_id"],
