@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Printer, X, CheckCircle2, AlertCircle, Loader2, Trash2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
-import { qzConnect, qzIsConnected, qzPrintLabel, type PrinterTarget } from '../../services/qzTray';
+import { qzConnect, qzIsConnected, qzPrintLabel, qzPrintTest, type PrinterTarget } from '../../services/qzTray';
 
 interface AgentCfg {
   enabled: boolean;
@@ -68,6 +68,24 @@ export default function PrintAgent() {
     if (!window.confirm('Alle fehlgeschlagenen Druckjobs unwiderruflich löschen?')) return;
     try { const r = await api.clearPrintProblems(); setLastMsg(`${r.deleted} Druck-Probleme gelöscht`); await loadProblems(); }
     catch (e) { setLastErr(e instanceof Error ? e.message : String(e)); }
+  };
+
+  // Testetikett drucken — prüft die QZ→Drucker-Verbindung unabhängig von
+  // DHL/Pulpo (gleicher PDF-Rasterize-Pfad wie echte Labels).
+  const [testing, setTesting] = useState(false);
+  const doTestPrint = async () => {
+    setTesting(true); setLastErr('');
+    try {
+      const target: PrinterTarget = cfg.mode === 'name'
+        ? { name: cfg.printerName, format: 'pdf' }
+        : { host: cfg.host, port: cfg.port, format: 'pdf' };
+      await qzPrintTest(target);
+      setLastMsg(`Testetikett an „${cfg.mode === 'name' ? cfg.printerName : `${cfg.host}:${cfg.port}`}" gesendet — ${new Date().toLocaleTimeString()}`);
+    } catch (e) {
+      setLastErr(`Testdruck fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTesting(false);
+    }
   };
 
   const save = (next: AgentCfg) => {
@@ -263,6 +281,21 @@ export default function PrintAgent() {
                 {lastMsg && <div style={{ color: '#059669', marginTop: 6 }}>{lastMsg}</div>}
                 {lastErr && <div style={{ color: '#dc2626', marginTop: 6, wordBreak: 'break-all' }}>{lastErr}</div>}
               </div>
+
+              {/* Verbindungstest: druckt ein Testetikett (ohne DHL/Pulpo). */}
+              <button type="button" onClick={doTestPrint} disabled={testing}
+                style={{
+                  width: '100%', marginTop: 14, padding: '10px 14px', borderRadius: 10,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                  background: testing ? '#e2e8f0' : '#1d4ed8', color: testing ? '#475569' : '#fff',
+                  border: 'none', cursor: testing ? 'wait' : 'pointer', fontSize: 13, fontWeight: 700,
+                }}>
+                {testing ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />}
+                {testing ? 'Drucke Testetikett…' : 'Testetikett drucken (Verbindungstest)'}
+              </button>
+              <p style={{ fontSize: 11, color: 'var(--clr-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+                Druckt ein kleines „CMC DRUCK-TEST"-Label an <strong>{cfg.mode === 'name' ? cfg.printerName : `${cfg.host}:${cfg.port}`}</strong> — unabhängig von DHL/Pulpo. Kommt es raus, funktioniert die Kette Browser → QZ → Drucker.
+              </p>
 
               {/* Druck-Probleme: aufräumen / erneut drucken */}
               <div style={{ marginTop: 16 }}>

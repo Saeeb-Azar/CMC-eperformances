@@ -264,3 +264,25 @@ export async function qzPrintLabel(labelB64: string, target: PrinterTarget): Pro
   });
   await qz.print(config, [{ type: "pixel", format: "pdf", flavor: "base64", data: labelB64 }]);
 }
+
+/** Kleines Test-Label (100×150 mm PDF) — zum Prüfen der QZ→Drucker-Verbindung,
+ *  unabhängig von DHL/Pulpo. Nutzt EXAKT den Produktiv-PDF-Rasterize-Pfad,
+ *  damit ein erfolgreicher Test auch echten Druck garantiert. */
+const TEST_LABEL_PDF_B64 =
+  "JVBERi0xLjQKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PgplbmRvYmoKMyAwIG9iago8PC9UeXBlL1BhZ2UvUGFyZW50IDIgMCBSL01lZGlhQm94WzAgMCAyODMuNDYgNDIyLjM2XS9SZXNvdXJjZXM8PC9Gb250PDwvRjEgNCAwIFIvRjIgNSAwIFI+Pj4+L0NvbnRlbnRzIDYgMCBSPj4KZW5kb2JqCjQgMCBvYmoKPDwvVHlwZS9Gb250L1N1YnR5cGUvVHlwZTEvQmFzZUZvbnQvSGVsdmV0aWNhLUJvbGQ+PgplbmRvYmoKNSAwIG9iago8PC9UeXBlL0ZvbnQvU3VidHlwZS9UeXBlMS9CYXNlRm9udC9IZWx2ZXRpY2E+PgplbmRvYmoKNiAwIG9iago8PC9MZW5ndGggMjAzPj4Kc3RyZWFtCkJUIC9GMSAyNiBUZiAzMCAzNjAgVGQgKENNQyBEUlVDSy1URVNUKSBUaiBFVApCVCAvRjIgMTQgVGYgMzAgMzMwIFRkIChRWiBUcmF5IC0+IERSX0NXKSBUaiBFVApCVCAvRjIgMTIgVGYgMzAgMzA1IFRkIChWZXJiaW5kdW5nIE9LIHdlbm4gbGVzYmFyKSBUaiBFVAowIDAgMCBSRyA0IHcgMzAgMjkwIG0gMjUzIDI5MCBsIFMKMzAgNjAgMjIzIDIwMCByZSBTCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDcKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTQgMDAwMDAgbiAKMDAwMDAwMDEwNSAwMDAwMCBuIAowMDAwMDAwMjMyIDAwMDAwIG4gCjAwMDAwMDAzMDAgMDAwMDAgbiAKMDAwMDAwMDM2MyAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNy9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjYxNQolJUVPRg==";
+
+export async function qzPrintTest(target: PrinterTarget): Promise<void> {
+  const qz = await loadQz();
+  await qzConnect();
+  const printerSpec: Record<string, unknown> =
+    target.name ? { name: target.name }
+    : target.host ? { host: target.host, port: target.port ?? 9100 }
+    : { name: "default" };
+  const config = qz.configs.create(printerSpec, {
+    jobName: `CMC Testetikett ${Date.now()}`,
+    rasterize: true, density: 300, units: "in",
+    size: { width: 4, height: 6 }, scaleContent: true,
+    margins: 0, colorType: "grayscale", interpolation: "bicubic", rotation: 0,
+  });
+  await qz.print(config, [{ type: "pixel", format: "pdf", flavor: "base64", data: TEST_LABEL_PDF_B64 }]);
+}
