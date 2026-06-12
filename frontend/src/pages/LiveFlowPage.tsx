@@ -1,5 +1,6 @@
 import { ChevronRight, ChevronLeft, ChevronDown, Inbox, CheckCircle2, RefreshCw, Trash2, Filter, X, Scan, Package as PackageIcon, Box, Tag, ArrowRightCircle, Activity, Search, Server, Clock, AlertCircle } from 'lucide-react';
 import NotificationBell from '../components/layout/NotificationBell';
+import PackageDetailsModal from '../components/PackageDetailsModal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -2270,6 +2271,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
   // Hooks MÜSSEN vor dem Early-Return stehen (rules of hooks).
   const { t } = useTranslation();
   const product = useProduct(pkg?.barcode ?? null);
+  const [showDetails, setShowDetails] = useState(false);
   if (!pkg) {
     // Grid column is 0px wide in this state — render nothing instead of an
     // overflowing empty aside.
@@ -2436,6 +2438,15 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
       </div>
 
       <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* „Alle Infos" — Vollbild-Detailansicht (DHL + Pulpo + Empfänger + Artikel). */}
+        <button type="button" onClick={() => setShowDetails(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
+            background: '#1d4ed8', color: '#fff', border: 'none', borderRadius: 8,
+            fontSize: 13, fontWeight: 700, cursor: 'pointer', justifyContent: 'center',
+          }}>
+          <Search size={15} /> {t('liveFlow.focus.allInfo', 'Alle Infos anzeigen')}
+        </button>
         {canResolve && (
           <ActionBigBtn tone="success" icon={<CheckCircle2 size={14} />} onClick={() => onAction('resolve', pkg)}>
             {t('liveFlow.focus.markResolved')}
@@ -2468,6 +2479,10 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
           </ActionBigBtn>
         )}
       </div>
+
+      {showDetails && (
+        <PackageDetailsModal referenceId={pkg.ref} onClose={() => setShowDetails(false)} />
+      )}
     </aside>
   );
 }

@@ -450,7 +450,8 @@
       "retry": "Retry",
       "manualEject": "Mark as manually ejected",
       "complete": "Finish (mark as done)",
-      "delete": "Delete order"
+      "delete": "Delete order",
+      "allInfo": "Show all info"
     },
     "manualEject": {
       "title": "Mark as manually ejected?",

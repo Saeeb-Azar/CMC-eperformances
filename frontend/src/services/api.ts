@@ -53,6 +53,33 @@ export function productImageUrl(ean: string): string {
   return `${BASE}/products/${encodeURIComponent(ean)}/image`;
 }
 
+export interface PackageDetails {
+  reference_id: string;
+  barcode: string;
+  order: null | {
+    state: string; barcode: string; machine_db_id: string;
+    dimensions: { length_mm: number; width_mm: number; height_mm: number };
+    weight_g: number; rejection_reason: string | null; created_at: string | null;
+  };
+  dhl: null | {
+    tracking_number: string; carrier: string; product: string;
+    label_format: string; label_b64: string; has_label: boolean;
+    printed_at: string | null; print_error: string; is_test: boolean;
+    recipient: { name: string; zip: string; city: string; country: string };
+    weight_g: number;
+  };
+  pulpo: null | {
+    packing_order_number: string; packing_order_id: number | null;
+    sales_order_number: string; shipment_method: string; state: string;
+    recipient: {
+      name: string; company: string; phone: string; street: string;
+      house_nr: string; street2: string; zip: string; city: string;
+      country: string; email: string;
+    };
+    items: Array<{ name: string; sku: string; ean: string; quantity: number; weclapp_article_id: string }>;
+  };
+}
+
 // ── Types ────────────────────────────────────────────────────────────────
 export interface UserRead {
   id: string;
@@ -369,6 +396,9 @@ export const api = {
       count: number; last_id: number;
     }>(`/logs/recent${s ? `?${s}` : ''}`);
   },
+  // Voll-Detailansicht zu einem Paket (DHL + Pulpo + Empfänger + Artikel).
+  getPackageDetails: (ref: string) =>
+    request<PackageDetails>(`/packages/${encodeURIComponent(ref)}/details`),
   setDhlSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
       method: 'PUT', body: JSON.stringify({ test_mode }),

@@ -450,7 +450,8 @@
       "retry": "Wiederholen",
       "manualEject": "Manuell als ausgeworfen markieren",
       "complete": "Beenden (als erledigt markieren)",
-      "delete": "Auftrag löschen"
+      "delete": "Auftrag löschen",
+      "allInfo": "Alle Infos anzeigen"
     },
     "manualEject": {
       "title": "Wirklich manuell ausgeworfen?",

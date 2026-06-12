@@ -196,3 +196,145 @@ async def manual_eject_package(
         "data": payload,
     })
     return {"ok": True, "action": "MANUAL_EJECT", "reference_id": reference_id}
+
+
+@router.get("/{reference_id}/details")
+async def package_details(
+    reference_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Aggregierte Voll-Detailansicht zu einem Paket — für die „Alle Infos"-
+    Vollbildansicht im Dashboard. Bündelt OrderState + DHL-Shipment (inkl.
+    Label-Base64 für die Vorschau) + Pulpo (PA-Nr, Verkaufsauftrag, Empfänger,
+    Artikel). Read-only, mandantengeschützt."""
+    from app.modules.dhl.models import Shipment
+    from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+
+    tenant_id = user["tenant_id"]
+
+    # ── OrderState ──────────────────────────────────────────────────────
+    os_row = (await db.execute(
+        select(OrderState).where(
+            OrderState.tenant_id == tenant_id,
+            OrderState.reference_id == reference_id,
+        ).order_by(OrderState.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    barcode = (os_row.barcode if os_row else "") or ""
+
+    order_block = None
+    if os_row:
+        order_block = {
+            "state": os_row.state,
+            "barcode": os_row.barcode,
+            "machine_db_id": os_row.machine_db_id,
+            "dimensions": {
+                "length_mm": os_row.length_mm, "width_mm": os_row.width_mm,
+                "height_mm": os_row.height_mm,
+            },
+            "weight_g": os_row.weight_g,
+            "rejection_reason": os_row.ejection_reason or os_row.rejection_reason,
+            "created_at": os_row.created_at.isoformat() if os_row.created_at else None,
+        }
+
+    # ── DHL-Shipment (bevorzugt zum aktuellen Barcode, sonst neuester) ──
+    sh = None
+    if barcode:
+        sh = (await db.execute(
+            select(Shipment).where(
+                Shipment.tenant_id == tenant_id,
+                Shipment.reference_id == reference_id,
+                Shipment.barcode == barcode,
+            ).order_by(Shipment.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+    if sh is None:
+        sh = (await db.execute(
+            select(Shipment).where(
+                Shipment.tenant_id == tenant_id,
+                Shipment.reference_id == reference_id,
+            ).order_by(Shipment.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+
+    dhl_block = None
+    if sh:
+        dhl_block = {
+            "tracking_number": sh.tracking_number,
+            "carrier": sh.carrier,
+            "product": sh.product,
+            "label_format": sh.label_format,
+            "label_b64": sh.label_b64 or "",   # für die Label-Vorschau
+            "has_label": bool(sh.label_b64),
+            "printed_at": sh.printed_at.isoformat() if sh.printed_at else None,
+            "print_error": sh.print_error or "",
+            "is_test": sh.is_test,
+            "recipient": {
+                "name": sh.recipient_name, "zip": sh.recipient_zip,
+                "city": sh.recipient_city, "country": sh.recipient_country,
+            },
+            "weight_g": sh.weight_g,
+        }
+
+    # ── Pulpo-Packing-Order (über Barcode: cart_box oder Item-EAN) ──────
+    po = None
+    if barcode:
+        po = (await db.execute(
+            select(PulpoPackingOrder).where(
+                PulpoPackingOrder.tenant_id == tenant_id,
+                PulpoPackingOrder.cart_box_barcode == barcode,
+            ).limit(1)
+        )).scalar_one_or_none()
+        if po is None:
+            po = (await db.execute(
+                select(PulpoPackingOrder).join(
+                    PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
+                ).where(
+                    PulpoPackingOrder.tenant_id == tenant_id,
+                    PulpoOrderItem.ean == barcode,
+                ).limit(1)
+            )).scalar_one_or_none()
+
+    pulpo_block = None
+    if po and isinstance(po.raw_payload, dict):
+        rp = po.raw_payload
+        so = rp.get("sales_order") or {}
+        ship = so.get("ship_to") or {}
+        addr = ship.get("address") or {}
+        items = []
+        for it in (rp.get("items") or []):
+            prod = it.get("product") or {}
+            bcs = prod.get("barcodes") or []
+            items.append({
+                "name": prod.get("name") or "",
+                "sku": prod.get("sku") or "",
+                "ean": (bcs[0] if bcs else ""),
+                "quantity": it.get("requested_quantity") or it.get("quantity") or 1,
+                "weclapp_article_id": str((prod.get("attributes") or {}).get("weclapp_article_id") or ""),
+            })
+        pulpo_block = {
+            "packing_order_number": rp.get("sequence_number") or "",  # „PA-…"
+            "packing_order_id": rp.get("id"),
+            "sales_order_number": str(so.get("order_num") or rp.get("sales_order_ref") or ""),
+            "shipment_method": rp.get("shipment_method_name") or so.get("shipment_method_name") or "",
+            "state": rp.get("state") or "",
+            "recipient": {
+                "name": ship.get("name") or "",
+                "company": ship.get("company_name") or "",
+                "phone": ship.get("phone_number") or "",
+                "street": addr.get("street") or "",
+                "house_nr": addr.get("house_nr") or "",
+                "street2": addr.get("street2") or "",
+                "zip": addr.get("zip") or "",
+                "city": addr.get("city") or "",
+                "country": addr.get("country") or addr.get("country_code") or "",
+                "email": addr.get("email") or "",
+            },
+            "items": items,
+        }
+
+    return {
+        "reference_id": reference_id,
+        "barcode": barcode,
+        "order": order_block,
+        "dhl": dhl_block,
+        "pulpo": pulpo_block,
+    }
