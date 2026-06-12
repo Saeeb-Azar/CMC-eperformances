@@ -799,6 +799,24 @@ class ConnectionManager:
                 return
 
             # ── Fallback: DHL direkt erzeugen ──────────────────────────────
+            # ECHTE Empfängeradresse aus Pulpo holen (ship_to der Sales-
+            # Order). Die hardcodierte Test-Adresse oben würde DHL beim
+            # echten Tenant mit HTTP 400 ablehnen.
+            pulpo_recipient = await self._resolve_pulpo_recipient(
+                db, tenant_id, scanned_barcode,
+            )
+            if pulpo_recipient is not None:
+                recipient = pulpo_recipient
+                logger.info(
+                    f"DHL fallback: using Pulpo ship_to for ref={ref} "
+                    f"({recipient.zip_code} {recipient.city}, {recipient.country})"
+                )
+            else:
+                logger.warning(
+                    f"DHL fallback: no Pulpo ship_to for ref={ref} barcode={scanned_barcode} "
+                    f"— using default test recipient (DHL may reject)"
+                )
+
             shipment = await create_label_for_order(
                 db, tenant_id=tenant_id, order_ref=ref,
                 order_state_id=None,
@@ -819,6 +837,103 @@ class ConnectionManager:
             f"LAB1 enriched with DHL: ref={ref} tracking={shipment.tracking_number} "
             f"test={shipment.is_test}"
         )
+
+    async def _resolve_pulpo_recipient(
+        self, db, tenant_id: str, barcode: str,
+    ):
+        """Empfängeradresse aus Pulpos Sales-Order holen (ship_to-Feld).
+        Genutzt vom DHL-Fallback, damit DHL die ECHTE Lieferadresse sieht
+        statt der Standard-Testadresse — sonst HTTP 400 vom DHL-API.
+
+        Endpoint-Kette:
+          1. PulpoPackingOrder (lokal) zum gescannten Barcode finden
+          2. ``raw_payload.sales_order_id`` → ``GET /sales/orders/{id}``
+          3. ``ship_to.name`` + ``ship_to.address.{street,house_nr,zip,city,
+             country/country_alpha2,email}`` → ``Address``-Objekt
+        Liefert ``None``, wenn irgendwo etwas fehlt (dann fällt der Caller
+        auf die Default-Adresse zurück).
+        """
+        try:
+            from sqlalchemy import select
+            from app.modules.pulpo.client import pulpo as pulpo_client
+            from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+            from app.modules.dhl.client import Address
+
+            # 1) Pulpo-Order finden (analog _try_pulpo_label)
+            order = (await db.execute(
+                select(PulpoPackingOrder).where(
+                    PulpoPackingOrder.tenant_id == tenant_id,
+                    PulpoPackingOrder.cart_box_barcode == barcode,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if order is None and barcode:
+                order = (await db.execute(
+                    select(PulpoPackingOrder).join(
+                        PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id,
+                    ).where(
+                        PulpoPackingOrder.tenant_id == tenant_id,
+                        PulpoOrderItem.ean == barcode,
+                    ).limit(1)
+                )).scalar_one_or_none()
+            if order is None:
+                return None
+
+            raw = order.raw_payload if isinstance(order.raw_payload, dict) else {}
+            sales_order_id = raw.get("sales_order_id")
+            if not sales_order_id:
+                return None
+
+            # 2) Sales-Order von Pulpo holen
+            so = await pulpo_client.get_sales_order(sales_order_id)
+            if not so:
+                return None
+            ship_to = (so.get("ship_to") or {}) if isinstance(so, dict) else {}
+            addr = (ship_to.get("address") or {}) if isinstance(ship_to, dict) else {}
+            if not isinstance(addr, dict):
+                return None
+
+            # 3) Pflichtfelder prüfen
+            street = str(addr.get("street") or "").strip()
+            zip_   = str(addr.get("zip") or "").strip()
+            city   = str(addr.get("city") or "").strip()
+            if not (street and zip_ and city):
+                return None
+
+            # ISO-Land normalisieren — DHL erwartet Alpha-3 (DEU/AUT/CHE…).
+            _iso3 = {
+                "DE": "DEU", "AT": "AUT", "CH": "CHE", "FR": "FRA", "NL": "NLD",
+                "BE": "BEL", "IT": "ITA", "PL": "POL", "GB": "GBR", "DK": "DNK",
+                "ES": "ESP", "CZ": "CZE", "LU": "LUX", "SE": "SWE", "FI": "FIN",
+            }
+            country_in = str(
+                addr.get("country_alpha2") or addr.get("country_code")
+                or addr.get("country") or "DE"
+            ).strip().upper()
+            if len(country_in) == 2:
+                country = _iso3.get(country_in, "DEU")
+            elif country_in in ("GERMANY", "DEUTSCHLAND"):
+                country = "DEU"
+            elif len(country_in) == 3:
+                country = country_in
+            else:
+                country = "DEU"
+
+            return Address(
+                # name1 = Empfängername; DHL begrenzt das Feld, sicherheitshalber kürzen.
+                name=(str(ship_to.get("name") or "")[:50]).strip() or "Empfaenger",
+                street=street[:50],
+                # DHL braucht ein Hausnummern-Feld; falls Pulpo es nicht
+                # separat führt, fällt eine 1 als Platzhalter ein.
+                street_no=str(addr.get("house_nr") or "1").strip()[:10],
+                zip_code=zip_,
+                city=city[:50],
+                country=country,
+                email=str(addr.get("email") or "")[:80],
+                phone=str(ship_to.get("phone_number") or "")[:20],
+            )
+        except Exception as e:
+            logger.warning(f"Pulpo recipient lookup failed: {e!r} — using default")
+            return None
 
     async def _try_pulpo_label(
         self, db, tenant_id: str, barcode: str,

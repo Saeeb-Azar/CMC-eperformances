@@ -319,6 +319,17 @@ class PulpoClient:
         dann eine ``label.pdf`` mit gültigem Versandlabel."""
         return await self._request("GET", f"/packing/orders/{order_id}")
 
+    async def get_sales_order(self, sales_order_id: int | str) -> dict | None:
+        """Sales-Order inkl. ``ship_to``-Adresse (Pulpo Swagger v4.6:
+        ``GET /sales/orders/{id}``). Wird im DHL-Fallback genutzt, um die
+        echte Lieferadresse statt der Default-Test-Adresse zu senden."""
+        try:
+            return await self._request("GET", f"/sales/orders/{sales_order_id}")
+        except PulpoError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
     async def list_packing_order_boxes(self, packing_order_id: int | str) -> list[dict]:
         """Boxes für eine Packing-Order — Pulpo Swagger:
         ``GET /packing/orders/{packing_order_id}/boxes`` → ResponseList_PackingBox.
