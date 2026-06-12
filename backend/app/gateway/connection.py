@@ -812,11 +812,34 @@ class ConnectionManager:
             if pulpo_hit is not None:
                 tracking, label_b64 = pulpo_hit
                 response["match_barcode"] = tracking
-                response["label_url"] = label_b64
+                # Maschinen-Frame: nur bei mode="base64" das PDF mitgeben,
+                # sonst leer (QZ-Agent druckt aus der Shipment-Queue).
+                response["label_url"] = label_b64 if get_settings().cmc_lab_label_mode == "base64" else ""
                 response["status"] = ""
                 response["rejection_reason"] = None
+                # Shipment anlegen, damit der QZ-Agent das Label drucken kann
+                # (Pre-Creation hat hier offenbar nichts hinterlegt — z.B. weil
+                # IND verpasst wurde oder das Label erst jetzt da ist).
+                try:
+                    existing = (await db.execute(
+                        select(Shipment).where(
+                            Shipment.tenant_id == tenant_id,
+                            Shipment.reference_id == ref,
+                        ).limit(1)
+                    )).scalar_one_or_none()
+                    if existing is None:
+                        db.add(Shipment(
+                            tenant_id=tenant_id, reference_id=ref,
+                            barcode=scanned_barcode, tracking_number=tracking,
+                            label_b64=label_b64, label_format="PDF",
+                            carrier="DHL", product="V01PAK", is_test=False,
+                        ))
+                        await db.commit()
+                except Exception as e:
+                    logger.warning(f"LAB1 shipment persist failed for {ref}: {e!r}")
                 logger.info(
-                    f"LAB1 enriched from Pulpo label: ref={ref} tracking={tracking}"
+                    f"LAB1 enriched from Pulpo label: ref={ref} tracking={tracking} "
+                    f"label_bytes~{len(label_b64) * 3 // 4}"
                 )
                 return
 
@@ -849,10 +872,12 @@ class ConnectionManager:
             await db.commit()
 
         response["match_barcode"] = shipment.tracking_number
-        # label_url = Label-Daten (Base64 ZPL2). Bei zu großem Frame ggf.
-        # später auf eine HTTP-URL umstellen; aktuell senden wir den ZPL
-        # direkt im Feld, weil der CW1000-Labeler das so erwartet.
-        response["label_url"] = shipment.label_b64
+        # Maschinen-Frame nur bei mode="base64" mit Label füllen; sonst leer,
+        # QZ-Agent druckt aus der Shipment-Queue (create_label_for_order hat
+        # die reference_id gesetzt, damit die Queue den Eintrag findet).
+        response["label_url"] = (
+            shipment.label_b64 if get_settings().cmc_lab_label_mode == "base64" else ""
+        )
         response["status"] = ""
         response["rejection_reason"] = None
         logger.info(
@@ -1151,17 +1176,13 @@ class ConnectionManager:
                 if not tracking:
                     continue
 
-                # 3) Label aus den Attachments. Pulpo liefert eine vorsignierte
-                #    S3-URL zur PDF. WAS wir der Maschine ins label_url-Feld
-                #    geben, steuert CMC_LAB_LABEL_MODE:
-                #      "url"    → die S3-URL direkt (Maschine lädt selbst; passt
-                #                 zum Feldnamen, kleiner Frame) — DEFAULT
-                #      "base64" → PDF heruntergeladen und base64-kodiert
-                #      "none"   → leer (Maschine druckt über eigenen Spooler;
-                #                 nur Tracking als match_barcode)
-                from app.core.config import get_settings as _gs
-                label_mode = (_gs().cmc_lab_label_mode or "url").lower()
-
+                # 3) Label-PDF IMMER herunterladen und als Base64 zurückgeben.
+                #    WICHTIG: Dies ist der Inhalt fürs DRUCKEN (QZ-Agent /
+                #    Print-Queue) — komplett unabhängig davon, was die Maschine
+                #    im LAB1-Frame bekommt (das steuert CMC_LAB_LABEL_MODE und
+                #    wird erst im LAB1-Handler entschieden). Würden wir hier bei
+                #    mode="none" leer zurückgeben, hätte das Shipment kein Label
+                #    → die Druck-Queue wäre leer → QZ druckt nie. Genau der Bug.
                 label_url = ""
                 for att in box.get("attachments") or []:
                     if not isinstance(att, dict):
@@ -1173,27 +1194,26 @@ class ConnectionManager:
                         if label_url:
                             break
 
-                label_value = ""
-                if label_mode == "url":
-                    label_value = label_url
-                elif label_mode == "base64" and label_url:
+                label_b64 = ""
+                if label_url:
                     try:
                         dl = await pulpo_client.download_url(label_url)
                         if dl:
-                            label_value = base64.b64encode(dl[0]).decode("ascii")
+                            label_b64 = base64.b64encode(dl[0]).decode("ascii")
                     except Exception as e:
                         logger.warning(
                             f"Pulpo label PDF download failed for {tracking}: {e!r}"
                         )
-                # "none" → label_value bleibt leer; Tracking reicht der Maschine
-                # als match_barcode am Exit-Reader.
+                        # Kein PDF, aber Tracking ist gültig — Maschine kann mit
+                        # match_barcode allein arbeiten; Druck schlägt dann fehl
+                        # und wird in der Print-Problem-Liste sichtbar.
 
                 logger.info(
                     f"Pulpo label hit: barcode={barcode} order_id={order.pulpo_order_id} "
-                    f"tracking={tracking} mode={label_mode} "
-                    f"label_len={len(label_value)} url={'yes' if label_url else 'no'}"
+                    f"tracking={tracking} label_bytes~{len(label_b64) * 3 // 4} "
+                    f"url={'yes' if label_url else 'no'}"
                 )
-                return tracking, label_value
+                return tracking, label_b64
 
             # Order gefunden, aber noch keine packing_box mit Tracking
             # (Pulpo hat das Label noch nicht erzeugt) → Fallback auf DHL.

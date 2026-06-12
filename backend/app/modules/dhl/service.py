@@ -62,6 +62,7 @@ async def create_label_for_order(
     shipment = Shipment(
         tenant_id=tenant_id,
         order_state_id=order_state_id,
+        reference_id=order_ref,  # für die Druck-Queue (QZ-Agent findet darüber)
         carrier="DHL",
         product=product or "V01PAK",
         tracking_number=result["tracking"],
