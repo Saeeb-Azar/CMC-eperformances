@@ -90,7 +90,10 @@ class Settings(BaseSettings):
     # Default "url": der thermische CW1000-Labeler kann ein PDF NICHT aus
     # einem riesigen Base64-Textfeld drucken → "TIMEOUT LABELER PRINT".
     # Welcher Modus wirklich passt, hängt vom Drucker-Setup ab (mit CMC klären).
-    cmc_lab_label_mode: str = "url"
+    # Default "none": eure Architektur druckt über den Print-Daemon im LAN
+    # (scripts/print_daemon.py), die CW1000 bekommt nur das Tracking als
+    # match_barcode für den Exit-Verifier — kein Label im LAB1-Frame.
+    cmc_lab_label_mode: str = "none"
 
     # ----- weclapp ERP (Produkt-Stammdaten per EAN) ---------------------
     # Read-only Anbindung: liefert Name/SKU/Beschreibung/Bild zu einem EAN

@@ -82,6 +82,75 @@ class TestLabelIn(BaseModel):
     product: str | None = None
 
 
+# ── Druckwarteschlange — wird vom LAN-Daemon abgepollt ─────────────────
+
+class PrintQueueItem(BaseModel):
+    id: str
+    reference_id: str
+    tracking_number: str
+    label_b64: str
+    label_format: str  # "PDF" / "ZPL2"
+    created_at: datetime
+
+
+@router.get("/print-queue", response_model=list[PrintQueueItem])
+async def get_print_queue(
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Offene Druckaufträge des Tenants — vom Mini-Daemon im LAN gepollt.
+    Liefert nur Shipments, die noch nicht ``printed_at`` haben und ein
+    Label-Base64 enthalten (sonst nichts zu drucken)."""
+    res = await db.execute(
+        select(Shipment).where(
+            Shipment.tenant_id == user["tenant_id"],
+            Shipment.printed_at.is_(None),
+            Shipment.label_b64 != "",
+        ).order_by(Shipment.created_at.asc()).limit(limit)
+    )
+    return [
+        PrintQueueItem(
+            id=s.id, reference_id=s.reference_id,
+            tracking_number=s.tracking_number,
+            label_b64=s.label_b64, label_format=s.label_format,
+            created_at=s.created_at,
+        )
+        for s in res.scalars().all()
+    ]
+
+
+class MarkPrintedRequest(BaseModel):
+    error: str | None = None  # leer = erfolgreich; sonst Fehler vom Drucker
+
+
+@router.post("/print-queue/{shipment_id}/mark-printed")
+async def mark_printed(
+    shipment_id: str,
+    body: MarkPrintedRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Daemon meldet zurück: erfolgreich gedruckt (``error`` leer) oder
+    Druckfehler. Im Fehlerfall bleibt printed_at NULL → der Eintrag landet
+    beim nächsten Poll wieder in der Queue."""
+    sh = (await db.execute(
+        select(Shipment).where(
+            Shipment.tenant_id == user["tenant_id"],
+            Shipment.id == shipment_id,
+        )
+    )).scalar_one_or_none()
+    if not sh:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found")
+    if body.error:
+        sh.print_error = body.error[:1000]
+    else:
+        sh.printed_at = datetime.utcnow()
+        sh.print_error = ""
+    await db.commit()
+    return {"ok": True, "printed": sh.printed_at is not None}
+
+
 @router.post("/shipments/test-label")
 async def create_test_label(
     body: TestLabelIn,

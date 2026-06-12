@@ -51,6 +51,14 @@ class Shipment(Base):
     # True wenn im Test-Modus erzeugt (Mock-Sendung, kein echtes DHL-Label).
     is_test: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
+    # Druckqueue (Mini-Daemon im LAN holt offene Sendungen, druckt, meldet
+    # zurück). `printed_at` = erfolgreich gedruckt; `print_error` = letzter
+    # Fehler (für Retry-Sichtbarkeit). Reference-ID zum schnellen Mapping
+    # ohne Order-Join.
+    reference_id: Mapped[str] = mapped_column(String(100), default="", index=True)
+    printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    print_error: Mapped[str] = mapped_column(Text, default="")
+
     # Rohes DHL-Response-Payload — Debugging + spätere Felder.
     raw_response: Mapped[dict] = mapped_column(JSON, default=dict)
 

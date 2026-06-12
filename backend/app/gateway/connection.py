@@ -780,6 +780,28 @@ class ConnectionManager:
                 t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
                 tenant_id = t.id if t else ""
 
+            # ── Pre-Created Label aus DB lesen (Hot-Path #1) ───────────────
+            # Wenn IND das Label schon erzeugt hat (Doku §6 Pre-Creation),
+            # liegt es in der shipments-Tabelle bereit → kein API-Call.
+            from app.modules.dhl.models import Shipment
+            cached = (await db.execute(
+                select(Shipment).where(
+                    Shipment.tenant_id == tenant_id,
+                    Shipment.reference_id == ref,
+                ).order_by(Shipment.created_at.desc()).limit(1)
+            )).scalar_one_or_none()
+            if cached and cached.tracking_number:
+                response["match_barcode"] = cached.tracking_number
+                response["label_url"] = cached.label_b64 if get_settings().cmc_lab_label_mode == "base64" else ""
+                response["status"] = ""
+                response["rejection_reason"] = None
+                logger.info(
+                    f"LAB1 cache hit: ref={ref} tracking={cached.tracking_number} "
+                    f"label_mode={get_settings().cmc_lab_label_mode} "
+                    f"(machine reads only match_barcode; print runs via daemon)"
+                )
+                return
+
             # ── Pulpo-Label-First ──────────────────────────────────────────
             # Hat Pulpo zum gescannten Barcode bereits ein Label generiert?
             # (Pre-Label-Workflow: Pulpo erstellt das DHL-Label, sobald die
@@ -934,6 +956,68 @@ class ConnectionManager:
         except Exception as e:
             logger.warning(f"Pulpo recipient lookup failed: {e!r} — using default")
             return None
+
+    async def _precreate_label(
+        self, protocol_id: str, ref: str, msg_data: dict,
+    ) -> None:
+        """Hintergrund-Task: Label nach IND vorab generieren und in der
+        ``shipments``-Tabelle ablegen. So braucht LAB1 nur noch ein
+        SELECT auf reference_id — keine externen API-Calls mehr im 2-s-
+        Antwortbudget. Wird per ``asyncio.create_task`` aus dem IND-Handler
+        gefeuert (fire & forget); jeder Fehler bleibt lokal."""
+        from app.core.database import async_session
+        from app.modules.dhl.models import Shipment
+        from app.modules.machines.models import Machine
+        from app.modules.tenants.models import Tenant
+        from sqlalchemy import select
+        try:
+            async with async_session() as db:
+                # tenant_id auflösen
+                machine = (await db.execute(
+                    select(Machine).where(Machine.machine_id == protocol_id).limit(1)
+                )).scalar_one_or_none()
+                tenant_id = machine.tenant_id if machine else None
+                if not tenant_id:
+                    t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
+                    tenant_id = t.id if t else ""
+
+                # Schon vorhanden? (z.B. doppeltes IND)
+                existing = (await db.execute(
+                    select(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                        Shipment.reference_id == ref,
+                    ).order_by(Shipment.created_at.desc()).limit(1)
+                )).scalar_one_or_none()
+                if existing and existing.tracking_number:
+                    logger.info(f"Pre-create skipped: ref={ref} already has shipment {existing.tracking_number}")
+                    return
+
+                # Versuch: Pulpo-Label-Lookup
+                barcode = str(msg_data.get("barcode", "") or "").strip()
+                pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode)
+                if pulpo_hit:
+                    tracking, label_b64 = pulpo_hit
+                    sh = Shipment(
+                        tenant_id=tenant_id, reference_id=ref,
+                        tracking_number=tracking,
+                        label_b64=label_b64, label_format="PDF",
+                        carrier="DHL", product="V01PAK",
+                        is_test=False,
+                    )
+                    db.add(sh)
+                    await db.commit()
+                    logger.info(
+                        f"Pre-create OK (Pulpo): ref={ref} tracking={tracking} "
+                        f"label_len={len(label_b64)}"
+                    )
+                    return
+
+                logger.info(
+                    f"Pre-create: no Pulpo label yet for ref={ref} barcode={barcode} "
+                    f"— will retry on LAB1 (DHL fallback path)"
+                )
+        except Exception as e:
+            logger.warning(f"Pre-create label failed for ref={ref}: {e!r}")
 
     async def _try_pulpo_label(
         self, db, tenant_id: str, barcode: str,
@@ -1285,6 +1369,22 @@ class ConnectionManager:
                             # bleiben. Bei Timeout/Fehler wird das Item per
                             # result=0 abgelehnt — sauberer Reject statt
                             # blinder Annahme.
+                            # ── Pre-Creation bei IND (Doku §6): sobald das
+                            # Item eingeschleust ist, im Hintergrund das Label
+                            # aus Pulpo/DHL holen und persistieren. Bei LAB1
+                            # liegt es dann schon im Cache → kein Hot-Path-
+                            # Call mehr, kein 2-s-Timeout-Risiko. Nicht
+                            # awaiten — IND-Antwort darf nicht warten.
+                            if (
+                                msg_type == "IND" and conn.protocol_id
+                                and isinstance(msg_data, dict)
+                            ):
+                                ref_ind = str(response.get("reference_id") or "")
+                                if ref_ind:
+                                    asyncio.create_task(
+                                        self._precreate_label(conn.protocol_id, ref_ind, dict(msg_data))
+                                    )
+
                             if msg_type == "LAB1" and response.get("result") == 1 and conn.protocol_id:
                                 ref_for_label = str(response.get("reference_id") or "")
                                 from app.core.config import get_settings as _gs
