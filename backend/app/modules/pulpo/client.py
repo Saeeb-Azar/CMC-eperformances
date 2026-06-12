@@ -376,7 +376,8 @@ class PulpoClient:
         if not url:
             return None
         try:
-            resp = await self._client.get(url)
+            async with self._client() as http:
+                resp = await http.get(url, follow_redirects=True)
         except httpx.HTTPError as e:
             raise PulpoError(f"download_url failed: {e}") from e
         if resp.status_code == 404:
