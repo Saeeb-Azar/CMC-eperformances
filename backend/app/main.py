@@ -2,13 +2,14 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app.core.config import get_settings
 from app.core.database import Base, engine
-from app.core.logging import logger
+from app.core.logging import logger, log_ring
+from app.core.permissions import get_current_user
 from app.gateway.websocket import ws_manager
 from app.gateway.connection import connection_manager
 from app.gateway.persistence import bootstrap_defaults
@@ -557,6 +558,34 @@ def upsert_cw_list(machine_id: str, name: str, body: dict):
 def delete_cw_list(machine_id: str, name: str):
     deleted = connection_manager.delete_cw_list(machine_id, name)
     return {"ok": True, "deleted": deleted}
+
+
+@app.get("/api/v1/logs/recent")
+def get_recent_logs(
+    limit: int = 800,
+    level: str | None = None,
+    since_id: int = 0,
+    q: str | None = None,
+    format: str = "json",
+    user: dict = Depends(get_current_user),
+):
+    """ALLE Backend-Logs aus dem In-Memory-Ringpuffer (Pulpo, DHL, Print,
+    Gateway, …) — fürs Live-Debugging im Dashboard ohne Server-Shell.
+
+    Params: ``limit`` (max Einträge), ``level`` (ab DEBUG/INFO/WARNING/ERROR),
+    ``since_id`` (nur neuere → Polling), ``q`` (Volltext im Message/Logger),
+    ``format=text`` für reines copy-paste-Log, sonst JSON.
+    """
+    entries = log_ring.recent(limit=limit, since_id=since_id, level=level, q=q)
+    if format == "text":
+        lines = [
+            f"{e['timestamp']} [{e['level']}] {e['logger']}: {e['message']}"
+            + (f"\n    EXC: {e['exception']}" if e.get("exception") else "")
+            for e in entries
+        ]
+        return PlainTextResponse("\n".join(lines))
+    return {"logs": entries, "count": len(entries),
+            "last_id": entries[-1]["id"] if entries else since_id}
 
 
 @app.post("/api/v1/runtime/reset")

@@ -356,6 +356,19 @@ export const api = {
     request<{ ok: boolean; deleted: number }>(
       `/print-queue/problems`, { method: 'DELETE' },
     ),
+  // ALLE Backend-Logs (Ringpuffer) — fürs Live-Debugging im Dashboard.
+  getLogs: (params?: { limit?: number; level?: string; since_id?: number; q?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.level) qs.set('level', params.level);
+    if (params?.since_id) qs.set('since_id', String(params.since_id));
+    if (params?.q) qs.set('q', params.q);
+    const s = qs.toString();
+    return request<{
+      logs: Array<{ id: number; timestamp: string; level: string; logger: string; module: string; message: string; exception?: string }>;
+      count: number; last_id: number;
+    }>(`/logs/recent${s ? `?${s}` : ''}`);
+  },
   setDhlSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
       method: 'PUT', body: JSON.stringify({ test_mode }),

@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, Plug, LogOut, Zap, Server, Settings, ScrollText } from 'lucide-react';
+import { LayoutDashboard, Plug, LogOut, Zap, Server, Settings, ScrollText, Terminal } from 'lucide-react';
 
 // Sidebar nav. Dashboard + Simulator are the day-to-day views; Maschinen and
 // Einstellungen are needed to configure the Pulpo pick-location and the
@@ -29,6 +29,7 @@ export default function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps
     { to: '/machines', icon: Server, label: t('nav.machines', 'Maschinen') },
     { to: '/simulator', icon: Plug, label: t('nav.simulator') },
     { to: '/protokoll', icon: ScrollText, label: t('nav.protokoll', 'Protokoll') },
+    { to: '/logs', icon: Terminal, label: t('nav.logs', 'Logs') },
     { to: '/settings/company', icon: Settings, label: t('nav.settings', 'Einstellungen') },
   ];
 
