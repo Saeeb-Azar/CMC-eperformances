@@ -959,13 +959,39 @@ class ConnectionManager:
             if pulpo_recipient is not None:
                 recipient = pulpo_recipient
                 logger.info(
-                    f"DHL fallback: using Pulpo ship_to for ref={ref} "
-                    f"({recipient.zip_code} {recipient.city}, {recipient.country})"
+                    f"DHL: Empfänger aus Pulpo für ref={ref} → "
+                    f"{recipient.name!r} ({recipient.zip_code} {recipient.city}, "
+                    f"{recipient.country}) [Auftrag "
+                    f"{getattr(claimed_order, 'pulpo_order_id', '?')}]"
                 )
+            elif not pulpo_runtime.test_mode:
+                # LIVE: KEINE Pulpo-Adresse auflösbar → NICHT auf eine
+                # Default-/Testadresse zurückfallen (sonst ginge das Paket an den
+                # falschen Empfänger, z.B. „Leonard"). Stattdessen ablehnen →
+                # die Maschine wirft das Item aus, der Operator sieht das Problem.
+                logger.error(
+                    f"DHL: keine Pulpo-Lieferadresse für ref={ref} "
+                    f"barcode={scanned_barcode} (Auftrag "
+                    f"{getattr(claimed_order, 'pulpo_order_id', None)}) — LAB1 abgelehnt, "
+                    f"KEIN Label mit Default-Adresse"
+                )
+                response["result"] = 0
+                response["status"] = "REJECTED"
+                response["rejection_reason"] = "no_pulpo_recipient"
+                response["match_barcode"] = scanned_barcode
+                response["label_url"] = ""
+                try:
+                    from app.modules.dhl.runtime import dhl_runtime as _dr
+                    from datetime import datetime as _dt
+                    _dr.last_error = f"LAB1 {ref}: keine Pulpo-Lieferadresse → abgelehnt"
+                    _dr.last_error_at = _dt.utcnow()
+                except Exception:
+                    pass
+                return
             else:
                 logger.warning(
-                    f"DHL fallback: no Pulpo ship_to for ref={ref} barcode={scanned_barcode} "
-                    f"— using default test recipient (DHL may reject)"
+                    f"DHL Test-Fallback: keine Pulpo-Adresse für ref={ref} "
+                    f"barcode={scanned_barcode} — Default-Testadresse"
                 )
 
             shipment = await create_label_for_order(
