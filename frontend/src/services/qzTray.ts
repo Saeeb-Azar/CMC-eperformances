@@ -106,10 +106,32 @@ export async function qzPrintLabel(labelB64: string, target: PrinterTarget): Pro
     target.name ? { name: target.name }
     : target.host ? { host: target.host, port: target.port ?? 9100 }
     : { name: "default" };
-  const config = qz.configs.create(printerSpec, { jobName: `CMC Label ${Date.now()}` });
   if (target.format === "raw") {
+    const config = qz.configs.create(printerSpec, { jobName: `CMC Label ${Date.now()}` });
     await qz.print(config, [{ type: "raw", format: "base64", data: labelB64 }]);
-  } else {
-    await qz.print(config, [{ type: "pixel", format: "pdf", flavor: "base64", data: labelB64 }]);
+    return;
   }
+
+  // PDF-Pfad für Thermo-/ZPL-Label-Drucker (z.B. Zebra ZE511, 300 dpi).
+  //
+  // WICHTIG: Ohne explizite Optionen reicht QZ das PDF nativ über PDFBox an
+  // den Drucker-Spooler. Auf Zebra-ZPL-Treibern meldet der Job dann zwar
+  // „Printing complete", es kommt aber nichts heraus (der Treiber verwirft
+  // den Java-Render-Job still). Der zuverlässige Weg ist, QZ das Label vorher
+  // selbst in ein Bitmap mit korrekter Dichte/Größe RASTERN zu lassen
+  // (rasterize:true). Der Treiber bekommt dann ein sauberes Vollbild, exakt
+  // so wie beim funktionierenden Windows-Testdruck (GDI).
+  const config = qz.configs.create(printerSpec, {
+    jobName: `CMC Label ${Date.now()}`,
+    rasterize: true,        // PDF vor dem Senden zu Bitmap rendern (nicht nativ durchreichen)
+    density: 300,           // dpi passend zum Zebra ZE511 LH-300dpi-Treiber
+    units: "mm",
+    size: { width: 100, height: 150 }, // 100×150-mm-Label (MediaBox 283×422 pt)
+    scaleContent: true,     // Inhalt auf die Labelfläche skalieren
+    margins: 0,
+    colorType: "grayscale", // Thermodruck ist monochrom — Graustufen statt Farbe
+    interpolation: "bicubic",
+    rotation: 0,
+  });
+  await qz.print(config, [{ type: "pixel", format: "pdf", flavor: "base64", data: labelB64 }]);
 }
