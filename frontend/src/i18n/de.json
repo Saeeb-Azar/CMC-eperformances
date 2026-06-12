@@ -372,7 +372,10 @@
       "inactiveHint": "Inaktiv — wird nicht geprüft",
       "consumed": "{{consumed}} / {{expected}} verbraucht",
       "items_one": "{{count}} Artikel",
-      "items_other": "{{count}} Artikel"
+      "items_other": "{{count}} Artikel",
+      "selectAll": "Alle aktivieren",
+      "selectNone": "Keine",
+      "allHint": "Keine aktiv → Treffer wird in allen Listen gesucht (Quell-Liste wird vermerkt)."
     },
     "cwModal": {
       "readOnlyNotice": "Automatisch aus der Pulpo-Queue synchronisiert — read-only.",

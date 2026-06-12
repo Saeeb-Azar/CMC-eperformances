@@ -1208,6 +1208,33 @@ function MachineSidebar({
                   {t('liveFlow.cwLists.noPulpoQueue')}
                 </div>
               ) : (
+                <>
+                {(() => {
+                  const activeCount = cwLists.filter((l) => l.active).length;
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px 6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => cwLists.forEach((l) => { if (!l.active) onUpsertCwList(l.name, { active: true }); })}
+                          style={{ flex: 1, padding: '4px 6px', fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                            borderRadius: 4, border: '1px solid #3b82f6', background: '#eff6ff', color: '#1d4ed8' }}
+                        >{t('liveFlow.cwLists.selectAll', 'Alle aktivieren')} ({cwLists.length})</button>
+                        <button
+                          type="button"
+                          onClick={() => cwLists.forEach((l) => { if (l.active) onUpsertCwList(l.name, { active: false }); })}
+                          style={{ flex: 1, padding: '4px 6px', fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                            borderRadius: 4, border: '1px solid var(--clr-border)', background: 'transparent', color: 'var(--clr-text-muted)' }}
+                        >{t('liveFlow.cwLists.selectNone', 'Keine')}</button>
+                      </div>
+                      {activeCount === 0 && (
+                        <div style={{ fontSize: 9, color: 'var(--clr-text-muted)', padding: '0 8px 6px', lineHeight: 1.4 }}>
+                          {t('liveFlow.cwLists.allHint', 'Keine aktiv → Treffer wird in allen Listen gesucht (Quell-Liste wird vermerkt).')}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   {[...cwLists].sort((a, b) => naturalCw(a.name, b.name)).map((lst) => {
                     return (
@@ -1257,6 +1284,7 @@ function MachineSidebar({
                     );
                   })}
                 </div>
+                </>
               )}
             </>
           )}
