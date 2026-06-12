@@ -122,7 +122,12 @@ export default function PrintAgent() {
 
   useEffect(() => {
     if (!cfg.enabled) return;
-    const id = setInterval(tick, 2000);
+    // Schnelles Polling (750 ms statt 2 s): Das Label wird bereits bei IND
+    // vorab erzeugt und liegt im Cache; der begrenzende Faktor fürs physische
+    // Drucken ist die Poll-Frequenz. Kürzeres Intervall = Label kommt früher
+    // (idealerweise während der IND→LAB1-Laufzeit), bevor das Item am
+    // Labeler ankommt. `busy`-Guard verhindert überlappende Drucke.
+    const id = setInterval(tick, 750);
     return () => clearInterval(id);
   }, [cfg.enabled, tick]);
 
