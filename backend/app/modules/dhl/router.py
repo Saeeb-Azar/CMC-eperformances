@@ -128,12 +128,19 @@ async def get_print_queue(
     Liefert nur Shipments, die noch nicht ``printed_at`` haben und ein
     Label-Base64 enthalten (sonst nichts zu drucken)."""
     from datetime import datetime as _dt
+    from sqlalchemy import or_
     dhl_runtime.daemon_last_seen = _dt.utcnow()  # „Daemon lebt"-Marker für die UI
+    # Nur noch NICHT-fehlerhafte Jobs automatisch ausliefern. Ein bereits
+    # fehlgeschlagener Druck (print_error gesetzt) wird NICHT alle 2 s neu
+    # versucht — das erzeugte sonst die PRINT_FAILED-Flut. Der Job bleibt in
+    # der „Probleme"-Liste sichtbar und kann manuell aufgelöst/neu gedruckt
+    # werden (setzt print_error zurück → landet wieder in dieser Queue).
     res = await db.execute(
         select(Shipment).where(
             Shipment.tenant_id == user["tenant_id"],
             Shipment.printed_at.is_(None),
             Shipment.label_b64 != "",
+            or_(Shipment.print_error == "", Shipment.print_error.is_(None)),
         ).order_by(Shipment.created_at.asc()).limit(limit)
     )
     return [

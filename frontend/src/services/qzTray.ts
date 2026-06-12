@@ -38,6 +38,42 @@ declare global {
 
 let loadPromise: Promise<QZ> | null = null;
 
+/**
+ * Euer QZ-Tray-Zertifikat (öffentlich, kein Geheimnis). Damit erkennt QZ Tray
+ * den Absender; beim ersten Druck erscheint ggf. einmalig der „Allow"-Dialog
+ * → dort „Remember this decision" anhaken, danach läuft es lautlos.
+ *
+ * WICHTIG zur Signatur (siehe qzConnect): Ohne den passenden PRIVATE KEY können
+ * wir die Anfrage nicht serverseitig kryptografisch signieren. Wir liefern
+ * daher eine LEERE Signatur (resolve ohne Wert) — NICHT reject! Ein reject
+ * erzeugt „Failed to sign request" und der Job scheitert komplett, bevor er
+ * den Drucker überhaupt erreicht (genau der Fehler, der alle Drucke blockierte).
+ */
+const QZ_CERTIFICATE = `-----BEGIN CERTIFICATE-----
+MIIECzCCAvOgAwIBAgIGAZx01n4JMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
+UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
+HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
+RGVtbyBDZXJ0MB4XDTI2MDIxODA3Mzg1OVoXDTQ2MDIxODA3Mzg1OVowgaIxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
+VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
+IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
+VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCb
+hzCN9cz6Eh47ZECdYTm9XQnaKqgNyr2nE8bBOrxmtrNhKU0IqUhta+v7TajmWWKQ
+IGdG+85PVi1g0UCM5jXHg75KoKl8T36uoxjeqi0Ht3j00gzXTmwevomY280WmpQS
+14hM9licDPesWaAKDqLtw/CBASGe2lgppk4UqGA2PjqlZcuB30jQmccsf9CvKfa7
+f9pvC0Q8ngBKmGP6VJT2spBq4+68SFcUS3GiYECZXSi6ZpcxA9SRn1zIcukLcFxf
+rzztG8LO2DqEtlxIGatTBkD15w+Uvql1FP0owTKAZ/dx8qaNSh4ANdm+dFUNZcYe
+GTQHXoYIFqVt4dEBkhLlAgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
+VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBRvqqJsdBhZGuxKuy57wkuuMXIcnjANBgkq
+hkiG9w0BAQsFAAOCAQEANkW0N7kvAgpVjW9CBbdK6PilM3fZQ0/+I8H1DBATX+kD
+4njt7QW3D80sIEvZ7jI/Tzf4C2tmY0LDsRxf10V+NqXiKvLtPgHeVLk4or5/WE0H
+3tJr7P/2VCu8q4jKavQFS/aiDvDLlr5K13VU2P7A1At/rzh6sRTVvW1n99gIOywe
+HjUtOoPMtaycQo2FefQoQOm/nITHFicnHFAQZbvuk38yb8ta/ZeCguZ4In1C8xcA
+R2cmeC/05ggFvL4qIqoawdSJK530T7AtFh5CmXl97TTkL8J7e7U1fQPYEhTvJ9Ww
+oEn16k/1aNgERPdP8DgTMLzA+Y4MYBHeJl2y1QNbZg==
+-----END CERTIFICATE-----`;
+
 /** qz-tray.js einmalig vom CDN laden. */
 function loadQz(): Promise<QZ> {
   if (window.qz) return Promise.resolve(window.qz);
@@ -59,11 +95,15 @@ function loadQz(): Promise<QZ> {
 /** Verbindung zum lokalen QZ Tray sicherstellen. */
 export async function qzConnect(): Promise<void> {
   const qz = await loadQz();
-  // Unsigned-Betrieb: leeres Zertifikat + Reject der Signatur → QZ zeigt
-  // (falls kein Cert hinterlegt) einen einmaligen Allow-Dialog. Mit eurem
-  // produktiven Cert greift das gar nicht erst.
-  qz.security.setCertificatePromise((resolve) => resolve(""));
-  qz.security.setSignaturePromise(() => (_resolve, reject) => reject(undefined));
+  // Zertifikat liefern, damit QZ Tray den Absender erkennt (Allow-Dialog mit
+  // „Remember this decision" merkt sich die Freigabe pro Zertifikat).
+  qz.security.setCertificatePromise((resolve) => resolve(QZ_CERTIFICATE));
+  // Signatur LEER auflösen (resolve, NICHT reject!). reject() erzeugte zuvor
+  // „Failed to sign request" und ließ jeden Druck scheitern, bevor er QZ
+  // erreichte. Mit leerer Signatur akzeptiert QZ die Anfrage (ggf. einmaliger
+  // Allow-Dialog → „Remember"); für vollständig stille, signierte Anfragen
+  // müsste serverseitig mit dem zugehörigen Private Key signiert werden.
+  qz.security.setSignaturePromise(() => (resolve) => resolve(""));
   if (!qz.websocket.isActive()) {
     await qz.websocket.connect({ retries: 2, delay: 1 });
   }
