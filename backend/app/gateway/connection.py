@@ -784,13 +784,22 @@ class ConnectionManager:
             # Wenn IND das Label schon erzeugt hat (Doku §6 Pre-Creation),
             # liegt es in der shipments-Tabelle bereit → kein API-Call.
             from app.modules.dhl.models import Shipment
+            # Aktuellen Barcode aus dem Tracker (wird am ENQ gesetzt) — LAB1
+            # selbst trägt KEINEN Barcode. Nötig, damit ein RECYCELTER
+            # reference_id (z.B. ref0001 in einer neuen Session) nicht den
+            # alten Shipment eines ANDEREN Pakets wiederverwendet (sonst:
+            # falsches Tracking/Label + falsche/fehlende Pulpo-Refs).
+            scanned_barcode = str(msg_data.get("barcode") or pkg.get("barcode") or "").strip()
             cached = (await db.execute(
                 select(Shipment).where(
                     Shipment.tenant_id == tenant_id,
                     Shipment.reference_id == ref,
                 ).order_by(Shipment.created_at.desc()).limit(1)
             )).scalar_one_or_none()
-            if cached and cached.tracking_number:
+            # Cache nur nutzen, wenn der Barcode zum AKTUELLEN Scan passt.
+            if cached and cached.tracking_number and (
+                not scanned_barcode or (cached.barcode or "") == scanned_barcode
+            ):
                 response["match_barcode"] = cached.tracking_number
                 response["label_url"] = cached.label_b64 if get_settings().cmc_lab_label_mode == "base64" else ""
                 response["status"] = ""
@@ -807,7 +816,6 @@ class ConnectionManager:
             # (Pre-Label-Workflow: Pulpo erstellt das DHL-Label, sobald die
             #  Sales-Order in die Pack-Queue wandert. Dann müssen wir nicht
             #  selbst DHL anrufen — risikoärmer, idempotent, kostenfrei.)
-            scanned_barcode = str(msg_data.get("barcode", "") or "").strip()
             pulpo_hit = await self._try_pulpo_label(db, tenant_id, scanned_barcode)
             if pulpo_hit is not None:
                 tracking, label_b64 = pulpo_hit

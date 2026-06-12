@@ -153,16 +153,20 @@ async def list_orders(
         # PERSISTIERTEN Pulpo-Refs aus dem Shipment ziehen. Sonst würde die
         # Sequenz/Auftragsnummer „verschwinden", obwohl sie mal gematcht wurde
         # (genau der Bug: alte Aufträge zeigen Daten, neue nicht mehr).
+        # WICHTIG barcode-bewusst: reference_ids werden je Session recycelt
+        # (ref0001 …). Der Fallback matcht daher auf (reference_id, barcode),
+        # damit kein alter Shipment eines ANDEREN Produkts zugeordnet wird.
         unmatched_refs = {
             o.reference_id for o in orders
             if o.reference_id and not any(pulpo_by_bc.get(o.barcode, ("", "")))
         }
-        ship_by_ref: dict[str, tuple[str, str]] = {}
+        ship_by_ref_bc: dict[tuple[str, str], tuple[str, str]] = {}
         if unmatched_refs:
             from app.modules.dhl.models import Shipment
             sres = await db.execute(
                 select(
                     Shipment.reference_id,
+                    Shipment.barcode,
                     Shipment.pulpo_sequence_number,
                     Shipment.pulpo_sales_order_num,
                 ).where(
@@ -170,14 +174,15 @@ async def list_orders(
                     Shipment.reference_id.in_(unmatched_refs),
                 ).order_by(Shipment.created_at.desc())
             )
-            for ref, seq, son in sres.all():
-                if ref not in ship_by_ref and (seq or son):
-                    ship_by_ref[ref] = (seq or "", son or "")
+            for ref, bc, seq, son in sres.all():
+                key = (ref, bc or "")
+                if key not in ship_by_ref_bc and (seq or son):
+                    ship_by_ref_bc[key] = (seq or "", son or "")
 
         for o in orders:
             seq, son = pulpo_by_bc.get(o.barcode, ("", ""))
             if not seq and not son:
-                seq, son = ship_by_ref.get(o.reference_id, ("", ""))
+                seq, son = ship_by_ref_bc.get((o.reference_id, o.barcode or ""), ("", ""))
             o.pulpo_sequence_number = seq  # type: ignore[attr-defined]
             o.pulpo_sales_order_num = son  # type: ignore[attr-defined]
     return orders
