@@ -1883,6 +1883,22 @@ function MainPane(p: MainPaneProps) {
               </>
             )}
           </div>
+          {/* Tabelle leeren: Live-Ansicht + Backend-Tracker zurücksetzen
+              (DB-Historie bleibt erhalten). Für einen sauberen Testlauf. */}
+          <button
+            onClick={p.onClearTable}
+            disabled={!p.machine}
+            title={t('liveFlow.clearTable', 'Tabelle leeren')}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '6px 10px', fontSize: 12, fontWeight: 600,
+              border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b',
+              borderRadius: 6, cursor: p.machine ? 'pointer' : 'not-allowed',
+              opacity: p.machine ? 1 : 0.5,
+            }}
+          >
+            <Trash2 size={13} /> {t('liveFlow.clearTable', 'Tabelle leeren')}
+          </button>
           <NotificationBell />
         </div>
       </header>

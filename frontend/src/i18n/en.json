@@ -392,7 +392,10 @@
       "close": "Close"
     },
     "activeBadge": "ACTIVE",
-    "tabs": { "active": "Active", "deleted": "Deleted" },
+    "tabs": {
+      "active": "Active",
+      "deleted": "Deleted"
+    },
     "noMachineSelected": "No machine selected",
     "multiToggle": {
       "selectMachine": "Select a machine to set the mode",
@@ -460,7 +463,8 @@
       "reasonLabel": "Reason",
       "reasonPlaceholder": "e.g. machine crash, parcel removed manually …",
       "confirm": "Yes, mark as manually ejected"
-    }
+    },
+    "clearTable": "Clear table"
   },
   "orders": {
     "title": "Packages",
