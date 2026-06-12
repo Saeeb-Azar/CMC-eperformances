@@ -1069,8 +1069,12 @@ class ConnectionManager:
                                 ).limit(1)
                             )).scalar_one_or_none()
                         if po and isinstance(po.raw_payload, dict):
-                            seq_num = str(po.raw_payload.get("sequence_number") or "")
-                            sales_num = str((po.raw_payload.get("sales_order") or {}).get("order_num") or "")
+                            rp = po.raw_payload
+                            seq_num = str(rp.get("sequence_number") or "")  # „PA-…"
+                            sales_num = str(
+                                (rp.get("sales_order") or {}).get("order_num")
+                                or rp.get("sales_order_ref") or ""
+                            )
                     except Exception: pass
                     sh = Shipment(
                         tenant_id=tenant_id, reference_id=ref,

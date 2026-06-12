@@ -124,10 +124,11 @@ async def list_orders(
                 )
             )
             for p in res.scalars().all():
-                sales = (p.raw_payload or {}).get("sales_order") or {}
+                rp = p.raw_payload if isinstance(p.raw_payload, dict) else {}
+                sales = rp.get("sales_order") or {}
                 pulpo_by_bc[p.cart_box_barcode] = (
-                    p.raw_payload.get("sequence_number", "") if isinstance(p.raw_payload, dict) else "",
-                    str(sales.get("order_num") or ""),
+                    rp.get("sequence_number", ""),  # = „PA-…" (Packing-Order-Nr)
+                    str(sales.get("order_num") or rp.get("sales_order_ref") or ""),
                 )
             # 2) Single-Order: EAN auf einem Item
             remaining = barcodes - set(pulpo_by_bc.keys())
@@ -143,10 +144,11 @@ async def list_orders(
                 for ean, p in res.all():
                     if ean in pulpo_by_bc:
                         continue
-                    sales = (p.raw_payload or {}).get("sales_order") or {}
+                    rp = p.raw_payload if isinstance(p.raw_payload, dict) else {}
+                    sales = rp.get("sales_order") or {}
                     pulpo_by_bc[ean] = (
-                        p.raw_payload.get("sequence_number", "") if isinstance(p.raw_payload, dict) else "",
-                        str(sales.get("order_num") or ""),
+                        rp.get("sequence_number", ""),
+                        str(sales.get("order_num") or rp.get("sales_order_ref") or ""),
                     )
         # Fallback: Wenn der Live-Match scheitert (Pulpo-Auftrag hat die Queue
         # verlassen, sobald gepackt/abgeschlossen), die beim Precreate
