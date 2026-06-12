@@ -1018,9 +1018,17 @@ class ConnectionManager:
                 if not tracking:
                     continue
 
-                # 3) Label-PDF-URL aus den Attachments suchen (type=label oder
-                #    .pdf-Endung). Pulpo liefert eine vorsignierte S3-URL —
-                #    ohne Auth-Header herunterladbar.
+                # 3) Label aus den Attachments. Pulpo liefert eine vorsignierte
+                #    S3-URL zur PDF. WAS wir der Maschine ins label_url-Feld
+                #    geben, steuert CMC_LAB_LABEL_MODE:
+                #      "url"    → die S3-URL direkt (Maschine lädt selbst; passt
+                #                 zum Feldnamen, kleiner Frame) — DEFAULT
+                #      "base64" → PDF heruntergeladen und base64-kodiert
+                #      "none"   → leer (Maschine druckt über eigenen Spooler;
+                #                 nur Tracking als match_barcode)
+                from app.core.config import get_settings as _gs
+                label_mode = (_gs().cmc_lab_label_mode or "url").lower()
+
                 label_url = ""
                 for att in box.get("attachments") or []:
                     if not isinstance(att, dict):
@@ -1032,24 +1040,27 @@ class ConnectionManager:
                         if label_url:
                             break
 
-                label_b64 = ""
-                if label_url:
+                label_value = ""
+                if label_mode == "url":
+                    label_value = label_url
+                elif label_mode == "base64" and label_url:
                     try:
                         dl = await pulpo_client.download_url(label_url)
                         if dl:
-                            label_b64 = base64.b64encode(dl[0]).decode("ascii")
+                            label_value = base64.b64encode(dl[0]).decode("ascii")
                     except Exception as e:
                         logger.warning(
                             f"Pulpo label PDF download failed for {tracking}: {e!r}"
                         )
-                        # Kein label_b64, aber Tracking ist trotzdem gültig —
-                        # Maschine kann mit match_barcode allein arbeiten.
+                # "none" → label_value bleibt leer; Tracking reicht der Maschine
+                # als match_barcode am Exit-Reader.
 
                 logger.info(
                     f"Pulpo label hit: barcode={barcode} order_id={order.pulpo_order_id} "
-                    f"tracking={tracking} label_pdf={'yes' if label_b64 else 'no'}"
+                    f"tracking={tracking} mode={label_mode} "
+                    f"label_len={len(label_value)} url={'yes' if label_url else 'no'}"
                 )
-                return tracking, label_b64
+                return tracking, label_value
 
             # Order gefunden, aber noch keine packing_box mit Tracking
             # (Pulpo hat das Label noch nicht erzeugt) → Fallback auf DHL.

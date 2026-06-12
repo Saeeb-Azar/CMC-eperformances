@@ -82,6 +82,16 @@ class Settings(BaseSettings):
     # korrekte Wert vor Ort ohne Code-Deploy gefunden werden kann.
     cmc_enq_feeders: str = "1"
 
+    # Was die LAB1-Antwort der Maschine im Label-Feld liefert:
+    #   "url"    → die (S3-)URL des Pulpo-Labels — Maschine/Drucker lädt selbst
+    #   "base64" → das PDF base64-kodiert direkt im Frame (Vorsicht: groß!)
+    #   "none"   → leer; Druck läuft über einen separaten Spooler, wir liefern
+    #              nur die Tracking-Nummer als match_barcode
+    # Default "url": der thermische CW1000-Labeler kann ein PDF NICHT aus
+    # einem riesigen Base64-Textfeld drucken → "TIMEOUT LABELER PRINT".
+    # Welcher Modus wirklich passt, hängt vom Drucker-Setup ab (mit CMC klären).
+    cmc_lab_label_mode: str = "url"
+
     # ----- weclapp ERP (Produkt-Stammdaten per EAN) ---------------------
     # Read-only Anbindung: liefert Name/SKU/Beschreibung/Bild zu einem EAN
     # für die Produktkarten in den CW-Listen. base_url ist die Instanz-URL
