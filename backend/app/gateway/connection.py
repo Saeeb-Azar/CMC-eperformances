@@ -902,9 +902,12 @@ class ConnectionManager:
                     Shipment.reference_id == ref,
                 ).order_by(Shipment.created_at.desc()).limit(1)
             )).scalar_one_or_none()
-            # Cache nur nutzen, wenn der Barcode zum AKTUELLEN Scan passt.
-            if cached and cached.tracking_number and (
-                not scanned_barcode or (cached.barcode or "") == scanned_barcode
+            # Cache NUR nutzen, wenn der Barcode zum AKTUELLEN Scan passt.
+            # Leerer Scan-Barcode (Tracker-Miss) darf KEINEN Cache-Treffer
+            # geben — sonst wird das letzte (womöglich fremde) Shipment der
+            # recycelten ref wiederverwendet.
+            if cached and cached.tracking_number and scanned_barcode and (
+                (cached.barcode or "") == scanned_barcode
             ):
                 response["match_barcode"] = cached.tracking_number
                 response["label_url"] = cached.label_b64 if get_settings().cmc_lab_label_mode == "base64" else ""
@@ -1046,7 +1049,11 @@ class ConnectionManager:
 
             # 1) Pulpo-Order finden (analog _try_pulpo_label) — sofern nicht
             #    bereits ein konkret gebundener Auftrag übergeben wurde.
+            #    NIE mit leerem Barcode suchen (cart_box_barcode=="" würde die
+            #    älteste fremde Single-Order treffen → falsche Adresse).
             if order is None:
+                if not barcode:
+                    return None
                 order = (await db.execute(
                     select(PulpoPackingOrder).where(
                         PulpoPackingOrder.tenant_id == tenant_id,
@@ -1212,7 +1219,20 @@ class ConnectionManager:
             dhl_runtime.precreate_last_msg = msg[:300]
             dhl_runtime.precreate_last_at = _dt.utcnow()
 
-        barcode = str(msg_data.get("barcode", "") or "").strip()
+        # IND-Frames tragen KEINEN Barcode — er kommt aus dem Tracker (am ENQ
+        # gesetzt). Ohne Barcode wird NICHT vorab erzeugt: ein leerer Barcode
+        # würde im Auftrags-Lookup cart_box_barcode=="" matchen und damit das
+        # Label der ÄLTESTEN fremden Single-Order vorab cachen (Leonard-Bug).
+        pkg = self._tracker.get_package(protocol_id, ref) or {}
+        barcode = str(
+            msg_data.get("barcode") or pkg.get("barcode") or ""
+        ).strip()
+        if not barcode:
+            logger.warning(
+                f"PRECREATE skip: ref={ref} ohne Barcode (Tracker-Miss?) — "
+                f"kein Vorab-Label, LAB1 entscheidet"
+            )
+            return
         logger.info(f"PRECREATE start: ref={ref} barcode={barcode} machine={protocol_id}")
         try:
             async with async_session() as db:
@@ -1319,7 +1339,11 @@ class ConnectionManager:
 
             # 1) Pulpo-PackingOrder zum Barcode finden (Multi-Box oder Single-EAN)
             #    — sofern nicht bereits ein konkret gebundener Auftrag übergeben.
+            #    NIE mit leerem Barcode suchen: cart_box_barcode=="" matcht JEDE
+            #    Single-Order → es käme immer die älteste fremde Order zurück.
             if order is None:
+                if not barcode:
+                    return None
                 order = (await db.execute(
                     select(PulpoPackingOrder).where(
                         PulpoPackingOrder.tenant_id == tenant_id,
@@ -1591,7 +1615,9 @@ class ConnectionManager:
                                 conn.protocol_id, barcode, now=now_ts,
                             ):
                                 is_duplicate = True
-                            elif barcode and self._tracker.is_active_barcode(machine_id, barcode):
+                            elif barcode and self._tracker.is_active_barcode(
+                                conn.protocol_id or machine_id, barcode,
+                            ):
                                 # Wiederaufnahme: dasselbe Paket läuft erneut über
                                 # den Scanner (z.B. ausgeworfen und neu aufgelegt,
                                 # bevor der erste Durchlauf terminiert ist). Wir
@@ -1780,7 +1806,17 @@ class ConnectionManager:
                         # event so future ENQ duplicate-checks see the truth.
                         if response and isinstance(msg_data, dict):
                             term_ref = str(response.get("reference_id", "") or "")
-                            self._tracker.apply(machine_id, msg_type, msg_data, term_ref)
+                            # WICHTIG: Tracker konsequent über die protocol_id
+                            # keyen (Fallback: Socket-Key). Vorher: apply() unter
+                            # dem Socket-Key ("machine_<ip>_<port>"), aber
+                            # get_package() in der LAB1-Anreicherung unter der
+                            # protocol_id → IMMER Miss → Barcode leer → der
+                            # Auftrags-Lookup matchte cart_box_barcode=="" und
+                            # traf damit stets die ÄLTESTE Single-Order (daher
+                            # „immer Leonard" auf dem Label).
+                            self._tracker.apply(
+                                conn.protocol_id or machine_id, msg_type, msg_data, term_ref,
+                            )
                             # CW-Slot-Buchführung: bei sauberem Abschluss behalten,
                             # bei Auswurf/Ablehnung zurückgeben — damit ein neu
                             # aufgelegtes Paket den Slot korrekt neu verbraucht.
@@ -1809,7 +1845,9 @@ class ConnectionManager:
                             except ValueError:
                                 current_seq = 0
                             if current_seq > 0:
-                                ejected = self._tracker.eject_stale_predecessors(machine_id, current_seq)
+                                ejected = self._tracker.eject_stale_predecessors(
+                                    conn.protocol_id or machine_id, current_seq,
+                                )
                                 for stale in ejected:
                                     # Verloren am Band → Slot zurückgeben.
                                     if conn.protocol_id:

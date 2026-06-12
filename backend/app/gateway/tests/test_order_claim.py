@@ -99,3 +99,29 @@ def test_no_candidate_returns_none():
             assert await cm._claim_pulpo_order(db, "0001", TENANT, "ref-x", "DOES-NOT-EXIST") is None
 
     asyncio.run(run())
+
+
+def test_empty_barcode_never_matches_an_order():
+    """Leerer Barcode (z.B. Tracker-Miss bei LAB1/IND) darf NIE eine Order
+    treffen — cart_box_barcode=='' würde sonst die älteste fremde Single-Order
+    liefern (der „Leonard"-Bug: immer dieselbe falsche Adresse aufs Label)."""
+    sm = _fresh_db()
+    cm = ConnectionManager()
+
+    async def run():
+        async with sm() as db:
+            await _seed_two_single_orders(db)  # beide mit cart_box_barcode=""
+            assert await cm._claim_pulpo_order(db, "0001", TENANT, "ref-x", "") is None
+            assert await cm._try_pulpo_label(db, TENANT, "") is None
+            assert await cm._resolve_pulpo_recipient(db, TENANT, "") is None
+
+    asyncio.run(run())
+
+
+def test_tracker_keyed_by_protocol_id_roundtrip():
+    """apply() und get_package() müssen denselben Schlüssel verwenden —
+    sonst ist der Barcode bei LAB1 leer (Ursache des Leonard-Bugs)."""
+    cm = ConnectionManager()
+    cm._tracker.apply("SIM-DEMO", "ENQ", {"barcode": "DEMO-X1", "event": "7"}, "ref-7")
+    pkg = cm._tracker.get_package("SIM-DEMO", "ref-7")
+    assert pkg is not None and pkg["barcode"] == "DEMO-X1"
