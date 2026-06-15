@@ -53,7 +53,11 @@ async def test_test_mode_returns_mock_without_network():
         length_mm=200, width_mm=150, height_mm=80, order_ref="ref0001",
     )
     assert r["tracking"].startswith("TEST-")
-    assert r["label_b64"] == ""
+    # Test-Modus rendert jetzt ein echtes Test-PDF (4x6) mit den Testdaten,
+    # damit der Demo-Durchlauf ein sichtbares Label hat — kein leeres Feld mehr.
+    assert r["label_format"] == "PDF"
+    import base64
+    assert base64.b64decode(r["label_b64"]).startswith(b"%PDF")
     assert r["raw"]["test_mode"] is True
 
 

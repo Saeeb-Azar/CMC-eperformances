@@ -24,7 +24,7 @@ verdrahtet/getestet werden, ohne dass DHL-Sendungen entstehen.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -170,7 +170,7 @@ class DhlClient:
         sender = sender or self._default_sender()
 
         if dhl_runtime.test_mode:
-            tracking = f"TEST-{datetime.utcnow().strftime('%y%m%d%H%M%S')}-{order_ref[:8]}"
+            tracking = f"TEST-{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S')}-{order_ref[:8]}"
             logger.info(
                 f"DHL test-mode: skip API call, mock tracking={tracking} "
                 f"(product={product}, weight={weight_g}g, dim={length_mm}x{width_mm}x{height_mm}mm)"
@@ -251,7 +251,7 @@ class DhlClient:
             resp = await self._client.post(f"{self.base_url}/orders", json=body, params=params)
         except httpx.HTTPError as e:
             dhl_runtime.last_error = f"network: {e}"
-            dhl_runtime.last_error_at = datetime.utcnow()
+            dhl_runtime.last_error_at = datetime.now(timezone.utc)
             raise DhlError(f"DHL request failed: {e}") from e
 
         if resp.status_code >= 400:
@@ -261,7 +261,7 @@ class DhlClient:
                 payload = resp.text
             msg = f"DHL /orders → HTTP {resp.status_code}"
             dhl_runtime.last_error = f"{msg}: {payload}"
-            dhl_runtime.last_error_at = datetime.utcnow()
+            dhl_runtime.last_error_at = datetime.now(timezone.utc)
             raise DhlError(msg, status_code=resp.status_code, payload=payload)
 
         data = resp.json()
@@ -273,10 +273,10 @@ class DhlClient:
         label_b64 = str(label.get("b64") or "")
         if not tracking:
             dhl_runtime.last_error = f"DHL response missing shipmentNo: {data}"
-            dhl_runtime.last_error_at = datetime.utcnow()
+            dhl_runtime.last_error_at = datetime.now(timezone.utc)
             raise DhlError("DHL response did not include shipmentNo", payload=data)
 
-        dhl_runtime.last_label_at = datetime.utcnow()
+        dhl_runtime.last_label_at = datetime.now(timezone.utc)
         dhl_runtime.last_label_tracking = tracking
         dhl_runtime.last_error = None
         return {

@@ -22,6 +22,16 @@ const LEVEL_BG: Record<string, string> = {
   DEBUG: '#f1f5f9', INFO: '#eff6ff', WARNING: '#fffbeb', ERROR: '#fef2f2', CRITICAL: '#fee2e2',
 };
 
+// Backend liefert UTC-ISO (…+00:00). Hier in DEUTSCHE Lokalzeit (Europe/Berlin)
+// umrechnen und HH:MM:SS.mmm anzeigen — vorher wurde die UTC-Zeit per
+// String-Slice roh übernommen (2 h Versatz im Sommer).
+function fmtLogTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(11, 23);
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+}
+
 export default function SystemLogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [level, setLevel] = useState<string>('ALLE');
@@ -139,7 +149,7 @@ export default function SystemLogsPage() {
           <div style={{ color: '#94a3b8', padding: 12 }}>Noch keine Logs (oder Filter zu eng).</div>
         ) : logs.map((e) => (
           <div key={e.id} style={{ display: 'flex', gap: 8, padding: '1px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            <span style={{ color: '#64748b', flexShrink: 0 }}>{e.timestamp.slice(11, 23)}</span>
+            <span style={{ color: '#64748b', flexShrink: 0 }}>{fmtLogTime(e.timestamp)}</span>
             <span style={{
               flexShrink: 0, fontWeight: 700, minWidth: 64, textAlign: 'center', borderRadius: 3,
               color: LEVEL_COLOR[e.level] ?? '#e2e8f0', background: LEVEL_BG[e.level] ?? '#1e293b',

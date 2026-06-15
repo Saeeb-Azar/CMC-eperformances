@@ -987,7 +987,7 @@ class ConnectionManager:
                     from app.modules.dhl.runtime import dhl_runtime as _dr
                     from datetime import datetime as _dt
                     _dr.last_error = f"LAB1 {ref}: keine Pulpo-Lieferadresse → abgelehnt"
-                    _dr.last_error_at = _dt.utcnow()
+                    _dr.last_error_at = _dt.now(timezone.utc)
                 except Exception:
                     pass
                 return
@@ -1169,7 +1169,7 @@ class ConnectionManager:
                 Shipment.reference_id == ref,
                 Shipment.barcode != barcode,
                 Shipment.printed_at.is_(None),
-            ).values(printed_at=_dt.utcnow(), print_error="superseded: reference_id recycelt")
+            ).values(printed_at=_dt.now(timezone.utc), print_error="superseded: reference_id recycelt")
         )
         # 2) Vorhandenes (ref, barcode) aktualisieren oder neu anlegen.
         sh = (await db.execute(
@@ -1217,7 +1217,7 @@ class ConnectionManager:
             dhl_runtime.precreate_total += 1
             if ok: dhl_runtime.precreate_ok += 1
             dhl_runtime.precreate_last_msg = msg[:300]
-            dhl_runtime.precreate_last_at = _dt.utcnow()
+            dhl_runtime.precreate_last_at = _dt.now(timezone.utc)
 
         # IND-Frames tragen KEINEN Barcode — er kommt aus dem Tracker (am ENQ
         # gesetzt). Ohne Barcode wird NICHT vorab erzeugt: ein leerer Barcode
@@ -1712,7 +1712,7 @@ class ConnectionManager:
                                         from app.modules.dhl.runtime import dhl_runtime
                                         from datetime import datetime as _dt
                                         dhl_runtime.last_error = f"LAB1 {ref_for_label}: timeout after 1.5s"
-                                        dhl_runtime.last_error_at = _dt.utcnow()
+                                        dhl_runtime.last_error_at = _dt.now(timezone.utc)
                                     except Exception: pass
                                 except Exception as e:
                                     # DHL liefert den Validation-Body als
@@ -1734,7 +1734,7 @@ class ConnectionManager:
                                         from app.modules.dhl.runtime import dhl_runtime
                                         from datetime import datetime as _dt
                                         dhl_runtime.last_error = f"LAB1 {ref_for_label}: {e!r}"
-                                        dhl_runtime.last_error_at = _dt.utcnow()
+                                        dhl_runtime.last_error_at = _dt.now(timezone.utc)
                                     except Exception: pass
                             # Nach erfolgreicher ENQ-Annahme: verbrauchten
                             # CW-Slot abbuchen und Glitch-Memo setzen.

@@ -129,7 +129,7 @@ async def get_print_queue(
     Label-Base64 enthalten (sonst nichts zu drucken)."""
     from datetime import datetime as _dt
     from sqlalchemy import or_
-    dhl_runtime.daemon_last_seen = _dt.utcnow()  # „Daemon lebt"-Marker für die UI
+    dhl_runtime.daemon_last_seen = _dt.now(timezone.utc)  # „Daemon lebt"-Marker für die UI
     # Nur noch NICHT-fehlerhafte Jobs automatisch ausliefern. Ein bereits
     # fehlgeschlagener Druck (print_error gesetzt) wird NICHT alle 2 s neu
     # versucht — das erzeugte sonst die PRINT_FAILED-Flut. Der Job bleibt in
@@ -243,9 +243,9 @@ async def mark_printed(
         # Auch in der DHL-Statuskarte sichtbar machen — Operator sieht's
         # ohne ins Protokoll wechseln zu müssen.
         dhl_runtime.last_error = f"Druck: {body.error[:300]}"
-        dhl_runtime.last_error_at = _dt.utcnow()
+        dhl_runtime.last_error_at = _dt.now(timezone.utc)
     else:
-        sh.printed_at = _dt.utcnow()
+        sh.printed_at = _dt.now(timezone.utc)
         sh.print_error = ""
         logger.info(
             f"PRINT OK: ref={sh.reference_id} tracking={sh.tracking_number}"
