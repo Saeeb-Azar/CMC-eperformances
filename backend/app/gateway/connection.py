@@ -62,6 +62,39 @@ SCAN_GLITCH_WINDOW_S = 0.5
 PULPO_LIST_NAME = "Pulpo-Queue"
 
 
+def _ship_to_usable(st: object) -> bool:
+    """True, wenn ``st`` ein ship_to mit brauchbarer Lieferadresse ist
+    (mind. Straße vorhanden)."""
+    return (
+        isinstance(st, dict)
+        and isinstance(st.get("address"), dict)
+        and bool(str(st["address"].get("street") or "").strip())
+    )
+
+
+def _extract_ship_to(obj: object) -> dict | None:
+    """Findet das ``ship_to`` (Pulpo-Address: name/company_name/phone_number +
+    address-Detail) in den verschiedenen Pulpo-Antwort-Formen — direkt, unter
+    ``sales_order`` oder wenn das Objekt selbst schon eine Adresse ist. Pulpo
+    zeigt genau diese Daten im „Detail → Adresse" eines Pack-/Verkaufsauftrags.
+    """
+    if not isinstance(obj, dict):
+        return None
+    for key in ("ship_to", "shipTo", "shipping_address", "delivery_address", "recipient"):
+        v = obj.get(key)
+        if _ship_to_usable(v):
+            return v
+    so = obj.get("sales_order")
+    if isinstance(so, dict):
+        st = _extract_ship_to(so)
+        if st:
+            return st
+    # Objekt ist selbst schon eine Address (hat address-Detail mit Straße).
+    if _ship_to_usable(obj):
+        return obj
+    return None
+
+
 class ActivePackageTracker:
     """In-memory mirror of active packages per machine.
 
@@ -1089,49 +1122,55 @@ class ConnectionManager:
 
             raw = order.raw_payload if isinstance(order.raw_payload, dict) else {}
 
-            # 2) Empfänger ZUERST aus dem lokalen raw_payload lesen
-            #    (sales_order.ship_to). Das deckt Demo-/Testaufträge ab (die
-            #    KEINE echte sales_order_id und keinen Pulpo-API-Zugriff haben)
-            #    und spart bei echten Aufträgen, deren Webhook-Payload ship_to
-            #    bereits mitbringt, einen API-Round-Trip. Nur wenn lokal nichts
-            #    Brauchbares steht, wird die Sales-Order von Pulpo nachgeladen.
-            ship_to = {}
-            local_st = (raw.get("sales_order") or {}).get("ship_to") if isinstance(raw.get("sales_order"), dict) else None
-            if isinstance(local_st, dict):
-                local_addr = local_st.get("address") if isinstance(local_st.get("address"), dict) else {}
-                if local_addr and str(local_addr.get("street") or "").strip() and str(local_addr.get("zip") or "").strip():
-                    ship_to = local_st
+            # 2) Empfänger ermitteln. Pulpo zeigt die Lieferadresse im
+            #    „Detail → Adresse" (= ship_to des Verkaufsauftrags). Wir
+            #    versuchen sie aus mehreren Quellen zu ziehen, in Reihenfolge:
+            #      a) lokales raw_payload (Webhook bringt ship_to oft mit),
+            #      b) Verkaufsauftrags-Detail  GET /sales/orders/{id},
+            #      c) Packauftrags-Detail      GET /packing/orders/{id}.
+            #    Die synchronisierte Queue-Order (/packing/orders?state=queue)
+            #    trägt nur sales_order_id — daher (b)/(c) als Nachladung.
+            is_test_order = str(order.pulpo_order_id or "").startswith("TEST-")
+            ship_to = _extract_ship_to(raw) or {}
 
-            if not ship_to:
-                # TEST-/Demo-Aufträge nie gegen die echte Pulpo-API auflösen.
-                if str(order.pulpo_order_id or "").startswith("TEST-"):
-                    return None
+            if not _ship_to_usable(ship_to) and not is_test_order:
                 sales_order_id = raw.get("sales_order_id")
-                if not sales_order_id:
-                    logger.warning(
-                        f"Pulpo recipient: Auftrag {order.pulpo_order_id} hat keine "
-                        f"sales_order_id im raw_payload → keine Adresse auflösbar"
+                if sales_order_id:
+                    so = await pulpo_client.get_sales_order(sales_order_id)
+                    st = _extract_ship_to(so) or (
+                        so.get("ship_to") if isinstance(so, dict) else None
                     )
-                    return None
-                # ECHTE Lieferadresse aus dem Verkaufsauftrags-DETAIL holen
-                # (Pulpo: GET /sales/orders/{id} → ship_to). Der Packauftrag
-                # selbst trägt KEIN ship_to, nur die sales_order_id.
-                so = await pulpo_client.get_sales_order(sales_order_id)
-                if not so:
-                    logger.warning(
-                        f"Pulpo recipient: Verkaufsauftrag {sales_order_id} nicht "
-                        f"abrufbar (Auftrag {order.pulpo_order_id}) → keine Adresse"
-                    )
-                    return None
-                ship_to = (so.get("ship_to") or {}) if isinstance(so, dict) else {}
-                logger.info(
-                    f"Pulpo recipient: ship_to aus Verkaufsauftrag {sales_order_id} "
-                    f"geladen (Auftrag {order.pulpo_order_id}, Name={ship_to.get('name')!r})"
-                )
+                    if _ship_to_usable(st):
+                        ship_to = st
+                        logger.info(
+                            f"Pulpo recipient: ship_to aus Verkaufsauftrag "
+                            f"{sales_order_id} (Auftrag {order.pulpo_order_id}, "
+                            f"Name={ship_to.get('name')!r})"
+                        )
 
-            addr = (ship_to.get("address") or {}) if isinstance(ship_to, dict) else {}
-            if not isinstance(addr, dict):
+                # Fallback: Packauftrags-Detail (Pulpo bettet die Adresse dort
+                # ein — genau die „Detail → Adresse"-Ansicht).
+                if not _ship_to_usable(ship_to):
+                    po = await pulpo_client.get_packing_order(order.pulpo_order_id)
+                    st = _extract_ship_to(po)
+                    if _ship_to_usable(st):
+                        ship_to = st
+                        logger.info(
+                            f"Pulpo recipient: ship_to aus Packauftrags-Detail "
+                            f"{order.pulpo_order_id} (Name={ship_to.get('name')!r})"
+                        )
+
+            if not _ship_to_usable(ship_to):
+                if is_test_order:
+                    return None
+                logger.warning(
+                    f"Pulpo recipient: KEINE Lieferadresse für Auftrag "
+                    f"{order.pulpo_order_id} (sales_order_id={raw.get('sales_order_id')}) "
+                    f"— weder lokal noch im Verkaufs-/Packauftrags-Detail"
+                )
                 return None
+
+            addr = ship_to.get("address") or {}
 
             # 3) Pflichtfelder prüfen
             street = str(addr.get("street") or "").strip()

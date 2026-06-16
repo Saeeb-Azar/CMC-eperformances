@@ -125,3 +125,28 @@ def test_tracker_keyed_by_protocol_id_roundtrip():
     cm._tracker.apply("SIM-DEMO", "ENQ", {"barcode": "DEMO-X1", "event": "7"}, "ref-7")
     pkg = cm._tracker.get_package("SIM-DEMO", "ref-7")
     assert pkg is not None and pkg["barcode"] == "DEMO-X1"
+
+
+def test_extract_ship_to_from_pulpo_shapes():
+    """Empfänger (Pulpo „Detail → Adresse") muss aus allen relevanten Formen
+    gezogen werden: direkt, unter sales_order, oder selbst eine Adresse."""
+    from app.gateway.connection import _extract_ship_to, _ship_to_usable
+
+    ship_to = {
+        "name": "Anselm Schöpf", "phone_number": "015209989152",
+        "address": {"street": "Mergentheimer Straße", "house_nr": "26",
+                    "zip": "97082", "city": "Würzburg", "country": "Germany",
+                    "email": "x@marketplace.amazon.de"},
+    }
+    # a) Verkaufsauftrag mit ship_to
+    so = {"id": 1, "order_num": "302-8456295", "ship_to": ship_to}
+    assert _extract_ship_to(so)["name"] == "Anselm Schöpf"
+    # b) Packauftrag, der den Verkaufsauftrag einbettet
+    po = {"id": 2, "sequence_number": "PA-0591431", "sales_order": so}
+    assert _extract_ship_to(po)["name"] == "Anselm Schöpf"
+    # c) Objekt ist selbst eine Adresse
+    assert _extract_ship_to(ship_to)["name"] == "Anselm Schöpf"
+    # d) Queue-Order ohne Adresse (nur sales_order_id) → None
+    assert _extract_ship_to({"id": 3, "sales_order_id": 70635709}) is None
+    assert _ship_to_usable(ship_to) is True
+    assert _ship_to_usable({"address": {"zip": "1"}}) is False  # keine Straße
