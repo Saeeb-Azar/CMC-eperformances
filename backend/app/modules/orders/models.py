@@ -106,6 +106,12 @@ class OrderState(Base):
     # Ejection reason
     ejection_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # Welcher KONKRETE Pulpo-Packauftrag wurde an diesen Scan gebunden? Die EINE
+    # Wahrheit für Label + Detailansicht + Auftragsliste — verhindert, dass die
+    # Ansichten den Barcode unabhängig (und bei mehrfachem Artikel-EAN
+    # unterschiedlich/falsch) auf einen anderen Auftrag auflösen.
+    pulpo_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
     # Timestamps for every station (timing analysis t0→t10)
     enq_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ind_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

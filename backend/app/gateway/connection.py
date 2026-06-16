@@ -919,6 +919,10 @@ class ConnectionManager:
             claimed_order = await self._claim_pulpo_order(
                 db, protocol_id, tenant_id, ref, scanned_barcode,
             )
+            # Den gebundenen Auftrag ans Event hängen → persist_event schreibt
+            # ihn auf den OrderState (EINE Wahrheit für alle Ansichten).
+            if claimed_order is not None and isinstance(msg_data, dict):
+                msg_data["pulpo_order_id"] = str(claimed_order.pulpo_order_id or "")
 
             # Im Test-Modus (Demo) bzw. für TEST-Aufträge NIE ein gecachtes oder
             # von Pulpo vorerzeugtes Label wiederverwenden — IMMER frisch aus den

@@ -267,6 +267,15 @@ async def _apply_event(
 
     prev_state = order.state
 
+    # Gebundenen Pulpo-Packauftrag mitschreiben, sobald die LAB1-Anreicherung
+    # ihn kennt (sie hängt ihn ans payload). EINE Wahrheit für Label,
+    # Detailansicht und Auftragsliste — kein erneutes, mehrdeutiges Barcode-
+    # Matching mehr (das bei mehrfach vorkommendem Artikel-EAN den falschen
+    # Auftrag traf).
+    _poid = payload.get("pulpo_order_id")
+    if _poid and hasattr(order, "pulpo_order_id"):
+        order.pulpo_order_id = str(_poid)
+
     if event_type == "IND":
         order.inducted = True
         order.ind_at = now

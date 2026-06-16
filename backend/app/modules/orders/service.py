@@ -181,8 +181,34 @@ async def list_orders(
                 if key not in ship_by_ref_bc and (seq or son):
                     ship_by_ref_bc[key] = (seq or "", son or "")
 
+        # HÖCHSTE Priorität: der an den Scan GEBUNDENE Pulpo-Auftrag
+        # (OrderState.pulpo_order_id). Das ist exakt der Auftrag, aus dem das
+        # Label entstand — kein mehrdeutiges Barcode-Matching mehr.
+        bound_ids = {
+            getattr(o, "pulpo_order_id", None) for o in orders
+            if getattr(o, "pulpo_order_id", None)
+        }
+        pulpo_by_id: dict[str, tuple[str, str]] = {}
+        if bound_ids:
+            res = await db.execute(
+                select(PulpoPackingOrder).where(
+                    PulpoPackingOrder.tenant_id == tenant_id,
+                    PulpoPackingOrder.pulpo_order_id.in_(bound_ids),
+                )
+            )
+            for p in res.scalars().all():
+                rp = p.raw_payload if isinstance(p.raw_payload, dict) else {}
+                sales = rp.get("sales_order") or {}
+                pulpo_by_id[p.pulpo_order_id] = (
+                    rp.get("sequence_number", ""),
+                    str(sales.get("order_num") or rp.get("sales_order_ref") or ""),
+                )
+
         for o in orders:
-            seq, son = pulpo_by_bc.get(o.barcode, ("", ""))
+            bound = getattr(o, "pulpo_order_id", None)
+            seq, son = pulpo_by_id.get(bound, ("", "")) if bound else ("", "")
+            if not seq and not son:
+                seq, son = pulpo_by_bc.get(o.barcode, ("", ""))
             if not seq and not son:
                 seq, son = ship_by_ref_bc.get((o.reference_id, o.barcode or ""), ("", ""))
             o.pulpo_sequence_number = seq  # type: ignore[attr-defined]

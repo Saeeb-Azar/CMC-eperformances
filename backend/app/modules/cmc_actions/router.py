@@ -281,9 +281,21 @@ async def package_details(
             "weight_g": sh.weight_g,
         }
 
-    # ── Pulpo-Packing-Order (über Barcode: cart_box oder Item-EAN) ──────
+    # ── Pulpo-Packing-Order ─────────────────────────────────────────────
+    # EINE Wahrheit: zuerst den an den Scan GEBUNDENEN Auftrag (os_row.
+    # pulpo_order_id — identisch mit dem, woraus das Label entstand). Nur wenn
+    # nichts gebunden ist (z.B. ältere Daten/ejected), fällt es auf den
+    # Barcode-Treffer zurück.
     po = None
-    if barcode:
+    bound_id = getattr(os_row, "pulpo_order_id", None) if os_row else None
+    if bound_id:
+        po = (await db.execute(
+            select(PulpoPackingOrder).where(
+                PulpoPackingOrder.tenant_id == tenant_id,
+                PulpoPackingOrder.pulpo_order_id == bound_id,
+            ).limit(1)
+        )).scalar_one_or_none()
+    if po is None and barcode:
         po = (await db.execute(
             select(PulpoPackingOrder).where(
                 PulpoPackingOrder.tenant_id == tenant_id,
@@ -297,44 +309,85 @@ async def package_details(
                 ).where(
                     PulpoPackingOrder.tenant_id == tenant_id,
                     PulpoOrderItem.ean == barcode,
-                ).limit(1)
+                ).order_by(PulpoPackingOrder.created_at).limit(1)
             )).scalar_one_or_none()
 
     pulpo_block = None
-    if po and isinstance(po.raw_payload, dict):
-        rp = po.raw_payload
+    if po is not None:
+        rp = po.raw_payload if isinstance(po.raw_payload, dict) else {}
         so = rp.get("sales_order") or {}
-        ship = so.get("ship_to") or {}
+
+        # Artikel aus den PERSISTIERTEN Items (zuverlässiger als raw_payload —
+        # cw_sync legt ean/product_name/quantity sauber ab).
+        item_rows = (await db.execute(
+            select(PulpoOrderItem).where(PulpoOrderItem.order_db_id == po.id)
+        )).scalars().all()
+        items = [{
+            "name": it.product_name or "",
+            "sku": str(it.product_id or ""),
+            "ean": it.ean or "",
+            "quantity": it.quantity or 1,
+            "weclapp_article_id": "",
+        } for it in item_rows]
+        if not items:
+            for it in (rp.get("items") or []):
+                prod = it.get("product") or {}
+                bcs = prod.get("barcodes") or []
+                items.append({
+                    "name": prod.get("name") or "", "sku": prod.get("sku") or "",
+                    "ean": (bcs[0] if bcs else ""),
+                    "quantity": it.get("requested_quantity") or it.get("quantity") or 1,
+                    "weclapp_article_id": str((prod.get("attributes") or {}).get("weclapp_article_id") or ""),
+                })
+
+        # Empfänger (Label): lokal → Verkaufsauftrags-Detail (Pulpo „Detail →
+        # Adresse") → als letzte Quelle die tatsächlich aufs Label gedruckte
+        # Adresse aus dem Shipment.
+        from app.gateway.connection import _extract_ship_to
+        ship = _extract_ship_to(rp) or {}
+        # Verkaufsauftrags-Detail nur abrufen, wenn lokal nichts da ist UND noch
+        # KEIN Label existiert (sonst nutzen wir die Shipment-Adresse unten —
+        # spart einen Pulpo-Call pro Modal-Poll bei fertigen Aufträgen).
+        if not ship and sh is None and not str(po.pulpo_order_id or "").startswith("TEST-"):
+            sid = rp.get("sales_order_id")
+            if sid:
+                try:
+                    from app.modules.pulpo.client import pulpo as _pc
+                    so_full = await _pc.get_sales_order(sid)
+                    ship = _extract_ship_to(so_full) or (
+                        so_full.get("ship_to") if isinstance(so_full, dict) else {}
+                    ) or {}
+                except Exception:
+                    ship = {}
         addr = ship.get("address") or {}
-        items = []
-        for it in (rp.get("items") or []):
-            prod = it.get("product") or {}
-            bcs = prod.get("barcodes") or []
-            items.append({
-                "name": prod.get("name") or "",
-                "sku": prod.get("sku") or "",
-                "ean": (bcs[0] if bcs else ""),
-                "quantity": it.get("requested_quantity") or it.get("quantity") or 1,
-                "weclapp_article_id": str((prod.get("attributes") or {}).get("weclapp_article_id") or ""),
+        recipient = {
+            "name": ship.get("name") or "",
+            "company": ship.get("company_name") or "",
+            "phone": ship.get("phone_number") or "",
+            "street": addr.get("street") or "",
+            "house_nr": addr.get("house_nr") or "",
+            "street2": addr.get("street2") or "",
+            "zip": addr.get("zip") or "",
+            "city": addr.get("city") or "",
+            "country": addr.get("country") or addr.get("country_code") or addr.get("country_alpha2") or "",
+            "email": addr.get("email") or "",
+        }
+        # Fallback: was wirklich aufs Label ging (Shipment-Empfänger).
+        if not recipient["name"] and sh is not None:
+            recipient.update({
+                "name": sh.recipient_name or "",
+                "zip": sh.recipient_zip or "",
+                "city": sh.recipient_city or "",
+                "country": sh.recipient_country or "",
             })
+
         pulpo_block = {
             "packing_order_number": rp.get("sequence_number") or "",  # „PA-…"
-            "packing_order_id": rp.get("id"),
+            "packing_order_id": rp.get("id") or po.pulpo_order_id,
             "sales_order_number": str(so.get("order_num") or rp.get("sales_order_ref") or ""),
             "shipment_method": rp.get("shipment_method_name") or so.get("shipment_method_name") or "",
-            "state": rp.get("state") or "",
-            "recipient": {
-                "name": ship.get("name") or "",
-                "company": ship.get("company_name") or "",
-                "phone": ship.get("phone_number") or "",
-                "street": addr.get("street") or "",
-                "house_nr": addr.get("house_nr") or "",
-                "street2": addr.get("street2") or "",
-                "zip": addr.get("zip") or "",
-                "city": addr.get("city") or "",
-                "country": addr.get("country") or addr.get("country_code") or "",
-                "email": addr.get("email") or "",
-            },
+            "state": rp.get("state") or po.state or "",
+            "recipient": recipient,
             "items": items,
         }
 
