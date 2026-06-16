@@ -1108,11 +1108,26 @@ class ConnectionManager:
                     return None
                 sales_order_id = raw.get("sales_order_id")
                 if not sales_order_id:
+                    logger.warning(
+                        f"Pulpo recipient: Auftrag {order.pulpo_order_id} hat keine "
+                        f"sales_order_id im raw_payload → keine Adresse auflösbar"
+                    )
                     return None
+                # ECHTE Lieferadresse aus dem Verkaufsauftrags-DETAIL holen
+                # (Pulpo: GET /sales/orders/{id} → ship_to). Der Packauftrag
+                # selbst trägt KEIN ship_to, nur die sales_order_id.
                 so = await pulpo_client.get_sales_order(sales_order_id)
                 if not so:
+                    logger.warning(
+                        f"Pulpo recipient: Verkaufsauftrag {sales_order_id} nicht "
+                        f"abrufbar (Auftrag {order.pulpo_order_id}) → keine Adresse"
+                    )
                     return None
                 ship_to = (so.get("ship_to") or {}) if isinstance(so, dict) else {}
+                logger.info(
+                    f"Pulpo recipient: ship_to aus Verkaufsauftrag {sales_order_id} "
+                    f"geladen (Auftrag {order.pulpo_order_id}, Name={ship_to.get('name')!r})"
+                )
 
             addr = (ship_to.get("address") or {}) if isinstance(ship_to, dict) else {}
             if not isinstance(addr, dict):
@@ -1123,6 +1138,11 @@ class ConnectionManager:
             zip_   = str(addr.get("zip") or "").strip()
             city   = str(addr.get("city") or "").strip()
             if not (street and zip_ and city):
+                logger.warning(
+                    f"Pulpo recipient: ship_to.address unvollständig für Auftrag "
+                    f"{order.pulpo_order_id} (street={street!r} zip={zip_!r} city={city!r}) "
+                    f"→ keine Adresse"
+                )
                 return None
 
             # ISO-Land normalisieren — DHL erwartet Alpha-3 (DEU/AUT/CHE…).
