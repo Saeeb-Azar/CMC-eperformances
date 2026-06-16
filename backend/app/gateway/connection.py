@@ -997,6 +997,19 @@ class ConnectionManager:
                     f"barcode={scanned_barcode} — Default-Testadresse"
                 )
 
+            # Pulpo-Auftragsnummern aus dem gebundenen Auftrag mitschreiben —
+            # damit die PA-/Verkaufsauftragsnummer in der Auftragsliste sichtbar
+            # bleibt, AUCH wenn der Auftrag später die Pack-Queue verlässt
+            # (sonst zeigt der Titel nur die reference_id „ref0001").
+            seq_num = sales_num = ""
+            if claimed_order is not None and isinstance(claimed_order.raw_payload, dict):
+                rp = claimed_order.raw_payload
+                seq_num = str(rp.get("sequence_number") or "")
+                sales_num = str(
+                    (rp.get("sales_order") or {}).get("order_num")
+                    or rp.get("sales_order_ref") or ""
+                )
+
             shipment = await create_label_for_order(
                 db, tenant_id=tenant_id, order_ref=ref,
                 order_state_id=None,
@@ -1004,6 +1017,8 @@ class ConnectionManager:
                 weight_g=weight_g, length_mm=length_mm,
                 width_mm=width_mm, height_mm=height_mm,
                 barcode=scanned_barcode,
+                pulpo_sequence_number=seq_num,
+                pulpo_sales_order_num=sales_num,
             )
             await db.commit()
 

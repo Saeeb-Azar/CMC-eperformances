@@ -34,6 +34,8 @@ async def create_label_for_order(
     height_mm: int,
     product: str | None = None,
     barcode: str = "",
+    pulpo_sequence_number: str = "",
+    pulpo_sales_order_num: str = "",
 ) -> Shipment:
     """Label erzeugen + persistieren. Idempotent über ``order_state_id``:
     existiert bereits eine Sendung für diesen OrderState, wird sie
@@ -79,6 +81,11 @@ async def create_label_for_order(
         label_b64=result["label_b64"],
         label_format=result["label_format"],
         is_test=dhl_runtime.test_mode,
+        # Pulpo-Refs persistieren, damit die Auftrags-/PA-Nummer in der
+        # Auftragsliste sichtbar bleibt, AUCH nachdem der Pulpo-Auftrag die
+        # Pack-Queue verlassen hat (Fallback-Quelle in orders.list_orders).
+        pulpo_sequence_number=pulpo_sequence_number or "",
+        pulpo_sales_order_num=pulpo_sales_order_num or "",
         raw_response=result.get("raw") or {},
     )
     db.add(shipment)
