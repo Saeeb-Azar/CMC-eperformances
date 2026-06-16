@@ -464,6 +464,15 @@ export default function LiveFlowPage() {
       ? Number(window.localStorage.getItem('cmc.clearCutoffId') || 0)
       : 0,
   );
+  // Zeit-Cutoff fürs „Tabelle geleert": Aufträge, die VOR dem Leeren erzeugt
+  // wurden, bleiben ausgeblendet — auch die aus der DB nachgeladenen. So
+  // verschwinden bereits gelaufene Aufträge nicht von selbst (sie bleiben in
+  // der DB und werden gepollt), lassen sich aber bewusst wegräumen.
+  const clearTsRef = useRef<number>(
+    typeof window !== 'undefined'
+      ? Number(window.localStorage.getItem('cmc.clearCutoffTs') || 0)
+      : 0,
+  );
 
   // Event polling
   useEffect(() => {
@@ -527,20 +536,37 @@ export default function LiveFlowPage() {
 
   // Persistierte Aufträge (DB) als Basis der Tabelle — gefiltert nach dem
   // aktuellen Modus: Test-Modus zeigt NUR Test-Aufträge, Produktiv NUR echte.
+  // WIRD GEPOLLT (nicht nur einmal): so bleiben bereits abgeschlossene Aufträge
+  // dauerhaft sichtbar — sie liegen in der DB (Status COMPLETED) und würden
+  // sonst aus der Tabelle „verschwinden", sobald sie aus dem Live-Event-Puffer
+  // fallen (nach Reload / Tabelle geleert).
   const [dbPackages, setDbPackages] = useState<PackageRow[]>([]);
   useEffect(() => {
     if (pulpoTestMode === null) return;
     let cancelled = false;
     const token = localStorage.getItem('access_token');
-    fetch(`${API_BASE}/api/v1/orders?limit=200${pulpoTestMode ? '&only_test=true' : ''}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: DbOrderRow[]) => {
-        if (!cancelled && Array.isArray(rows)) setDbPackages(rows.map(dbRowToPackage));
-      })
-      .catch(() => { /* Live-Stream funktioniert auch ohne Hydration */ });
-    return () => { cancelled = true; };
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/v1/orders?limit=200${pulpoTestMode ? '&only_test=true' : ''}`,
+          { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }, cache: 'no-store' },
+        );
+        if (!res.ok) return;
+        const rows: DbOrderRow[] = await res.json();
+        if (cancelled || !Array.isArray(rows)) return;
+        // Vor dem „Tabelle geleert"-Zeitpunkt erzeugte Aufträge ausblenden.
+        const cut = clearTsRef.current;
+        const kept = cut > 0
+          ? rows.filter((r) => new Date(r.enq_at ?? r.created_at).getTime() >= cut)
+          : rows;
+        setDbPackages(kept.map(dbRowToPackage));
+      } catch {
+        /* Live-Stream funktioniert auch ohne Hydration */
+      }
+    };
+    load();
+    const id = setInterval(load, 4000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [pulpoTestMode]);
 
   // All packages (across machines), used to compute per-machine stats.
@@ -747,10 +773,15 @@ export default function LiveFlowPage() {
     const ok = window.confirm(t('liveFlow.clearTableConfirm', { count }));
     if (!ok) return;
     setEvents([]);
+    setDbPackages([]);
     setSelectedRef(null);
     setPendingEjections({});
+    // Zeit-Cutoff merken: ab jetzt nur noch Aufträge zeigen, die NACH dem
+    // Leeren erzeugt werden — auch bei den aus der DB nachgeladenen Zeilen.
+    clearTsRef.current = Date.now();
     try {
       window.localStorage.setItem('cmc.clearCutoffId', String(sinceRef.current));
+      window.localStorage.setItem('cmc.clearCutoffTs', String(clearTsRef.current));
     } catch {
       // localStorage kann blockiert sein — Reload würde dann alte
       // Events wiedersehen, kein Beinbruch.
