@@ -10,10 +10,10 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Topbar from '../components/layout/Topbar';
 import PackageDetailsModal from '../components/PackageDetailsModal';
-import { api, type DemoStatus, type DemoRunRequest, type DemoRunResult } from '../services/api';
+import { api, type DemoStatus, type DemoRunRequest, type DemoRunResult, type DryRunResult } from '../services/api';
 import {
   FlaskConical, Play, Trash2, AlertTriangle, CheckCircle2, XCircle,
-  Truck, Eye, Loader2, RefreshCw,
+  Truck, Eye, Loader2, RefreshCw, ScanSearch,
 } from 'lucide-react';
 
 const DEFAULTS: DemoRunRequest = {
@@ -54,6 +54,24 @@ export default function DemoPage() {
   const [err, setErr] = useState('');
   const [showDetails, setShowDetails] = useState<string | null>(null);
   const [enabling, setEnabling] = useState(false);
+  // DRY-RUN (read-only Zuordnungs-Vorschau)
+  const [dryMachine, setDryMachine] = useState('SIM-DEMO');
+  const [dryBarcodes, setDryBarcodes] = useState('');
+  const [dryRunning, setDryRunning] = useState(false);
+  const [dryResults, setDryResults] = useState<DryRunResult[] | null>(null);
+  const [dryErr, setDryErr] = useState('');
+
+  const runDry = async () => {
+    const codes = dryBarcodes.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+    if (codes.length === 0) { setDryErr('Bitte mindestens einen Barcode eingeben.'); return; }
+    setDryRunning(true); setDryErr(''); setDryResults(null);
+    try {
+      const res = await api.demoDryRun(dryMachine.trim() || 'SIM-DEMO', codes);
+      setDryResults(res.results);
+    } catch (e) {
+      setDryErr(e instanceof Error ? e.message : String(e));
+    } finally { setDryRunning(false); }
+  };
 
   const loadStatus = async () => {
     try { setStatus(await api.demoStatus()); } catch (e) { /* ignore */ }
@@ -240,6 +258,73 @@ export default function DemoPage() {
             )}
           </div>
         )}
+
+        {/* ── DRY-RUN: Zuordnungs-Vorschau mit ECHTEN Pulpo-Daten ── */}
+        <div style={{ marginTop: 24, border: '1px solid var(--clr-border)', borderRadius: 12, padding: 16, background: '#fff' }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ScanSearch size={18} /> DRY-RUN · Zuordnungs-Vorschau
+          </h3>
+          <div style={{ fontSize: 12, color: 'var(--clr-text-muted)', marginBottom: 12 }}>
+            Prüft mit ECHTEN Pulpo-Daten, welcher Auftrag/welche Adresse/welches Label du bei diesen Scans bekämst —
+            <b> read-only, nichts wird gespeichert oder versendet.</b> Mehrere Barcodes (durch Leerzeichen/Komma/Zeile getrennt) = Reihenfolge wie am Band.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, alignItems: 'start' }}>
+            <Field label="Maschine (protocol_id)">
+              <input style={inputStyle} value={dryMachine} onChange={(e) => setDryMachine(e.target.value)} />
+            </Field>
+            <Field label="Barcodes (in Scan-Reihenfolge)">
+              <textarea style={{ ...inputStyle, minHeight: 60, fontFamily: 'var(--font-mono, monospace)' }}
+                placeholder="4005240040555&#10;4005240040555&#10;4005240040555"
+                value={dryBarcodes} onChange={(e) => setDryBarcodes(e.target.value)} />
+            </Field>
+          </div>
+          <button type="button" onClick={runDry} disabled={dryRunning}
+            style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: 'none', background: '#0f766e', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+            {dryRunning ? <Loader2 size={15} className="spin" /> : <ScanSearch size={15} />} Dry-Run prüfen
+          </button>
+          {dryErr && (
+            <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>{dryErr}</div>
+          )}
+          {dryResults && (
+            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {dryResults.map((r) => {
+                const ok = r.status === 'OK';
+                const reject = r.status === 'REJECT';
+                return (
+                  <div key={r.index} style={{ border: '1px solid var(--clr-border)', borderRadius: 10, padding: '10px 12px', background: reject ? '#fef2f2' : ok ? '#f0fdf4' : '#fffbeb' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+                      {ok ? <CheckCircle2 size={15} color="#059669" /> : reject ? <XCircle size={15} color="#dc2626" /> : <AlertTriangle size={15} color="#b45309" />}
+                      #{r.index} · {r.barcode || '—'}
+                      <span style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--clr-text-muted)' }}>{r.status}{r.reason ? ` · ${r.reason}` : ''}</span>
+                    </div>
+                    {ok && (
+                      <div style={{ marginTop: 6, fontSize: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                        <div><span style={{ color: 'var(--clr-text-muted)' }}>Auftrag (PA): </span><b>{r.packing_order}</b></div>
+                        <div><span style={{ color: 'var(--clr-text-muted)' }}>Verkaufsauftrag: </span>{r.sales_order || '—'}</div>
+                        <div><span style={{ color: 'var(--clr-text-muted)' }}>Artikel: </span>{r.article || '—'}</div>
+                        <div><span style={{ color: 'var(--clr-text-muted)' }}>Tracking: </span>{r.tracking}</div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <span style={{ color: 'var(--clr-text-muted)' }}>Empfänger: </span>
+                          <b>{r.recipient?.name}</b>{r.recipient ? `, ${[r.recipient.street, r.recipient.house_nr].filter(Boolean).join(' ')}, ${r.recipient.zip} ${r.recipient.city} (${r.recipient.country})` : ''}
+                        </div>
+                        {r.label_preview_b64 && (
+                          <div style={{ gridColumn: 'span 2', marginTop: 6 }}>
+                            <a href={`data:application/pdf;base64,${r.label_preview_b64}`} target="_blank" rel="noreferrer"
+                              style={{ color: '#0f766e', fontWeight: 600 }}>Label-Vorschau öffnen (PDF)</a>
+                            <span style={{ color: '#b45309' }}> · {r.note}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {r.status === 'BOUND_NO_ADDRESS' && (
+                      <div style={{ marginTop: 4, fontSize: 12, color: '#b45309' }}>Auftrag {r.packing_order} gebunden, aber keine Lieferadresse auflösbar.</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {showDetails && (

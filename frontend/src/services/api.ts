@@ -465,7 +465,27 @@ export const api = {
     request<{ ok: boolean; removed: { packing_orders: number; shipments: number; order_states: number } }>(
       '/demo/cleanup', { method: 'POST' },
     ),
+  // DRY-RUN: prüft mit echten Pulpo-Daten die Zuordnung — read-only, nichts gespeichert/versendet.
+  demoDryRun: (machine_id: string, barcodes: string[], cw_list = '') =>
+    request<DryRunResponse>('/demo/dry-run-scan', {
+      method: 'POST', body: JSON.stringify({ machine_id, barcodes, cw_list }),
+    }),
 };
+
+export interface DryRunResult {
+  index: number; scanned: string; barcode: string; reference_id: string;
+  cw_list?: string; status: string; reason?: string; note?: string;
+  packing_order?: string; sales_order?: string; pulpo_order_id?: string;
+  tracking?: string; article?: string; label_preview_b64?: string;
+  recipient?: {
+    name: string; street: string; house_nr: string; zip: string;
+    city: string; country: string; email: string; phone: string;
+  } | null;
+}
+export interface DryRunResponse {
+  ok: boolean; machine_id: string; count: number; note: string;
+  results: DryRunResult[];
+}
 
 export interface DemoStatus {
   pulpo_test_mode: boolean;

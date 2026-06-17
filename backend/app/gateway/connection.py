@@ -454,24 +454,36 @@ class ConnectionManager:
         """Den KONKRETEN Pulpo-Auftrag für genau diesen Scan (reference_id)
         zurückgeben — und ihn fest an die ``ref`` binden.
 
-        Hintergrund: Bei Single-Orders kann derselbe Artikel-Barcode mehrfach in
-        der CW-Liste stehen (N Aufträge, N verschiedene Empfänger). Ein einfacher
-        ``.limit(1)``-Lookup würde immer denselben (evtl. falschen) Auftrag
-        liefern. Stattdessen vergeben wir die Aufträge der Reihe nach: jeder Scan
-        bekommt den nächsten, noch nicht von einer anderen aktiven ``ref``
-        belegten Auftrag. So trägt jedes Label die richtige, eigene Adresse.
+        Wird im Read-Loop SYNCHRON bei ENQ aufgerufen (awaited, in Scan-
+        Reihenfolge). Precreate/LAB1 binden NICHT mehr selbst, sie lesen die
+        Bindung nur (``_bound_order_for_ref``).
 
-        Liefert den ``PulpoPackingOrder`` oder ``None`` (kein passender Auftrag).
+        Reservierungs-Wahrheit = PERSISTIERTE aktive OrderStates dieser Maschine
+        (inkl. ``FAILED`` → ein bereits gelabelter, aber in Pulpo nicht
+        abgeschlossener Auftrag wird nicht erneut gegriffen = keine Doppel-
+        Sendung; übersteht zudem einen Neustart). Die In-Memory-Map dient nur
+        als Sofort-Schutz innerhalb desselben Prozesses.
+
+        Kein „defensiver Fallback" mehr: sind alle Kandidaten reserviert, gibt
+        die Funktion ``None`` zurück → ENQ lehnt sauber ab (sichtbarer Reject
+        statt stillem Falsch-Label).
+
+        Liefert den ``PulpoPackingOrder`` oder ``None``.
         """
         from sqlalchemy import select, or_
         from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+        from app.modules.orders.models import OrderState
+        from app.modules.machines.models import Machine
 
         bound_map = self._ref_pulpo_order.setdefault(protocol_id, {})
         # Schon gebunden? Denselben Auftrag deterministisch zurückgeben.
         if ref in bound_map:
             oid = bound_map[ref]
             o = (await db.execute(
-                select(PulpoPackingOrder).where(PulpoPackingOrder.id == oid).limit(1)
+                select(PulpoPackingOrder).where(
+                    PulpoPackingOrder.tenant_id == tenant_id,
+                    PulpoPackingOrder.pulpo_order_id == oid,
+                ).limit(1)
             )).scalar_one_or_none()
             if o is not None:
                 return o
@@ -496,24 +508,252 @@ class ConnectionManager:
         if not rows:
             return None
 
-        # Aufträge, die bereits von ANDEREN aktiven Refs belegt sind, überspringen.
-        claimed = {oid for r, oid in bound_map.items() if r != ref}
+        # PERSISTIERTE Reservierungen (aktive States dieser Maschine, ohne die
+        # eigene ref). FAILED zählt bewusst mit.
+        reserved_rows = (await db.execute(
+            select(OrderState.pulpo_order_id)
+            .join(Machine, OrderState.machine_db_id == Machine.id)
+            .where(
+                Machine.machine_id == protocol_id,
+                OrderState.reference_id != ref,
+                OrderState.pulpo_order_id.isnot(None),
+                OrderState.state.in_(
+                    ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED", "FAILED")
+                ),
+            )
+        )).scalars().all()
+        reserved = {r for r in reserved_rows if r}
+        reserved |= {oid for r, oid in bound_map.items() if r != ref}
+
         for o in rows:
-            if o.id not in claimed:
-                bound_map[ref] = o.id
+            if o.pulpo_order_id not in reserved:
+                bound_map[ref] = o.pulpo_order_id
                 logger.info(
                     f"Auftrag gebunden: ref={ref} → pulpo_order={o.pulpo_order_id} "
-                    f"(barcode={barcode}, {len(rows)} Kandidat(en))"
+                    f"(barcode={barcode}, {len(rows)} Kandidat(en), "
+                    f"{len(reserved)} reserviert)"
                 )
                 return o
-        # Mehr Scans als Aufträge (sollte die CW-Mengenprüfung verhindern) —
-        # defensiv den ersten nehmen, statt eine falsche Default-Adresse.
-        bound_map[ref] = rows[0].id
+        # Alle Kandidaten reserviert → KEIN Auftrag (sauberer Reject in Patch 1).
         logger.warning(
             f"Auftragsbindung: alle {len(rows)} Kandidaten für barcode={barcode} "
-            f"belegt — ref={ref} nutzt ersten ({rows[0].pulpo_order_id})"
+            f"bereits reserviert — ref={ref} bekommt KEINEN Auftrag"
         )
-        return rows[0]
+        return None
+
+    async def _tenant_for(self, db, protocol_id: str) -> str:
+        """tenant_id der Maschine (Fallback: erster Tenant)."""
+        from sqlalchemy import select
+        from app.modules.machines.models import Machine
+        from app.modules.tenants.models import Tenant
+        m = (await db.execute(
+            select(Machine).where(Machine.machine_id == protocol_id).limit(1)
+        )).scalar_one_or_none()
+        if m and m.tenant_id:
+            return m.tenant_id
+        t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
+        return t.id if t else ""
+
+    async def _bind_order_state(self, db, protocol_id: str, ref: str, barcode: str, order):
+        """OrderState per (Maschine, ref) anlegen/aktualisieren: pulpo_order_id +
+        barcode setzen, State mindestens ASSIGNED. Die EINE Wahrheit, die später
+        Precreate/LAB1/Detailansicht/Auftragsliste lesen. Idempotent — der
+        asynchrone persist_event(ENQ) findet die Zeile danach (find-or-create)
+        und legt KEIN Duplikat an."""
+        from sqlalchemy import select
+        from app.modules.orders.models import OrderState
+        from app.modules.machines.models import Machine
+        m = (await db.execute(
+            select(Machine).where(Machine.machine_id == protocol_id).limit(1)
+        )).scalar_one_or_none()
+        if m is None:
+            return None
+        os_row = (await db.execute(
+            select(OrderState).where(
+                OrderState.machine_db_id == m.id,
+                OrderState.reference_id == ref,
+            ).order_by(OrderState.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if os_row is None:
+            m.enq_sequence = (m.enq_sequence or 0) + 1
+            os_row = OrderState(
+                tenant_id=m.tenant_id, machine_db_id=m.id, reference_id=ref,
+                barcode=barcode or ref, state="ASSIGNED",
+                enq_sequence=m.enq_sequence,
+                enq_at=datetime.now(timezone.utc),
+                is_test=pulpo_runtime.test_mode,
+            )
+            db.add(os_row)
+        if order is not None:
+            os_row.pulpo_order_id = order.pulpo_order_id
+        if barcode and not os_row.barcode:
+            os_row.barcode = barcode
+        return os_row
+
+    async def _bound_order_for_ref(self, db, protocol_id: str, ref: str):
+        """Den bei ENQ gebundenen PulpoPackingOrder zu (Maschine, ref) laden —
+        oder ``None``, wenn (noch) nicht gebunden. Precreate/LAB1 nutzen das,
+        statt selbst zu claimen."""
+        from sqlalchemy import select
+        from app.modules.orders.models import OrderState
+        from app.modules.machines.models import Machine
+        from app.modules.pulpo.models import PulpoPackingOrder
+        poid = (await db.execute(
+            select(OrderState.pulpo_order_id)
+            .join(Machine, OrderState.machine_db_id == Machine.id)
+            .where(Machine.machine_id == protocol_id, OrderState.reference_id == ref)
+            .order_by(OrderState.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if not poid:
+            return None
+        return (await db.execute(
+            select(PulpoPackingOrder).where(
+                PulpoPackingOrder.pulpo_order_id == poid
+            ).limit(1)
+        )).scalar_one_or_none()
+
+    async def _transfer_binding_on_resume(self, protocol_id: str, barcode: str, new_ref: str):
+        """Wiederaufnahme (Paket neu aufgelegt): die neue ``ref`` erbt die
+        bestehende Bindung des noch aktiven Pakets mit demselben Barcode — kein
+        neuer Slot, aber das Paket steht nicht ohne Auftrag da."""
+        from sqlalchemy import select
+        from app.core.database import async_session
+        from app.modules.orders.models import OrderState
+        from app.modules.machines.models import Machine
+        from app.modules.pulpo.models import PulpoPackingOrder
+        if not barcode:
+            return
+        async with async_session() as db:
+            poid = (await db.execute(
+                select(OrderState.pulpo_order_id)
+                .join(Machine, OrderState.machine_db_id == Machine.id)
+                .where(
+                    Machine.machine_id == protocol_id,
+                    OrderState.barcode == barcode,
+                    OrderState.reference_id != new_ref,
+                    OrderState.pulpo_order_id.isnot(None),
+                    OrderState.state.in_(("ASSIGNED", "INDUCTED", "SCANNED", "LABELED")),
+                )
+                .order_by(OrderState.created_at.desc()).limit(1)
+            )).scalar_one_or_none()
+            if not poid:
+                return
+            order = (await db.execute(
+                select(PulpoPackingOrder).where(
+                    PulpoPackingOrder.pulpo_order_id == poid
+                ).limit(1)
+            )).scalar_one_or_none()
+            if order is None:
+                return
+            await self._bind_order_state(db, protocol_id, new_ref, barcode, order)
+            await db.commit()
+            self._ref_pulpo_order.setdefault(protocol_id, {})[new_ref] = poid
+            logger.info(f"Resume: ref={new_ref} erbt Bindung pulpo_order={poid}")
+
+    async def dry_run_scan(
+        self, protocol_id: str, cw_list_name: str | None, barcodes: list[str],
+        *, session_factory=None,
+    ) -> list[dict]:
+        """DRY-RUN: zeigt mit ECHTEN Pulpo-Daten, welcher Auftrag/welche Adresse/
+        welches Label man bei diesen Scans BEKÄME — ohne irgendetwas zu
+        persistieren oder zu versenden.
+
+        Drei Sicherheitsriegel:
+          1) Pulpo-Write-Guard hart auf AUS → ein versehentlicher Write wirft
+             laut (statt still zu versenden).
+          2) DHL ersetzt durch den Vorschau-Renderer: kein Netzwerk-Call,
+             Tracking ``DRYRUN-####``, aber mit der ECHT aufgelösten Adresse.
+          3) Genau EINE Session, am Ende IMMER rollback() (try/finally) — kein
+             commit. Zwischen den Scans nur ``flush()`` (NICHT commit), damit der
+             nächste Scan in derselben Transaktion die Reservierung sieht und die
+             FIFO-Zuordnung A→B→C korrekt durchläuft.
+
+        Das prüft die Software-Zuordnung exakt — NICHT das physische Timing der
+        Maschine (Eject, Re-Induktion, verlorene Pakete). Der echte Beweis gegen
+        „versetzt" bleibt der Maschinenlauf mit dem Fix.
+        """
+        from app.modules.dhl.test_label import render_test_label_pdf
+        if session_factory is None:
+            from app.core.database import async_session as session_factory  # type: ignore
+
+        results: list[dict] = []
+        prev_write = pulpo_runtime.write_enabled
+        pulpo_runtime.write_enabled = False  # Riegel 1: Pulpo read-only erzwingen
+        db = session_factory()
+        try:
+            tenant_id = await self._tenant_for(db, protocol_id)
+            for i, raw in enumerate(barcodes):
+                bc = sanitize_barcode(str(raw or ""))
+                ref = f"DRYRUN-{i + 1:04d}"
+                entry: dict = {
+                    "index": i + 1, "scanned": str(raw), "barcode": bc,
+                    "reference_id": ref,
+                }
+                matched_list = None
+                if bc:
+                    matched_list, _fp, _ha = self.evaluate_cw_for_enq(protocol_id, bc)
+                entry["cw_list"] = matched_list or (cw_list_name or "")
+
+                if not bc:
+                    entry.update(status="REJECT", reason="leerer Barcode (NOREAD)")
+                    results.append(entry); continue
+
+                claimed = await self._claim_pulpo_order(db, protocol_id, tenant_id, ref, bc)
+                if claimed is None:
+                    entry.update(status="REJECT", reason="kein freier Auftrag → würde abgelehnt")
+                    results.append(entry); continue
+
+                # Bindung schreiben + flush (NICHT commit) → nächster Scan sieht sie.
+                await self._bind_order_state(db, protocol_id, ref, bc, claimed)
+                await db.flush()
+
+                rp = claimed.raw_payload if isinstance(claimed.raw_payload, dict) else {}
+                so = rp.get("sales_order") or {}
+                entry["pulpo_order_id"] = claimed.pulpo_order_id
+                entry["packing_order"] = rp.get("sequence_number") or claimed.pulpo_order_id
+                entry["sales_order"] = str(so.get("order_num") or rp.get("sales_order_ref") or "")
+                article = ""
+                for it in (rp.get("items") or []):
+                    prod = it.get("product") or {}
+                    article = prod.get("name") or ""
+                    if article:
+                        break
+
+                recipient = await self._resolve_pulpo_recipient(db, tenant_id, bc, order=claimed)
+                if recipient is None:
+                    entry.update(status="BOUND_NO_ADDRESS", recipient=None,
+                                 note="Auftrag gebunden, aber KEINE Lieferadresse auflösbar")
+                    results.append(entry); continue
+
+                entry["recipient"] = {
+                    "name": recipient.name, "street": recipient.street,
+                    "house_nr": recipient.street_no, "zip": recipient.zip_code,
+                    "city": recipient.city, "country": recipient.country,
+                    "email": recipient.email, "phone": recipient.phone,
+                }
+                tracking = f"DRYRUN-{i + 1:04d}"
+                label_b64 = render_test_label_pdf(
+                    tracking=tracking, order_ref=ref,
+                    recipient_name=recipient.name, recipient_street=recipient.street,
+                    recipient_house_no=recipient.street_no, recipient_zip=recipient.zip_code,
+                    recipient_city=recipient.city, recipient_country=recipient.country,
+                    product="VORSCHAU", article_name=article,
+                )
+                entry.update(
+                    status="OK", tracking=tracking, article=article,
+                    label_preview_b64=label_b64,
+                    note="VORSCHAU — kein echtes Label, keine Sendung, nichts gespeichert",
+                )
+                results.append(entry)
+            return results
+        finally:
+            # Riegel 3: NIEMALS committen.
+            try: await db.rollback()
+            except Exception: pass
+            try: await db.close()
+            except Exception: pass
+            pulpo_runtime.write_enabled = prev_write
+
 
     def is_scan_glitch(self, protocol_id: str, barcode: str, *, now: float) -> bool:
         """True wenn derselbe Barcode innerhalb des Glitch-Fensters
@@ -914,13 +1154,9 @@ class ConnectionManager:
             # falsches Tracking/Label + falsche/fehlende Pulpo-Refs).
             scanned_barcode = str(msg_data.get("barcode") or pkg.get("barcode") or "").strip()
 
-            # Genau EINEN Pulpo-Auftrag an diese ref binden (wichtig bei
-            # mehrfach vorkommendem Single-Order-Barcode → richtige Adresse).
-            claimed_order = await self._claim_pulpo_order(
-                db, protocol_id, tenant_id, ref, scanned_barcode,
-            )
-            # Den gebundenen Auftrag ans Event hängen → persist_event schreibt
-            # ihn auf den OrderState (EINE Wahrheit für alle Ansichten).
+            # Bindung wird NICHT mehr hier erzeugt — sie entstand synchron bei
+            # ENQ. LAB1 LIEST sie nur (eine Wahrheit, keine Race).
+            claimed_order = await self._bound_order_for_ref(db, protocol_id, ref)
             if claimed_order is not None and isinstance(msg_data, dict):
                 msg_data["pulpo_order_id"] = str(claimed_order.pulpo_order_id or "")
 
@@ -1344,11 +1580,15 @@ class ConnectionManager:
                     _note(True, f"ref={ref}: bereits vorhanden ({existing.tracking_number})")
                     return
 
-                # Konkreten Auftrag an diese ref binden (Single-Order-Mehrfach-
-                # Barcode → eindeutige Zuordnung, richtige Adresse/Label).
-                claimed_order = await self._claim_pulpo_order(
-                    db, protocol_id, tenant_id, ref, barcode,
-                )
+                # Precreate trifft KEINE Bindungsentscheidung mehr — die Bindung
+                # entstand synchron bei ENQ. Hier nur LESEN; ohne Bindung skip.
+                claimed_order = await self._bound_order_for_ref(db, protocol_id, ref)
+                if claimed_order is None:
+                    logger.warning(
+                        f"PRECREATE skip: ref={ref} ohne Bindung (ENQ-Claim fehlt?)"
+                    )
+                    _note(False, f"ref={ref}: keine Bindung — Precreate übersprungen")
+                    return
                 pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode, order=claimed_order)
                 if pulpo_hit:
                     tracking, label_b64 = pulpo_hit
@@ -1815,20 +2055,63 @@ class ConnectionManager:
                                         dhl_runtime.last_error_at = _dt.now(timezone.utc)
                                     except Exception: pass
                             # Nach erfolgreicher ENQ-Annahme: verbrauchten
-                            # CW-Slot abbuchen und Glitch-Memo setzen.
+                            # CW-Slot abbuchen UND den konkreten Pulpo-Auftrag
+                            # SOFORT, synchron, awaited binden. Scan-Reihenfolge
+                            # = Bindungs-Reihenfolge (Read-Loop ist je Verbindung
+                            # sequenziell) — kein Race über async Precreate mehr.
                             if (
                                 msg_type == "ENQ" and conn.protocol_id
                                 and response.get("result") == 1
                             ):
                                 bc = str(msg_data.get("barcode", "") or "").strip()
+                                ref_enq = str(response.get("reference_id", "") or "")
                                 # Wiederaufnahme verbraucht keinen neuen Slot.
                                 if matched_cw_list and filter_passed and not is_resume:
                                     if self.consume_cw_entry(conn.protocol_id, matched_cw_list, bc):
                                         self.record_cw_consumption(
-                                            conn.protocol_id,
-                                            str(response.get("reference_id", "") or ""),
-                                            matched_cw_list, bc,
+                                            conn.protocol_id, ref_enq, matched_cw_list, bc,
                                         )
+                                        try:
+                                            from app.core.database import async_session
+                                            async with async_session() as _db:
+                                                _tid = await self._tenant_for(_db, conn.protocol_id)
+                                                claimed = await self._claim_pulpo_order(
+                                                    _db, conn.protocol_id, _tid, ref_enq, bc,
+                                                )
+                                                if claimed is None:
+                                                    # Kein freier Auftrag → NICHT annehmen
+                                                    # (sonst Doppelbindung → versetzt). Slot
+                                                    # zurückgeben, sauber ablehnen.
+                                                    self.release_cw_for_ref(conn.protocol_id, ref_enq)
+                                                    response["result"] = 0
+                                                    response["item_validated"] = False
+                                                    response["rejection_reason"] = "no_free_order"
+                                                    if isinstance(msg_data, dict):
+                                                        msg_data["rejection_reason"] = "no_free_order"
+                                                    logger.warning(
+                                                        f"ENQ abgelehnt: ref={ref_enq} barcode={bc} "
+                                                        f"— kein freier Pulpo-Auftrag (no_free_order)"
+                                                    )
+                                                else:
+                                                    await self._bind_order_state(
+                                                        _db, conn.protocol_id, ref_enq, bc, claimed,
+                                                    )
+                                                    await _db.commit()
+                                                    if isinstance(msg_data, dict):
+                                                        msg_data["pulpo_order_id"] = str(claimed.pulpo_order_id or "")
+                                        except Exception as e:
+                                            logger.warning(
+                                                f"ENQ-Bindung fehlgeschlagen ref={ref_enq}: {e!r}"
+                                            )
+                                elif is_resume:
+                                    # Wiederaufnahme: Bindung der noch aktiven ref
+                                    # auf die neue ref übertragen (kein neuer Slot).
+                                    try:
+                                        await self._transfer_binding_on_resume(
+                                            conn.protocol_id, bc, ref_enq,
+                                        )
+                                    except Exception as e:
+                                        logger.warning(f"Resume-Bindungsübertrag fehlgeschlagen: {e!r}")
                                 self.record_scan(conn.protocol_id, bc, now=time.monotonic())
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)

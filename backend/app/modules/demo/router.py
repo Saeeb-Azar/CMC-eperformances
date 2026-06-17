@@ -135,6 +135,39 @@ def _build_raw_payload(req: DemoRunRequest, barcode: str, seq: str) -> dict:
     }
 
 
+class DryRunRequest(BaseModel):
+    machine_id: str = DEMO_MACHINE_ID   # protocol_id der Maschine
+    cw_list: str = ""                   # optional, nur fürs Tag
+    barcodes: list[str] = Field(default_factory=list, min_length=1)
+
+
+@router.post("/dry-run-scan")
+async def demo_dry_run_scan(
+    req: DryRunRequest,
+    user: dict = Depends(get_current_user),
+):
+    """DRY-RUN: simuliert die Auftrags-/Adress-/Label-Zuordnung für eine Liste
+    von Barcodes mit ECHTEN Pulpo-Daten — read-only, rollback-only, KEIN
+    DHL-Call. Zeigt pro Scan: erkannte CW-Liste, gebundener Auftrag (PA-/
+    Verkaufsauftragsnummer), Empfänger inkl. Adresse, Label-VORSCHAU (Base64);
+    bei Überzahl explizit „würde abgelehnt". Nichts wird gespeichert/versendet.
+
+    Hinweis: prüft die Software-Zuordnung, NICHT das physische Maschinen-Timing.
+    """
+    results = await connection_manager.dry_run_scan(
+        (req.machine_id or DEMO_MACHINE_ID).strip(),
+        req.cw_list.strip() or None,
+        list(req.barcodes),
+    )
+    return {
+        "ok": True,
+        "machine_id": (req.machine_id or DEMO_MACHINE_ID).strip(),
+        "count": len(results),
+        "note": "DRY-RUN — read-only, rollback-only, keine Sendung, keine Speicherung",
+        "results": results,
+    }
+
+
 @router.get("/status")
 async def demo_status(
     db: AsyncSession = Depends(get_db),
