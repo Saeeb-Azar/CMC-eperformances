@@ -198,28 +198,53 @@ async def manual_eject_package(
     return {"ok": True, "action": "MANUAL_EJECT", "reference_id": reference_id}
 
 
+@router.get("/by-state/{order_state_id}/details")
+async def package_details_by_state(
+    order_state_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Detailansicht über die EINDEUTIGE State-ID (stabiler Join-Schlüssel).
+    reference_id/Barcode sind NICHT eindeutig (recycelt, geteilte EANs) — diese
+    Route lädt garantiert das richtige Dokument und dessen eingefrorenes Label."""
+    tenant_id = user["tenant_id"]
+    os_row = (await db.execute(
+        select(OrderState).where(
+            OrderState.tenant_id == tenant_id,
+            OrderState.id == order_state_id,
+        ).limit(1)
+    )).scalar_one_or_none()
+    return await _assemble_package_details(db, tenant_id, os_row)
+
+
 @router.get("/{reference_id}/details")
 async def package_details(
     reference_id: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Aggregierte Voll-Detailansicht zu einem Paket — für die „Alle Infos"-
-    Vollbildansicht im Dashboard. Bündelt OrderState + DHL-Shipment (inkl.
-    Label-Base64 für die Vorschau) + Pulpo (PA-Nr, Verkaufsauftrag, Empfänger,
-    Artikel). Read-only, mandantengeschützt."""
-    from app.modules.dhl.models import Shipment
-    from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
-
+    """Wie oben, aber über reference_id (Anzeige-Label). NICHT eindeutig —
+    lädt das neueste Dokument der ref; das Frontend nutzt bevorzugt die
+    /by-state/-Route mit der eindeutigen ID."""
     tenant_id = user["tenant_id"]
-
-    # ── OrderState ──────────────────────────────────────────────────────
     os_row = (await db.execute(
         select(OrderState).where(
             OrderState.tenant_id == tenant_id,
             OrderState.reference_id == reference_id,
         ).order_by(OrderState.created_at.desc()).limit(1)
     )).scalar_one_or_none()
+    return await _assemble_package_details(db, tenant_id, os_row)
+
+
+async def _assemble_package_details(db: AsyncSession, tenant_id: str, os_row) -> dict:
+    """Baut die „Alle Infos"-Antwort aus EINEM State-Dokument: OrderState +
+    eingefrorenes DHL-Shipment (Label-Vorschau) + Pulpo (PA/Verkaufsauftrag/
+    Empfänger/Artikel). Quelle ist GENAU dieser OrderState — das Shipment wird
+    bevorzugt über order_state_id (eingefroren) geladen."""
+    from app.modules.dhl.models import Shipment
+    from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+
+    reference_id = (os_row.reference_id if os_row else "") or ""
     barcode = (os_row.barcode if os_row else "") or ""
 
     order_block = None
@@ -263,9 +288,18 @@ async def package_details(
             } if getattr(os_row, "recipient_name", None) else None,
         }
 
-    # ── DHL-Shipment (bevorzugt zum aktuellen Barcode, sonst neuester) ──
+    # ── DHL-Shipment: EINGEFROREN über order_state_id (eindeutig), sonst
+    #    Fallback (ref, barcode) → neuester per ref. So zeigt die Vorschau das
+    #    Label GENAU dieses State-Dokuments, nicht ein zuletzt geschriebenes.
     sh = None
-    if barcode:
+    if os_row is not None:
+        sh = (await db.execute(
+            select(Shipment).where(
+                Shipment.tenant_id == tenant_id,
+                Shipment.order_state_id == os_row.id,
+            ).order_by(Shipment.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+    if sh is None and barcode:
         sh = (await db.execute(
             select(Shipment).where(
                 Shipment.tenant_id == tenant_id,
@@ -410,6 +444,7 @@ async def package_details(
         }
 
     return {
+        "order_state_id": (os_row.id if os_row else None),
         "reference_id": reference_id,
         "barcode": barcode,
         "order": order_block,

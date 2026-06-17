@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
     cw_sync_task = asyncio.create_task(_cw_sync_loop())
     retention_task = asyncio.create_task(_retention_loop())
     online_sweep_task = asyncio.create_task(_online_sweep_loop())
+    replay_sweep_task = asyncio.create_task(_pulpo_replay_sweep_loop())
 
     yield
 
@@ -92,6 +93,7 @@ async def lifespan(app: FastAPI):
     cw_sync_task.cancel()
     retention_task.cancel()
     online_sweep_task.cancel()
+    replay_sweep_task.cancel()
     try:
         await connection_manager.shutdown()
     except Exception:
@@ -208,6 +210,50 @@ async def _cw_sync_loop() -> None:
             logger.warning(f"CW-sync loop iteration failed: {e}")
         try:
             await asyncio.sleep(settings.cw_sync_interval_s)
+        except asyncio.CancelledError:
+            break
+
+
+async def _pulpo_replay_sweep_loop() -> None:
+    """Sicherheitsnetz für den deferred Pulpo-Replay: greift periodisch jeden
+    abgeschlossenen Auftrag auf, der noch nicht zu Ende gespielt wurde
+    (state=COMPLETED, pulpo_replay_state=PENDING), und spielt ihn ab — gelockt
+    und idempotent (replay_to_pulpo). So erreicht JEDES END status=1 garantiert
+    PENDING -> DONE/FAILED, auch wenn der Sofort-Task verloren ging (Restart).
+    Best-effort; eine Iteration darf nie die App crashen."""
+    from sqlalchemy import select
+    from app.core.database import async_session
+    from app.modules.orders.models import OrderState
+    from app.modules.pulpo.replay import replay_to_pulpo
+
+    # kurzer Vorlauf, damit der Server vollständig hochgefahren ist
+    try:
+        await asyncio.sleep(20)
+    except asyncio.CancelledError:
+        return
+    while True:
+        try:
+            async with async_session() as db:
+                rows = (await db.execute(
+                    select(OrderState).where(
+                        OrderState.state == "COMPLETED",
+                        OrderState.pulpo_replay_state == "PENDING",
+                        OrderState.pulpo_order_id.isnot(None),
+                    ).order_by(OrderState.created_at.asc()).limit(20)
+                )).scalars().all()
+                for order in rows:
+                    try:
+                        res = await replay_to_pulpo(db, order)
+                        logger.info(
+                            f"Replay-Sweeper: ref={order.reference_id} "
+                            f"pulpo_order={order.pulpo_order_id} → {res.get('state')}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Replay-Sweeper Order {order.reference_id} failed: {e!r}")
+        except Exception as e:
+            logger.warning(f"Replay-Sweeper iteration failed: {e!r}")
+        try:
+            await asyncio.sleep(30)
         except asyncio.CancelledError:
             break
 

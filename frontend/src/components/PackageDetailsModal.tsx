@@ -31,8 +31,8 @@ function Card({ icon, title, accent, children }: {
   );
 }
 
-export default function PackageDetailsModal({ referenceId, onClose }: {
-  referenceId: string; onClose: () => void;
+export default function PackageDetailsModal({ referenceId, stateId, onClose }: {
+  referenceId: string; stateId?: string | null; onClose: () => void;
 }) {
   const [d, setD] = useState<PackageDetails | null>(null);
   const [err, setErr] = useState('');
@@ -42,7 +42,10 @@ export default function PackageDetailsModal({ referenceId, onClose }: {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await api.getPackageDetails(referenceId);
+        // Bevorzugt über die EINDEUTIGE State-ID (stabiler Join); sonst ref.
+        const res = stateId
+          ? await api.getPackageDetailsByState(stateId)
+          : await api.getPackageDetails(referenceId);
         if (!cancelled) { setD(res); setErr(''); }
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
@@ -53,7 +56,7 @@ export default function PackageDetailsModal({ referenceId, onClose }: {
     load();
     const id = setInterval(load, 2500); // live
     return () => { cancelled = true; clearInterval(id); };
-  }, [referenceId]);
+  }, [referenceId, stateId]);
 
   const pulpo = d?.pulpo, dhl = d?.dhl, order = d?.order;
   // Empfänger bevorzugt aus dem OrderState (= genau die ans Label gegangene

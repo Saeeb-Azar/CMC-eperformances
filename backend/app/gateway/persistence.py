@@ -205,11 +205,15 @@ async def _apply_event(
         return None, None
 
     if event_type == "ENQ":
-        # ENQ is the first touch — create a new order unless one already exists
+        # ENQ is the first touch — create a new order unless an ACTIVE one with
+        # this ref already exists. reference_id wird je Maschinen-Session
+        # recycelt; ein bereits TERMINALES Dokument (COMPLETED/EJECTED/DELETED/
+        # FAILED) desselben ref-Strings darf NICHT wiederverwendet/überschrieben
+        # werden (sonst trägt ein Dokument Daten zweier Pakete) → frisches Doku.
         barcode = payload.get("barcode", "") or ref or ""
         ref = ref or f"ref-{barcode or now.strftime('%H%M%S')}"
         existing = await _find_order(db, machine, ref)
-        if existing:
+        if existing and existing.state in ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED"):
             return existing, existing.state
         # Bump ENQ sequence on the machine
         machine.enq_sequence = (machine.enq_sequence or 0) + 1
@@ -355,6 +359,16 @@ async def _apply_event(
         # package — state EJECTED, not FAILED (process doc section 7 row #5).
         if status == 1:
             order.state = "COMPLETED"
+            # Deferred Pulpo-Replay DURABEL anstoßen: Absicht sofort in der DB
+            # festhalten (PENDING), damit der Replay-Sweeper sie GARANTIERT
+            # aufgreift, auch wenn der Sofort-Task verloren geht (Restart) — so
+            # bleibt nie ein fertiges Paket still in Pulpo offen. Nur wenn ein
+            # Auftrag gebunden ist und noch nichts gesetzt wurde.
+            if (
+                getattr(order, "pulpo_order_id", None)
+                and getattr(order, "pulpo_replay_state", "NONE") in (None, "NONE")
+            ):
+                order.pulpo_replay_state = "PENDING"
         else:
             order.state = "EJECTED"
             if not order.ejection_reason:

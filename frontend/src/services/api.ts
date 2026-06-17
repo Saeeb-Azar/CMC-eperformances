@@ -54,6 +54,7 @@ export function productImageUrl(ean: string): string {
 }
 
 export interface PackageDetails {
+  order_state_id: string | null;
   reference_id: string;
   barcode: string;
   order: null | {
@@ -411,6 +412,9 @@ export const api = {
   // Voll-Detailansicht zu einem Paket (DHL + Pulpo + Empfänger + Artikel).
   getPackageDetails: (ref: string) =>
     request<PackageDetails>(`/packages/${encodeURIComponent(ref)}/details`),
+  // Über die EINDEUTIGE State-ID laden (stabil, kein recyceltes ref/Barcode).
+  getPackageDetailsByState: (stateId: string) =>
+    request<PackageDetails>(`/packages/by-state/${encodeURIComponent(stateId)}/details`),
   setDhlSettings: (test_mode: boolean) =>
     request<{ ok: boolean; test_mode: boolean }>('/settings/dhl', {
       method: 'PUT', body: JSON.stringify({ test_mode }),

@@ -108,8 +108,12 @@ async def replay_to_pulpo(db: AsyncSession, order, *, is_retry: bool = False) ->
 
     if not pulpo_order_id:
         # Kein gebundener Pulpo-Auftrag → nichts zu finalisieren (z.B. Test-Demo).
-        logger.info(f"Replay skip: OrderState {order.reference_id} ohne pulpo_order_id")
-        result.update(ok=True, state=order.pulpo_replay_state, note="kein pulpo_order_id")
+        # TERMINAL setzen (DONE), sonst greift der Sweeper das endlos wieder auf.
+        logger.info(f"Replay skip: OrderState {order.reference_id} ohne pulpo_order_id → DONE")
+        if hasattr(order, "pulpo_replay_state") and order.pulpo_replay_state != "DONE":
+            order.pulpo_replay_state = "DONE"
+            await db.commit()
+        result.update(ok=True, state="DONE", note="kein pulpo_order_id")
         return result
 
     async with _lock_for(pulpo_order_id):

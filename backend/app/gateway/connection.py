@@ -607,6 +607,10 @@ class ConnectionManager:
                 OrderState.reference_id == ref,
             ).order_by(OrderState.created_at.desc()).limit(1)
         )).scalar_one_or_none()
+        # Recyceltes ref mit bereits TERMINALEM Dokument → NICHT überschreiben,
+        # sondern ein frisches Dokument (eigene enq_sequence) anlegen.
+        if os_row is not None and os_row.state not in ACTIVE_STATES:
+            os_row = None
         if os_row is None:
             m.enq_sequence = (m.enq_sequence or 0) + 1
             os_row = OrderState(
@@ -1204,6 +1208,20 @@ class ConnectionManager:
                 t = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
                 tenant_id = t.id if t else ""
 
+            # State-ID dieses Pakets — damit das erzeugte Shipment per
+            # order_state_id ans EINGEFRORENE State-Dokument gekoppelt wird
+            # (Vorschau lädt eindeutig, nicht über recycelte ref/Barcode).
+            os_state_id = None
+            if machine is not None:
+                from app.modules.orders.models import OrderState
+                _os = (await db.execute(
+                    select(OrderState).where(
+                        OrderState.machine_db_id == machine.id,
+                        OrderState.reference_id == ref,
+                    ).order_by(OrderState.created_at.desc()).limit(1)
+                )).scalar_one_or_none()
+                os_state_id = _os.id if _os is not None else None
+
             # ── Pre-Created Label aus DB lesen (Hot-Path #1) ───────────────
             # Wenn IND das Label schon erzeugt hat (Doku §6 Pre-Creation),
             # liegt es in der shipments-Tabelle bereit → kein API-Call.
@@ -1355,7 +1373,7 @@ class ConnectionManager:
 
             shipment = await create_label_for_order(
                 db, tenant_id=tenant_id, order_ref=ref,
-                order_state_id=None,
+                order_state_id=os_state_id,
                 recipient=recipient,
                 weight_g=weight_g, length_mm=length_mm,
                 width_mm=width_mm, height_mm=height_mm,

@@ -186,6 +186,7 @@ function currentStation(state: PackageState): StationKey {
 
 interface PackageRow {
   ref: string;
+  stateId?: string;   // eindeutige OrderState-ID (stabiler Detail-Join)
   machine_id?: string;
   barcode?: string;
   state: PackageState;
@@ -344,6 +345,7 @@ function aggregatePackages(events: RawEvent[]): PackageRow[] {
 // nach Test/Produktiv-Modus) als Basis geladen — Live-Events überlagern sie.
 
 interface DbOrderRow {
+  id: string;
   reference_id: string; barcode: string; state: string;
   machine_id: string; is_test: boolean;
   pulpo_sequence_number?: string; pulpo_sales_order_num?: string;
@@ -381,6 +383,7 @@ function dbRowToPackage(r: DbOrderRow): PackageRow {
     ? (r.state as PackageState) : 'ASSIGNED';
   return {
     ref: r.reference_id,
+    stateId: r.id,
     machine_id: r.machine_id || undefined,
     barcode: r.barcode || undefined,
     state,
@@ -586,6 +589,7 @@ export default function LiveFlowPage() {
       const d = dbByRef.get(p.ref);
       return d
         ? { ...p,
+            stateId: p.stateId ?? d.stateId,   // eindeutige ID aus der DB übernehmen
             pulpoSequenceNumber: p.pulpoSequenceNumber ?? d.pulpoSequenceNumber,
             pulpoSalesOrderNum: p.pulpoSalesOrderNum ?? d.pulpoSalesOrderNum }
         : p;
@@ -2512,7 +2516,7 @@ function FocusPanel({ pkg, onClose, onAction, nowTs }: FocusPanelProps) {
       </div>
 
       {showDetails && (
-        <PackageDetailsModal referenceId={pkg.ref} onClose={() => setShowDetails(false)} />
+        <PackageDetailsModal referenceId={pkg.ref} stateId={pkg.stateId} onClose={() => setShowDetails(false)} />
       )}
     </aside>
   );
