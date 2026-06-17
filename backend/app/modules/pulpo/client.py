@@ -530,6 +530,26 @@ class PulpoClient:
             params={"shipping_location_id": shipping_location_id},
         )
 
+    # ── Webhook-Registrierung (Brief Schritt 7) ───────────────────────────
+
+    async def register_webhook(
+        self, *, url: str, allowed_types: list[str],
+        method: str = "POST", warehouse_id: int | str | None = None,
+    ) -> Any:
+        """Registriert einen Pulpo-Webhook (``POST /webhook``). ``allowed_types``
+        z.B. ["packing_order_created","packing_order_finished","box_closed"].
+        Schreibvorgang → hinter dem Write-Guard.
+        TODO: Body-Felder gegen die echte Pulpo-Instanz bestätigen."""
+        self._require_writes()
+        body: dict[str, Any] = {"url": url, "method": method, "allowed_types": allowed_types}
+        if warehouse_id is not None:
+            body["warehouse_id"] = warehouse_id
+        return await self._request("POST", "/webhook", json=body)
+
+    async def list_webhooks(self) -> list[dict]:
+        """Registrierte Webhooks (``GET /webhook``) — read-only, zum Abgleich."""
+        return self._as_list(await self._request("GET", "/webhook"))
+
 
 # Singleton for the app. Reads settings at import time. Tests can swap it:
 #   from app.modules.pulpo import client; client.pulpo = PulpoClient(transport=...)

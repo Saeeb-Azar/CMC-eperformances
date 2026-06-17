@@ -112,6 +112,16 @@ class OrderState(Base):
     # unterschiedlich/falsch) auf einen anderen Auftrag auflösen.
     pulpo_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
+    # Deferred-Write-Replay nach Pulpo (Doku §5): während des Bandlaufs wird in
+    # Pulpo NUR gelesen; alle Schreibvorgänge werden gesammelt und EINMAL bei
+    # END status=1 abgespielt (accept→box→label→finish→close), atomar/idempotent.
+    #   pulpo_replay_state: NONE | PENDING | DONE | FAILED
+    #   pulpo_box_id:       in Pulpo angelegte Box (Idempotenz: nicht doppelt anlegen)
+    #   pulpo_replay_error: letzter Fehlertext bei FAILED (Payload bleibt erhalten)
+    pulpo_replay_state: Mapped[str] = mapped_column(String(20), default="NONE", index=True)
+    pulpo_box_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pulpo_replay_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Timestamps for every station (timing analysis t0→t10)
     enq_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ind_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

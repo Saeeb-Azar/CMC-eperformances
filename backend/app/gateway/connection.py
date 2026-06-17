@@ -541,6 +541,34 @@ class ConnectionManager:
         )
         return None
 
+    async def _replay_pulpo_on_end(self, protocol_id: str, ref: str) -> None:
+        """Hintergrund-Task nach END status=1: gesammelte Schreibvorgänge EINMAL
+        nach Pulpo abspielen (gelockt + idempotent, siehe pulpo/replay.py).
+        Eigene Session; blockiert die END-Antwort nicht."""
+        try:
+            # Kurz warten, bis der asynchrone END-Persist (state→COMPLETED) sicher
+            # committet ist — sonst könnte er ein vom Replay gesetztes FAILED
+            # wieder mit COMPLETED überschreiben (beide laufen als Task nach END).
+            await asyncio.sleep(1.5)
+            from sqlalchemy import select
+            from app.core.database import async_session
+            from app.modules.orders.models import OrderState
+            from app.modules.machines.models import Machine
+            from app.modules.pulpo.replay import replay_to_pulpo
+            async with async_session() as db:
+                order = (await db.execute(
+                    select(OrderState)
+                    .join(Machine, OrderState.machine_db_id == Machine.id)
+                    .where(Machine.machine_id == protocol_id, OrderState.reference_id == ref)
+                    .order_by(OrderState.created_at.desc()).limit(1)
+                )).scalar_one_or_none()
+                if order is None:
+                    logger.warning(f"Pulpo-Replay: kein OrderState für ref={ref}")
+                    return
+                await replay_to_pulpo(db, order)
+        except Exception as e:
+            logger.warning(f"Pulpo-Replay-Task für ref={ref} fehlgeschlagen: {e!r}")
+
     async def _tenant_for(self, db, protocol_id: str) -> str:
         """tenant_id der Maschine (Fallback: erster Tenant)."""
         from sqlalchemy import select
@@ -2186,6 +2214,13 @@ class ConnectionManager:
                                 if msg_type == "END":
                                     if str(msg_data.get("status")) in ("1",):
                                         self.finalize_cw_for_ref(pid, term_ref)
+                                        # Deferred-Write-Replay nach Pulpo (Doku §5):
+                                        # genau EINMAL bei END status=1. Hintergrund-
+                                        # Task → END-Ack wird nicht blockiert; der
+                                        # Replay läuft gelockt + idempotent.
+                                        asyncio.create_task(
+                                            self._replay_pulpo_on_end(pid, term_ref)
+                                        )
                                     else:
                                         self.release_cw_for_ref(pid, term_ref)
                                 elif msg_type == "REM":

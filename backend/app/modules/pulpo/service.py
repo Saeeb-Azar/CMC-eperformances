@@ -138,6 +138,51 @@ async def handle_packing_order_created(db: AsyncSession, raw_payload: dict) -> d
     return {"ok": True, "stored": True, "is_new": is_new, "order_id": order.id}
 
 
+async def handle_box_closed(db: AsyncSession, raw_payload: dict) -> dict:
+    """„Manual Pack Race"-Schutz (cmc-process-doc §5 / Brief Schritt 7).
+
+    Pulpo meldet, dass eine Box geschlossen wurde (z.B. manueller Packplatz).
+    Läuft dieselbe Order GERADE auf der Maschine (aktiver OrderState in
+    ASSIGNED/INDUCTED/SCANNED/LABELED), darf NICHT zusätzlich ein Label erzeugt
+    werden — die Maschine macht das. Sonst (kein aktiver Maschinen-State) wäre
+    es ein reiner Manuell-Pack; dort würde ein Label erzeugt.
+
+    Aktuell: SKIP-Erkennung + klares Logging/Ergebnis. Die Label-Erzeugung für
+    reine Manuell-Packs ist ein eigener Pfad (TODO) — sie erfordert die volle
+    Nicht-Maschinen-Label-Pipeline und ist hier bewusst noch nicht verdrahtet.
+    """
+    from app.modules.orders.models import OrderState
+
+    order_payload = _extract_order_payload(raw_payload)
+    pulpo_order_id = _first(
+        order_payload, "packing_order_id", "id", "order_id",
+    ) or _first(raw_payload, "packing_order_id")
+    tenant_id = _tenant_id_from(raw_payload) or await _get_default_tenant_id(db)
+    if not pulpo_order_id:
+        return {"ok": True, "skip_label": False, "reason": "missing packing_order_id"}
+
+    active = (await db.execute(
+        select(OrderState.id).where(
+            OrderState.tenant_id == tenant_id,
+            OrderState.pulpo_order_id == str(pulpo_order_id),
+            OrderState.state.in_(("ASSIGNED", "INDUCTED", "SCANNED", "LABELED")),
+        ).limit(1)
+    )).first()
+
+    if active:
+        logger.info(
+            f"box_closed: Order {pulpo_order_id} läuft auf der Maschine — "
+            f"Label-Erzeugung übersprungen (Race-Schutz)"
+        )
+        return {"ok": True, "skip_label": True, "reason": "active machine state"}
+
+    logger.info(
+        f"box_closed: Order {pulpo_order_id} ohne aktiven Maschinen-State — "
+        f"reiner Manuell-Pack (Label-Erzeugung: TODO)"
+    )
+    return {"ok": True, "skip_label": False, "reason": "manual pack (no active machine state)"}
+
+
 async def handle_packing_order_finished(db: AsyncSession, raw_payload: dict) -> dict:
     """Markiert eine Packing-Order als „closed" (= nicht mehr im Cache
     matchbar). Pulpo schickt das wenn die Order anderswo erledigt wurde

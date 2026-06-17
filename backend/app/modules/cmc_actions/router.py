@@ -398,3 +398,43 @@ async def package_details(
         "dhl": dhl_block,
         "pulpo": pulpo_block,
     }
+
+
+@router.post("/{reference_id}/pulpo-retry")
+async def pulpo_retry(
+    reference_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Dashboard-Retry für einen FAILED-Auftrag: die deferred Pulpo-Sequenz
+    (accept→box→label→finish→close) mit dem BEREITS gespeicherten Tracking erneut
+    abspielen — idempotent, KEIN zweiter Carrier-Call. Erfolg → COMPLETED und als
+    „manuell aufgelöst" markiert."""
+    from datetime import datetime, timezone
+    from app.modules.pulpo.replay import replay_to_pulpo
+
+    tenant_id = user["tenant_id"]
+    order = (await db.execute(
+        select(OrderState).where(
+            OrderState.tenant_id == tenant_id,
+            OrderState.reference_id == reference_id,
+        ).order_by(OrderState.created_at.desc()).limit(1)
+    )).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail="OrderState nicht gefunden")
+
+    res = await replay_to_pulpo(db, order, is_retry=True)
+    if res.get("ok"):
+        order.failure_resolved = True
+        order.resolved_by = user.get("id") or user.get("email") or "operator"
+        order.resolved_at = datetime.now(timezone.utc)
+        order.resolution_reason = "Pulpo-Replay manuell erneut ausgelöst"
+        await db.commit()
+    return {
+        "ok": bool(res.get("ok")),
+        "reference_id": reference_id,
+        "pulpo_replay_state": order.pulpo_replay_state,
+        "steps": res.get("steps", []),
+        "error": res.get("error"),
+        "simulated": res.get("simulated", False),
+    }

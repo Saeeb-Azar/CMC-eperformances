@@ -126,7 +126,10 @@ async def webhook_box_closed(
         raise HTTPException(status_code=401, detail="invalid signature")
     payload = _parse_json(raw)
     logger.info(f"Pulpo box_closed received: {payload!r}")
-    return {"ok": True, "noted": True}
+    async for db in get_db():
+        result = await service.handle_box_closed(db, payload)
+        await db.commit()
+        return {"ok": True, "noted": True, **result}
 
 
 def _parse_json(raw: bytes) -> dict[str, Any]:
@@ -185,7 +188,7 @@ async def webhook_dispatch(
             result = await service.handle_packing_order_finished(db, payload)
             await cw_sync.sync_cw_lists_from_cache(db)
         elif "box_closed" in event:  # covers box_closed / packing_box_closed
-            result = {"ok": True, "noted": True, "event": event}
+            result = {"event": event, **await service.handle_box_closed(db, payload)}
         else:
             result = {"ok": True, "ignored": True, "event": event or "unknown"}
         await db.commit()
