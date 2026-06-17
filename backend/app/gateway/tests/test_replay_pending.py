@@ -82,7 +82,36 @@ def test_end_status1_without_binding_stays_none():
     asyncio.run(run())
 
 
+def test_clean_completed_clears_stale_reject_fields():
+    # Ein altes ejection_reason (z.B. 'manual: …') darf an einem sauberen
+    # COMPLETED nicht hängenbleiben (sonst falsche Anzeige in „Alle Infos").
+    sm = _fresh_db()
+
+    async def run():
+        async with sm() as db:
+            m = await _setup(db, pulpo_order_id="PO-9")
+            o = (await db.execute(
+                select(OrderState).where(OrderState.reference_id == "ref0001")
+            )).scalar_one()
+            o.ejection_reason = "manual: Testauswurf"
+            o.resolution_reason = "irgendwas"
+            o.failure_resolved = True
+            await db.commit()
+            await _apply_event(db, m, "END", {"reference_id": "ref0001", "status": "1"})
+            await db.commit()
+            o2 = (await db.execute(
+                select(OrderState).where(OrderState.reference_id == "ref0001")
+            )).scalar_one()
+            assert o2.state == "COMPLETED"
+            assert o2.ejection_reason is None
+            assert o2.resolution_reason is None
+            assert o2.failure_resolved is False
+
+    asyncio.run(run())
+
+
 if __name__ == "__main__":  # pragma: no cover
     test_end_status1_sets_replay_pending_when_bound()
     test_end_status1_without_binding_stays_none()
+    test_clean_completed_clears_stale_reject_fields()
     print("OK")

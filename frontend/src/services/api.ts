@@ -86,6 +86,10 @@ export interface PackageDetails {
     };
     items: Array<{ name: string; sku: string; ean: string; quantity: number; weclapp_article_id: string }>;
   };
+  plausibility?: null | {
+    expected_weight_g: number | null; measured_weight_g: number | null;
+    warn: boolean; note: string;
+  };
 }
 
 // ── Types ────────────────────────────────────────────────────────────────

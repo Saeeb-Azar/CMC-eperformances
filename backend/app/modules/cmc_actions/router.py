@@ -443,6 +443,33 @@ async def _assemble_package_details(db: AsyncSession, tenant_id: str, os_row) ->
             "items": items,
         }
 
+    # ── Plausibilitäts-WARNUNG (nur Anzeige, KEIN Auswurf) ──────────────
+    # Gemessenes Gewicht vs. erwartetes Inhaltsgewicht aus den Pulpo-Produkten
+    # (kg→g, * Menge). Karton wiegt mit → nur GROBE Abweichung flaggen, damit
+    # keine Fehlalarme. Maße bewusst NICHT geprüft (Karton ist größer als Inhalt).
+    plausibility = None
+    if po is not None and os_row is not None:
+        rp_p = po.raw_payload if isinstance(po.raw_payload, dict) else {}
+        exp_g = 0.0
+        for it in (rp_p.get("items") or []):
+            prod = it.get("product") or {}
+            w = prod.get("weight")
+            qty = it.get("requested_quantity") or it.get("quantity") or 1
+            if isinstance(w, (int, float)):
+                exp_g += float(w) * 1000.0 * float(qty or 1)
+        meas_g = os_row.final_weight_g or os_row.lab1_weight_scale
+        warn, note = False, ""
+        if exp_g > 0 and meas_g:
+            diff = meas_g - exp_g
+            if abs(diff) > 30 and abs(diff) / exp_g > 0.5:
+                warn = True
+                note = (f"Gewicht {meas_g} g weicht stark vom erwarteten Inhalt "
+                        f"~{round(exp_g)} g ab — bitte Inhalt prüfen")
+        plausibility = {
+            "expected_weight_g": round(exp_g) if exp_g else None,
+            "measured_weight_g": meas_g, "warn": warn, "note": note,
+        }
+
     return {
         "order_state_id": (os_row.id if os_row else None),
         "reference_id": reference_id,
@@ -450,6 +477,7 @@ async def _assemble_package_details(db: AsyncSession, tenant_id: str, os_row) ->
         "order": order_block,
         "dhl": dhl_block,
         "pulpo": pulpo_block,
+        "plausibility": plausibility,
     }
 
 

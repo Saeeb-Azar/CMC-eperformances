@@ -177,6 +177,14 @@ export default function PackageDetailsModal({ referenceId, stateId, onClose }: {
                   />
                   <Row label="Gewicht" value={(order?.weight_g ?? dhl?.weight_g) ? `${order?.weight_g ?? dhl?.weight_g} g` : '—'} />
                   {order?.rejection_reason && <Row label="Reject-Grund" value={<span style={{ color: '#dc2626' }}>{order.rejection_reason}</span>} />}
+                  {d?.plausibility?.warn && (
+                    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12 }}>
+                      ⚠ {d.plausibility.note}
+                      {d.plausibility.expected_weight_g != null && (
+                        <span> (erwartet ~{d.plausibility.expected_weight_g} g)</span>
+                      )}
+                    </div>
+                  )}
                 </Card>
 
                 {order?.pulpo_order_id && (

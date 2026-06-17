@@ -359,6 +359,12 @@ async def _apply_event(
         # package — state EJECTED, not FAILED (process doc section 7 row #5).
         if status == 1:
             order.state = "COMPLETED"
+            # Sauberer Durchlauf → evtl. veraltete Reject-/Resolution-Felder
+            # leeren (sonst zeigt „Alle Infos" einen alten „Reject-Grund"
+            # wie 'manual: …' / 'skipped_…' an einem COMPLETED-Paket).
+            order.ejection_reason = None
+            order.resolution_reason = None
+            order.failure_resolved = False
             # Deferred Pulpo-Replay DURABEL anstoßen: Absicht sofort in der DB
             # festhalten (PENDING), damit der Replay-Sweeper sie GARANTIERT
             # aufgreift, auch wenn der Sofort-Task verloren geht (Restart) — so
