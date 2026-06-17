@@ -242,6 +242,13 @@ async def package_details(
             "weight_g": weight_g,
             "rejection_reason": os_row.ejection_reason,
             "created_at": os_row.created_at.isoformat() if os_row.created_at else None,
+            # Pulpo deferred-write-Replay (Doku §5): Status + Fehlertext sichtbar
+            # machen, damit man bei „physisch raus, Pulpo offen" sofort sieht,
+            # an welchem Schritt es mit welchem (422-)Body abbrach.
+            "pulpo_order_id": getattr(os_row, "pulpo_order_id", None),
+            "pulpo_replay_state": getattr(os_row, "pulpo_replay_state", None),
+            "pulpo_replay_error": getattr(os_row, "pulpo_replay_error", None),
+            "pulpo_box_id": getattr(os_row, "pulpo_box_id", None),
         }
 
     # ── DHL-Shipment (bevorzugt zum aktuellen Barcode, sonst neuester) ──

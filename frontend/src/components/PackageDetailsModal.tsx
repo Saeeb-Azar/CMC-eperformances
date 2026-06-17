@@ -174,6 +174,28 @@ export default function PackageDetailsModal({ referenceId, onClose }: {
                   {order?.rejection_reason && <Row label="Reject-Grund" value={<span style={{ color: '#dc2626' }}>{order.rejection_reason}</span>} />}
                 </Card>
 
+                {order?.pulpo_order_id && (
+                  <Card icon={<Package size={16} />} title="Pulpo-Abschluss (Rückschreiben)" accent={order?.pulpo_replay_state === 'FAILED' ? '#dc2626' : order?.pulpo_replay_state === 'DONE' ? '#059669' : '#64748b'}>
+                    <Row label="Status" value={
+                      <span style={{
+                        fontWeight: 700,
+                        color: order?.pulpo_replay_state === 'FAILED' ? '#dc2626'
+                          : order?.pulpo_replay_state === 'DONE' ? '#059669' : '#475569',
+                      }}>{order?.pulpo_replay_state || 'NONE'}</span>
+                    } />
+                    <Row label="Pulpo-Auftrag" value={order?.pulpo_order_id} />
+                    {order?.pulpo_box_id && <Row label="Box-ID" value={order.pulpo_box_id} />}
+                    {order?.pulpo_replay_error && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c', marginBottom: 4 }}>Fehler beim Pulpo-Rückschreiben (roher Body):</div>
+                        <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 11, color: '#7f1d1d', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {order.pulpo_replay_error}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                )}
+
                 <Card icon={<FileText size={16} />} title="Label-Vorschau" accent="#1d4ed8">
                   {labelSrc && dhl?.label_format !== 'ZPL2' ? (
                     <iframe title="Label" src={labelSrc}

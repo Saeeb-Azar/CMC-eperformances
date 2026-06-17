@@ -60,6 +60,8 @@ export interface PackageDetails {
     state: string; barcode: string; machine_db_id: string;
     dimensions: { length_mm: number | null; width_mm: number | null; height_mm: number | null };
     weight_g: number | null; rejection_reason: string | null; created_at: string | null;
+    pulpo_order_id?: string | null; pulpo_replay_state?: string | null;
+    pulpo_replay_error?: string | null; pulpo_box_id?: string | null;
   };
   dhl: null | {
     tracking_number: string; carrier: string; product: string;
