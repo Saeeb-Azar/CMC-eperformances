@@ -512,6 +512,89 @@ async def set_pulpo_settings(body: dict):
     return {"ok": True, "test_mode": pulpo_runtime.test_mode}
 
 
+@app.post("/api/v1/settings/pulpo/probe")
+async def pulpo_probe(body: dict):
+    """Verifikations-Probe für die deferred-write-Sequenz: feuert GENAU EINEN
+    Pulpo-Call ab und gibt Status + (422-)Body zurück, damit die echten
+    Pflicht-Bodies bestätigt werden können, BEVOR die Sequenz scharf läuft.
+
+    Body: {"step": "...", "packing_order_id": ..., "box_id": ..., "confirm": true,
+           "params": {...}}
+    Lese-Schritte (kein confirm nötig): shipping_locations | boxes | trackings |
+        get_order | sales_order.
+    Schreib-Schritte (confirm=true Pflicht — MUTIERT die echte Pulpo-Order):
+        accept | create_box | update_box | shipment_tracking | attach | finish | close.
+
+    Schreib-Schritte werden NUR für diesen einen Call write-enabled (danach
+    wird der vorherige Modus wiederhergestellt) — die globale Scharfschaltung
+    (PUT /settings/pulpo) bleibt unberührt.
+    """
+    from app.modules.pulpo.client import pulpo, PulpoError
+
+    step = (body.get("step") or "").strip() if isinstance(body, dict) else ""
+    oid = body.get("packing_order_id")
+    box_id = body.get("box_id")
+    p = body.get("params") or {}
+    confirm = bool(body.get("confirm"))
+
+    READ = {"shipping_locations", "boxes", "trackings", "get_order", "sales_order"}
+    WRITE = {"accept", "create_box", "update_box", "shipment_tracking", "attach", "finish", "close"}
+    if step not in READ | WRITE:
+        return {"ok": False, "error": f"unbekannter step '{step}'", "read": sorted(READ), "write": sorted(WRITE)}
+    if step in WRITE | {"shipping_locations", "boxes", "trackings", "get_order"} and not oid:
+        return {"ok": False, "error": "packing_order_id fehlt"}
+    if step in WRITE and not confirm:
+        return {"ok": False, "error": "confirm:true erforderlich — dieser Schritt MUTIERT die echte Pulpo-Order"}
+
+    async def _dispatch():
+        if step == "shipping_locations":
+            return await pulpo.list_shipping_locations(oid)
+        if step == "boxes":
+            return await pulpo.list_packing_order_boxes(oid)
+        if step == "trackings":
+            return await pulpo.list_box_shipment_trackings(oid, box_id)
+        if step == "get_order":
+            return await pulpo.get_packing_order(oid)
+        if step == "sales_order":
+            return await pulpo.get_sales_order(body.get("sales_order_id"))
+        if step == "accept":
+            return await pulpo.accept_packing_order(oid)
+        if step == "create_box":
+            return await pulpo.create_box(oid, product_id=p.get("product_id"),
+                                          box_number=p.get("box_number", 1), quantity=p.get("quantity", 1))
+        if step == "update_box":
+            return await pulpo.update_box(oid, box_id, length_mm=p.get("length_mm"),
+                                          width_mm=p.get("width_mm"), height_mm=p.get("height_mm"),
+                                          weight_g=p.get("weight_g"))
+        if step == "shipment_tracking":
+            return await pulpo.create_shipment_tracking(oid, box_id, carrier_code=p.get("carrier_code", "DHL"),
+                                                        tracking_code=p.get("tracking_code", ""),
+                                                        tracking_url=p.get("tracking_url"))
+        if step == "attach":
+            return await pulpo.attach_document(oid, box_id, filename=p.get("filename", "label.pdf"),
+                                               path=p.get("path", ""), content_type=p.get("content_type", "application/pdf"),
+                                               type_=p.get("type", "label"))
+        if step == "finish":
+            return await pulpo.finish_packing_order(oid)
+        if step == "close":
+            return await pulpo.close_packing_order(oid, p.get("shipping_location_id"))
+
+    prev = pulpo_runtime.write_enabled
+    try:
+        if step in WRITE:
+            pulpo_runtime.write_enabled = True
+            logger.warning(f"PULPO-PROBE write step='{step}' order={oid} — write_enabled TEMPORÄR an")
+        result = await _dispatch()
+        out = result if isinstance(result, (dict, list)) else {"raw": str(result)}
+        return {"ok": True, "step": step, "result": out}
+    except PulpoError as e:
+        return {"ok": False, "step": step, "status_code": e.status_code, "error": str(e), "body": e.payload}
+    except Exception as e:
+        return {"ok": False, "step": step, "error": repr(e)}
+    finally:
+        pulpo_runtime.write_enabled = prev
+
+
 @app.post("/api/v1/machines/{machine_id}/mode")
 def set_machine_mode(machine_id: str, body: dict):
     """Set or clear a per-machine runtime mode (e.g. multi_only).
