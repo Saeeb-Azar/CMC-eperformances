@@ -56,7 +56,9 @@ export default function PackageDetailsModal({ referenceId, onClose }: {
   }, [referenceId]);
 
   const pulpo = d?.pulpo, dhl = d?.dhl, order = d?.order;
-  const rcpt = pulpo?.recipient;
+  // Empfänger bevorzugt aus dem OrderState (= genau die ans Label gegangene
+  // ship_to, persistiert) — sonst aus dem Pulpo-Block (Fallback).
+  const rcpt = (order?.recipient && order.recipient.name) ? order.recipient : pulpo?.recipient;
   const labelSrc = dhl?.label_b64
     ? `data:${dhl.label_format === 'ZPL2' ? 'text/plain' : 'application/pdf'};base64,${dhl.label_b64}`
     : null;

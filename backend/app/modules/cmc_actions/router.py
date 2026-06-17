@@ -249,6 +249,18 @@ async def package_details(
             "pulpo_replay_state": getattr(os_row, "pulpo_replay_state", None),
             "pulpo_replay_error": getattr(os_row, "pulpo_replay_error", None),
             "pulpo_box_id": getattr(os_row, "pulpo_box_id", None),
+            # Persistierte Empfängeradresse (= ans Label gegangene ship_to). EINE
+            # Quelle für die Anzeige; kein Live-Call, immer == gedrucktes Label.
+            "recipient": {
+                "name": getattr(os_row, "recipient_name", None) or "",
+                "street": getattr(os_row, "recipient_street", None) or "",
+                "house_nr": getattr(os_row, "recipient_house_no", None) or "",
+                "zip": getattr(os_row, "recipient_zip", None) or "",
+                "city": getattr(os_row, "recipient_city", None) or "",
+                "country": getattr(os_row, "recipient_country", None) or "",
+                "email": getattr(os_row, "recipient_email", None) or "",
+                "phone": getattr(os_row, "recipient_phone", None) or "",
+            } if getattr(os_row, "recipient_name", None) else None,
         }
 
     # ── DHL-Shipment (bevorzugt zum aktuellen Barcode, sonst neuester) ──

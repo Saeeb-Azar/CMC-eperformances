@@ -62,6 +62,11 @@ export interface PackageDetails {
     weight_g: number | null; rejection_reason: string | null; created_at: string | null;
     pulpo_order_id?: string | null; pulpo_replay_state?: string | null;
     pulpo_replay_error?: string | null; pulpo_box_id?: string | null;
+    recipient?: {
+      name: string; street: string; house_nr: string; zip: string;
+      city: string; country: string; email: string; phone: string;
+      street2?: string; company?: string;
+    } | null;
   };
   dhl: null | {
     tracking_number: string; carrier: string; product: string;

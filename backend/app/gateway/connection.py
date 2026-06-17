@@ -623,6 +623,34 @@ class ConnectionManager:
             os_row.barcode = barcode
         return os_row
 
+    async def _persist_recipient_on_order(self, db, protocol_id: str, ref: str, addr) -> None:
+        """Aufgelöste Lieferadresse (ship_to fürs Label) am OrderState speichern,
+        damit das Dashboard sie ohne Live-Call zeigt (Anzeige == Label)."""
+        from sqlalchemy import select
+        from app.modules.orders.models import OrderState
+        from app.modules.machines.models import Machine
+        m = (await db.execute(
+            select(Machine).where(Machine.machine_id == protocol_id).limit(1)
+        )).scalar_one_or_none()
+        if m is None:
+            return
+        os_row = (await db.execute(
+            select(OrderState).where(
+                OrderState.machine_db_id == m.id, OrderState.reference_id == ref,
+            ).order_by(OrderState.created_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if os_row is None or not hasattr(os_row, "recipient_name"):
+            return
+        os_row.recipient_name = (addr.name or "")[:120]
+        os_row.recipient_street = (addr.street or "")[:120]
+        os_row.recipient_house_no = (addr.street_no or "")[:20]
+        os_row.recipient_zip = (addr.zip_code or "")[:20]
+        os_row.recipient_city = (addr.city or "")[:80]
+        os_row.recipient_country = (addr.country or "")[:10]
+        os_row.recipient_email = (addr.email or "")[:120]
+        os_row.recipient_phone = (addr.phone or "")[:40]
+        await db.commit()
+
     async def _bound_order_for_ref(self, db, protocol_id: str, ref: str):
         """Den bei ENQ gebundenen PulpoPackingOrder zu (Maschine, ref) laden —
         oder ``None``, wenn (noch) nicht gebunden. Precreate/LAB1 nutzen das,
@@ -1267,6 +1295,15 @@ class ConnectionManager:
             )
             if pulpo_recipient is not None:
                 recipient = pulpo_recipient
+                # Adresse ans Event hängen → persist_event speichert sie am
+                # OrderState (Anzeige == Label, ohne Live-Call).
+                if isinstance(msg_data, dict):
+                    msg_data["recipient"] = {
+                        "name": recipient.name, "street": recipient.street,
+                        "house_nr": recipient.street_no, "zip": recipient.zip_code,
+                        "city": recipient.city, "country": recipient.country,
+                        "email": recipient.email, "phone": recipient.phone,
+                    }
                 logger.info(
                     f"DHL: Empfänger aus Pulpo für ref={ref} → "
                     f"{recipient.name!r} ({recipient.zip_code} {recipient.city}, "
@@ -1622,6 +1659,20 @@ class ConnectionManager:
                     )
                     _note(False, f"ref={ref}: keine Bindung — Precreate übersprungen")
                     return
+
+                # Empfängeradresse (ship_to fürs Label) am OrderState persistieren
+                # — EINE Quelle für Label UND Dashboard-Anzeige. Läuft hier im
+                # Hintergrund (nicht im 2-s-LAB1-Budget) und deckt ALLE Label-Pfade
+                # ab (Pulpo-Pre-Label, Cache, DHL-Fallback).
+                try:
+                    addr = await self._resolve_pulpo_recipient(
+                        db, tenant_id, barcode, order=claimed_order,
+                    )
+                    if addr is not None:
+                        await self._persist_recipient_on_order(db, protocol_id, ref, addr)
+                except Exception as e:
+                    logger.warning(f"PRECREATE recipient persist failed ref={ref}: {e!r}")
+
                 pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode, order=claimed_order)
                 if pulpo_hit:
                     tracking, label_b64 = pulpo_hit

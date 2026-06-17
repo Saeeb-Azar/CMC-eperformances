@@ -276,6 +276,20 @@ async def _apply_event(
     if _poid and hasattr(order, "pulpo_order_id"):
         order.pulpo_order_id = str(_poid)
 
+    # Aufgelöste Empfängeradresse (ship_to fürs Label) am OrderState
+    # persistieren → Dashboard zeigt sie ohne Live-Call (Anzeige == Label).
+    _rcpt = payload.get("recipient")
+    if isinstance(_rcpt, dict) and hasattr(order, "recipient_name"):
+        for _src, _dst, _max in (
+            ("name", "recipient_name", 120), ("street", "recipient_street", 120),
+            ("house_nr", "recipient_house_no", 20), ("zip", "recipient_zip", 20),
+            ("city", "recipient_city", 80), ("country", "recipient_country", 10),
+            ("email", "recipient_email", 120), ("phone", "recipient_phone", 40),
+        ):
+            _v = _rcpt.get(_src)
+            if _v:
+                setattr(order, _dst, str(_v)[:_max])
+
     if event_type == "IND":
         order.inducted = True
         order.ind_at = now

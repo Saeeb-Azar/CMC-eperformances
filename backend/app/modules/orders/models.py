@@ -122,6 +122,18 @@ class OrderState(Base):
     pulpo_box_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     pulpo_replay_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Persistierte Empfänger-/Lieferadresse — genau die bei LAB1 aufgelöste
+    # ship_to, die ans DHL-Label geht. EINE Quelle für Label UND Dashboard-
+    # Anzeige (kein Live-Call), damit Anzeige == gedrucktes Label.
+    recipient_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    recipient_street: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    recipient_house_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    recipient_zip: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    recipient_city: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    recipient_country: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    recipient_email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    recipient_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
     # Timestamps for every station (timing analysis t0→t10)
     enq_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ind_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
