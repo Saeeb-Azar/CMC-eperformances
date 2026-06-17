@@ -37,10 +37,15 @@ def sanitize_barcode(raw: str) -> str:
     if not tokens:
         return ""
     # Alphanumeric (cart-box / multi-order) codes take priority over EANs.
+    # Kommissionier-box-Codes (M…) werden GROSS normalisiert, damit der Scan
+    # ('M030974') exakt zur in Pulpo gespeicherten, ebenfalls groß normalisierten
+    # cart_box_barcode passt (Pulpo liefert teils 'm030974' klein). EANs (reine
+    # Ziffern) bleiben unberührt. NOREAD bleibt NOREAD.
     alnum = [t for t in tokens if any(c.isalpha() for c in t)]
     if alnum:
         m_codes = [t for t in alnum if t.upper().startswith("M")]
-        return (m_codes or alnum)[0]
+        chosen = (m_codes or alnum)[0]
+        return chosen.upper() if chosen.upper() != "NOREAD" else chosen
     return tokens[0]
 
 

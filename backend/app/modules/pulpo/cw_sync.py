@@ -15,6 +15,7 @@ Two mechanisms keep it live:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -226,20 +227,72 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     return {"ok": True, "orders": len(live_orders), "locations": loc_counts}
 
 
+def _looks_like_cartbox(v: object) -> bool:
+    """Kommissionier-box-/Multi-Order-Code: Buchstabe(n) + Ziffern, z.B.
+    'm030974' / 'M030972' / 'M319991'. EANs (reine Ziffern) sind das NICHT."""
+    if not isinstance(v, str):
+        return False
+    s = v.strip()
+    return bool(re.match(r"^[A-Za-z]{1,3}\d{4,}$", s))
+
+
+def _find_cartbox_in(obj: object) -> str | None:
+    """Sucht rekursiv nach einer Kommissionier-box (M-Nummer) — bevorzugt in
+    expliziten cart_box-Feldern, sonst per Muster. Pulpo hängt sie pro Artikel
+    in die ``batches`` (``cart_box``), nicht oben an den Auftrag."""
+    if isinstance(obj, str):
+        return obj.strip() if _looks_like_cartbox(obj) else None
+    if isinstance(obj, dict):
+        for k in ("cart_box", "cartbox", "picking_box", "kommissionier_box"):
+            v = obj.get(k)
+            if isinstance(v, dict):
+                for bk in ("barcode", "code", "name"):
+                    if _looks_like_cartbox(v.get(bk)):
+                        return str(v.get(bk)).strip()
+            elif _looks_like_cartbox(v):
+                return str(v).strip()
+        for k in ("cart_box_barcode", "cartbox_barcode", "picking_box_barcode", "box_barcode"):
+            if _looks_like_cartbox(obj.get(k)):
+                return str(obj.get(k)).strip()
+        for v in obj.values():
+            r = _find_cartbox_in(v)
+            if r:
+                return r
+    if isinstance(obj, list):
+        for v in obj:
+            r = _find_cartbox_in(v)
+            if r:
+                return r
+    return None
+
+
 def _extract_cartbox(order: dict) -> str:
     """The cart-box / picking-box barcode of an order (multi-order scan id),
-    if Pulpo provides one. Defensive across likely field names."""
+    if Pulpo provides one. Defensive across likely field names — UND gräbt in
+    die Items/Batches, weil Pulpo die Kommissionier-box (M-Nummer) pro Artikel
+    dort ablegt, nicht oben am Auftrag. So landet die M-Nummer in der CW-Liste,
+    statt nur die Produkt-EANs (sonst: 'M erkannt, aber nicht in CW-Liste')."""
+    def _norm(s: str) -> str:
+        # Kommissionier-box GROSS normalisieren (passt zum groß normalisierten
+        # Scan); reine Ziffern bleiben unverändert.
+        return s.strip().upper() if any(c.isalpha() for c in s) else s.strip()
+
     for k in ("cart_box_barcode", "cartbox_barcode", "picking_box_barcode",
               "kommissionier_box", "box_barcode", "barcode"):
         v = order.get(k)
         if v:
-            return str(v)
+            return _norm(str(v))
     for k in ("cart_box", "cartbox", "picking_box"):
         v = order.get(k)
         if isinstance(v, dict):
             bc = v.get("barcode") or v.get("code") or v.get("name")
             if bc:
-                return str(bc)
+                return _norm(str(bc))
+    # NEU: M-Nummer aus den Items/Batches (Kommissionier-box) holen.
+    found = _find_cartbox_in(order.get("items"))
+    if found:
+        return _norm(found)
+    return ""
     return ""
 
 

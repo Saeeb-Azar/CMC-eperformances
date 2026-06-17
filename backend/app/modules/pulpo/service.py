@@ -101,7 +101,10 @@ async def handle_packing_order_created(db: AsyncSession, raw_payload: dict) -> d
         )
         db.add(order)
 
-    order.cart_box_barcode = str(_first(order_payload, "cart_box_barcode", "cartbox_barcode", "barcode", default="") or "")
+    # Kommissionier-box (M-Nummer) robust ziehen — auch aus items[].batches
+    # (Multi-Order). Sonst landet sie nicht in der CW-Liste.
+    from .cw_sync import _extract_cartbox as _xcart
+    order.cart_box_barcode = _xcart(order_payload)
     order.state = str(_first(order_payload, "state", "status", default="queue"))
     order.pick_location = str(_first(order_payload, "pick_location", "location", "location_id", default="") or "")
     order.shipping_method = str(_first(order_payload, "shipping_method", "shipment_method", default="") or "")
