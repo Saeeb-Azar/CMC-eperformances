@@ -45,6 +45,19 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13, background: '#fff', width: '100%',
 };
 
+// Browser blockieren das Navigieren zu data:application/pdf-URLs in neuen Tabs.
+// Deshalb das Base64-PDF in einen Blob umwandeln und DEN öffnen (erlaubt).
+function openPdfBase64(b64: string) {
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch { /* ignore */ }
+}
+
 export default function DemoPage() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<DemoStatus | null>(null);
@@ -309,8 +322,10 @@ export default function DemoPage() {
                         </div>
                         {r.label_preview_b64 && (
                           <div style={{ gridColumn: 'span 2', marginTop: 6 }}>
-                            <a href={`data:application/pdf;base64,${r.label_preview_b64}`} target="_blank" rel="noreferrer"
-                              style={{ color: '#0f766e', fontWeight: 600 }}>Label-Vorschau öffnen (PDF)</a>
+                            <button type="button" onClick={() => openPdfBase64(r.label_preview_b64!)}
+                              style={{ color: '#0f766e', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}>
+                              Label-Vorschau öffnen (PDF)
+                            </button>
                             <span style={{ color: '#b45309' }}> · {r.note}</span>
                           </div>
                         )}
