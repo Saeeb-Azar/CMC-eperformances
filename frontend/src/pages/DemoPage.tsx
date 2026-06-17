@@ -73,6 +73,34 @@ export default function DemoPage() {
   const [dryRunning, setDryRunning] = useState(false);
   const [dryResults, setDryResults] = useState<DryRunResult[] | null>(null);
   const [dryErr, setDryErr] = useState('');
+  // Pulpo-Write-Verifikation (Probe) — einzelne Calls gegen die ECHTE Instanz
+  const [probeStep, setProbeStep] = useState('shipping_locations');
+  const [probeOrderId, setProbeOrderId] = useState('');
+  const [probeBoxId, setProbeBoxId] = useState('');
+  const [probeParams, setProbeParams] = useState('{}');
+  const [probeConfirm, setProbeConfirm] = useState(false);
+  const [probeRunning, setProbeRunning] = useState(false);
+  const [probeOut, setProbeOut] = useState<unknown>(null);
+
+  const PROBE_READ = ['shipping_locations', 'boxes', 'trackings', 'get_order', 'sales_order'];
+  const runProbe = async () => {
+    setProbeRunning(true); setProbeOut(null);
+    let params: Record<string, unknown> = {};
+    try { params = probeParams.trim() ? JSON.parse(probeParams) : {}; }
+    catch { setProbeOut({ ok: false, error: 'params ist kein gültiges JSON' }); setProbeRunning(false); return; }
+    try {
+      const res = await api.pulpoProbe({
+        step: probeStep,
+        packing_order_id: probeOrderId.trim() || undefined,
+        box_id: probeBoxId.trim() || undefined,
+        confirm: probeConfirm,
+        params,
+      });
+      setProbeOut(res);
+    } catch (e) {
+      setProbeOut({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    } finally { setProbeRunning(false); }
+  };
 
   const runDry = async () => {
     const codes = dryBarcodes.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
@@ -338,6 +366,57 @@ export default function DemoPage() {
                 );
               })}
             </div>
+          )}
+        </div>
+
+        {/* ── Pulpo-Write-Verifikation (Probe) ── */}
+        <div style={{ marginTop: 24, border: '1px solid #fde68a', borderRadius: 12, padding: 16, background: '#fffbeb' }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={18} color="#b45309" /> Pulpo-Write-Verifikation (Probe)
+          </h3>
+          <div style={{ fontSize: 12, color: '#92400e', marginBottom: 12 }}>
+            Feuert <b>genau einen</b> Pulpo-Call und zeigt Status/422-Body — um die echten Pflicht-Bodies zu bestätigen,
+            BEVOR die Sequenz scharf läuft. Braucht eine <b>echte Pulpo-Packauftrags-ID</b> (kein Demo-Auftrag).
+            Schreib-Schritte (<code>accept/create_box/update_box/shipment_tracking/attach/finish/close</code>) <b>mutieren die echte Order</b> → „Schreiben bestätigen" nötig.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <Field label="Schritt">
+              <select style={inputStyle} value={probeStep} onChange={(e) => setProbeStep(e.target.value)}>
+                <optgroup label="Lesen (kein Schreiben)">
+                  {PROBE_READ.map((s) => <option key={s} value={s}>{s}</option>)}
+                </optgroup>
+                <optgroup label="Schreiben (mutiert!)">
+                  {['accept', 'create_box', 'update_box', 'shipment_tracking', 'attach', 'finish', 'close'].map((s) => <option key={s} value={s}>{s}</option>)}
+                </optgroup>
+              </select>
+            </Field>
+            <Field label="packing_order_id (echt)">
+              <input style={inputStyle} value={probeOrderId} onChange={(e) => setProbeOrderId(e.target.value)} placeholder="z. B. 12345" />
+            </Field>
+            <Field label="box_id (für update_box/tracking/attach)">
+              <input style={inputStyle} value={probeBoxId} onChange={(e) => setProbeBoxId(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="params (JSON) — je nach Schritt, z. B. {&quot;shipping_location_id&quot;:777} oder {&quot;length_mm&quot;:200,...}">
+            <textarea style={{ ...inputStyle, minHeight: 48, fontFamily: 'var(--font-mono, monospace)' }}
+              value={probeParams} onChange={(e) => setProbeParams(e.target.value)} />
+          </Field>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
+            {!PROBE_READ.includes(probeStep) && (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#b45309', fontWeight: 600 }}>
+                <input type="checkbox" checked={probeConfirm} onChange={(e) => setProbeConfirm(e.target.checked)} />
+                Schreiben bestätigen (mutiert echte Order)
+              </label>
+            )}
+            <button type="button" onClick={runProbe} disabled={probeRunning}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: 'none', background: '#b45309', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+              {probeRunning ? <Loader2 size={15} className="spin" /> : <ScanSearch size={15} />} Probe ausführen
+            </button>
+          </div>
+          {probeOut !== null && (
+            <pre style={{ marginTop: 12, padding: 12, borderRadius: 8, background: '#0b1020', color: '#e2e8f0', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {JSON.stringify(probeOut, null, 2)}
+            </pre>
           )}
         </div>
       </div>

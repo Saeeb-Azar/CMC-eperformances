@@ -470,7 +470,19 @@ export const api = {
     request<DryRunResponse>('/demo/dry-run-scan', {
       method: 'POST', body: JSON.stringify({ machine_id, barcodes, cw_list }),
     }),
+  // Pulpo-Write-Verifikation: feuert GENAU einen Pulpo-Call, gibt Status/422-Body zurück.
+  pulpoProbe: (body: {
+    step: string; packing_order_id?: string; box_id?: string;
+    sales_order_id?: string; confirm?: boolean; params?: Record<string, unknown>;
+  }) => request<PulpoProbeResult>('/settings/pulpo/probe', {
+    method: 'POST', body: JSON.stringify(body),
+  }),
 };
+
+export interface PulpoProbeResult {
+  ok: boolean; step?: string; status_code?: number; error?: string;
+  body?: unknown; result?: unknown; read?: string[]; write?: string[];
+}
 
 export interface DryRunResult {
   index: number; scanned: string; barcode: string; reference_id: string;
