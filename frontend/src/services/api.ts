@@ -330,9 +330,14 @@ export const api = {
   getNotifications: () => request<{ count: number; notifications: Array<{ id: string; severity: string; days_left: number; title: string; message: string }> }>('/notifications'),
 
   // Pulpo settings — Test-Modus = no writes reach Pulpo
-  getPulpoSettings: () => request<{ test_mode: boolean; write_enabled: boolean }>('/settings/pulpo'),
+  getPulpoSettings: () => request<{ test_mode: boolean; write_enabled: boolean; replay_writes: boolean }>('/settings/pulpo'),
+  setPulpoWriteback: (enabled: boolean) =>
+    request<{ ok: boolean; write_enabled: boolean; test_mode: boolean; replay_writes: boolean }>(
+      '/settings/pulpo/writeback', { method: 'PUT', body: JSON.stringify({ enabled }) },
+    ),
   getPulpoStatus: () => request<{
-    test_mode: boolean; configured: boolean; last_sync_at: string | null;
+    test_mode: boolean; write_enabled: boolean; replay_writes: boolean;
+    configured: boolean; last_sync_at: string | null;
     last_sync_error: string | null; last_sync_error_at: string | null;
     open_orders: number; barcodes: number;
     locations: Record<string, number>; cache_locations: Record<string, number>;

@@ -20,22 +20,30 @@ from datetime import datetime
 
 class PulpoRuntime:
     def __init__(self) -> None:
-        # OFF by default = Test-Modus = no writes reach Pulpo.
+        # ── ZWEI UNABHÄNGIGE Schalter ──────────────────────────────────────
+        # test_mode: Sandbox/Test-Aufträge. Markiert OrderStates als is_test
+        #   (Test- vs. Produktiv-Ansicht), steuert Demo & LAB1-Cache-Skip.
+        #   True = Sandbox.
+        self.test_mode: bool = True
+        # write_enabled: „Pulpo automatisch zurückschreiben" (deferred Replay:
+        #   accept/box/label/finish/close). Bewusst GETRENNT vom test_mode, damit
+        #   man im Echtbetrieb (test_mode=False, echte Labels) das Pulpo-
+        #   Rückschreiben noch AUS lassen und manuell in Pulpo arbeiten kann —
+        #   und erst per Klick scharf schaltet. Echtes Schreiben passiert NUR,
+        #   wenn write_enabled=True UND test_mode=False (siehe replay.py).
         self.write_enabled: bool = False
         # Last successful resync (for the settings status card).
         self.last_sync_at: datetime | None = None
         self.last_sync_orders: int = 0
-        # Diagnostics: why the last resync failed (None = last run OK) and the
-        # Lagerplatz distribution of the last successful LIVE queue pull
-        # (e.g. {"CW2": 198}). Comparing this against the cache distribution
-        # immediately shows whether the sidebar reflects Pulpo or stale cache.
         self.last_sync_error: str | None = None
         self.last_sync_error_at: datetime | None = None
         self.last_locations: dict[str, int] = {}
 
     @property
-    def test_mode(self) -> bool:
-        return not self.write_enabled
+    def replay_writes(self) -> bool:
+        """Schreibt der Replay WIRKLICH nach Pulpo? Nur im Echtbetrieb mit
+        aktiviertem Rückschreiben."""
+        return self.write_enabled and not self.test_mode
 
 
 pulpo_runtime = PulpoRuntime()

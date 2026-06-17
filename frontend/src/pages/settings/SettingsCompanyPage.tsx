@@ -11,7 +11,8 @@ import { api, type UserRead, type TenantRead } from '../../services/api';
 import type { TFunction } from 'i18next';
 
 interface PulpoStatus {
-  test_mode: boolean; configured: boolean; last_sync_at: string | null;
+  test_mode: boolean; write_enabled: boolean; replay_writes: boolean;
+  configured: boolean; last_sync_at: string | null;
   last_sync_error: string | null; last_sync_error_at: string | null;
   open_orders: number; barcodes: number;
   locations: Record<string, number>; cache_locations: Record<string, number>;
@@ -68,6 +69,14 @@ export default function SettingsCompanyPage() {
     try {
       const res = await api.setPulpoSettings(next);
       setStatus((s) => (s ? { ...s, test_mode: res.test_mode } : s));
+    } catch { /* keep */ } finally { setSaving(false); }
+  };
+
+  const toggleWriteback = async (next: boolean) => {
+    setSaving(true);
+    try {
+      const res = await api.setPulpoWriteback(next);
+      setStatus((s) => (s ? { ...s, write_enabled: res.write_enabled, replay_writes: res.replay_writes } : s));
     } catch { /* keep */ } finally { setSaving(false); }
   };
 
@@ -162,6 +171,29 @@ export default function SettingsCompanyPage() {
                   {saving && <Loader2 size={14} className="animate-spin text-gray-400" />}
                   <input type="checkbox" checked={testMode} disabled={status === null || saving}
                     onChange={(e) => toggleTestMode(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
+                </span>
+              </label>
+
+              {/* UNABHÄNGIGER Schalter: Pulpo automatisch zurückschreiben */}
+              <label style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '10px 14px', borderRadius: 10,
+                border: `1px solid ${status?.replay_writes ? '#fecaca' : 'var(--clr-border)'}`,
+                background: status?.replay_writes ? '#fef2f2' : 'transparent', cursor: 'pointer',
+              }}>
+                <span style={{ fontSize: 13, color: '#334155' }}>
+                  <strong>Pulpo automatisch zurückschreiben</strong> — bei Auftragsende
+                  accept→box→label→finish→close. Wirkt NUR im Echtbetrieb (Test-Modus AUS).
+                  {status?.replay_writes
+                    ? ' · Status: LIVE — schreibt automatisch.'
+                    : status?.write_enabled
+                      ? ' · Status: aktiviert, aber wartet (Test-Modus an).'
+                      : ' · Status: AUS — Pulpo machst du manuell.'}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {saving && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                  <input type="checkbox" checked={!!status?.write_enabled} disabled={status === null || saving}
+                    onChange={(e) => toggleWriteback(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
                 </span>
               </label>
             </Card>

@@ -145,8 +145,9 @@ def connection_manager_stale_after() -> int:
 
 
 async def _load_pulpo_test_mode() -> None:
-    """Load the persisted Test-Modus from the first tenant's settings into the
-    runtime flag. Defaults to Test-Modus (safe) if nothing is stored."""
+    """Load both persisted Pulpo flags into the runtime: test_mode (sandbox) and
+    write_enabled (Pulpo-Rückschreiben). Beide unabhängig; Default sicher
+    (Sandbox an, Rückschreiben aus)."""
     import json
     from sqlalchemy import select
     from app.core.database import async_session
@@ -155,16 +156,21 @@ async def _load_pulpo_test_mode() -> None:
         async with async_session() as db:
             tenant = (await db.execute(select(Tenant).limit(1))).scalar_one_or_none()
             settings_json = json.loads(tenant.settings) if tenant and tenant.settings else {}
-        # Absent setting → stay in safe Test-Modus.
-        pulpo_runtime.write_enabled = not bool(settings_json.get("pulpo_test_mode", True))
-        logger.info(f"Pulpo Test-Modus loaded = {pulpo_runtime.test_mode}")
+        pulpo_runtime.test_mode = bool(settings_json.get("pulpo_test_mode", True))
+        pulpo_runtime.write_enabled = bool(settings_json.get("pulpo_write_enabled", False))
+        logger.info(
+            f"Pulpo geladen: test_mode={pulpo_runtime.test_mode} "
+            f"write_enabled={pulpo_runtime.write_enabled} "
+            f"(Rückschreiben wirksam={pulpo_runtime.replay_writes})"
+        )
     except Exception as e:
+        pulpo_runtime.test_mode = True
         pulpo_runtime.write_enabled = False  # safe fallback
-        logger.warning(f"Could not load Pulpo Test-Modus ({e}) — defaulting to Test-Modus")
+        logger.warning(f"Could not load Pulpo flags ({e}) — defaulting to Sandbox/no-write")
 
 
-async def _persist_pulpo_test_mode(test_mode: bool) -> None:
-    """Persist the Test-Modus choice into the first tenant's settings JSON."""
+async def _persist_pulpo_flag(key: str, value: bool) -> None:
+    """Persist a single Pulpo flag into the first tenant's settings JSON."""
     import json
     from sqlalchemy import select
     from app.core.database import async_session
@@ -174,9 +180,13 @@ async def _persist_pulpo_test_mode(test_mode: bool) -> None:
         if not tenant:
             return
         data = json.loads(tenant.settings) if tenant.settings else {}
-        data["pulpo_test_mode"] = bool(test_mode)
+        data[key] = bool(value)
         tenant.settings = json.dumps(data)
         await db.commit()
+
+
+async def _persist_pulpo_test_mode(test_mode: bool) -> None:
+    await _persist_pulpo_flag("pulpo_test_mode", test_mode)
 
 
 async def _cw_sync_loop() -> None:
@@ -344,8 +354,13 @@ def events_recent(since: int = 0, limit: int = 200):
 
 @app.get("/api/v1/settings/pulpo")
 def get_pulpo_settings():
-    """Current Pulpo write-safety mode. test_mode=True → no writes reach Pulpo."""
-    return {"test_mode": pulpo_runtime.test_mode, "write_enabled": pulpo_runtime.write_enabled}
+    """Zwei unabhängige Schalter: test_mode (Sandbox/is_test) und write_enabled
+    (Pulpo-Rückschreiben). replay_writes = beides zusammen (echter Write)."""
+    return {
+        "test_mode": pulpo_runtime.test_mode,
+        "write_enabled": pulpo_runtime.write_enabled,
+        "replay_writes": pulpo_runtime.replay_writes,
+    }
 
 
 @app.get("/api/v1/settings/pulpo/status")
@@ -385,6 +400,8 @@ async def get_pulpo_status():
 
     return {
         "test_mode": pulpo_runtime.test_mode,
+        "write_enabled": pulpo_runtime.write_enabled,
+        "replay_writes": pulpo_runtime.replay_writes,
         "configured": pulpo.configured,
         "last_sync_at": pulpo_runtime.last_sync_at.isoformat() if pulpo_runtime.last_sync_at else None,
         "last_sync_error": pulpo_runtime.last_sync_error,
@@ -504,12 +521,41 @@ async def set_pulpo_settings(body: dict):
     so the choice survives restarts.
     """
     test_mode = bool(body.get("test_mode", True)) if isinstance(body, dict) else True
-    pulpo_runtime.write_enabled = not test_mode
+    pulpo_runtime.test_mode = test_mode
     await _persist_pulpo_test_mode(test_mode)
     logger.warning(
-        f"Pulpo Test-Modus = {test_mode} (writes {'BLOCKED' if test_mode else 'ENABLED'})"
+        f"Pulpo Test-Modus = {test_mode} (is_test-Markierung; Rückschreiben "
+        f"separat, wirksam={pulpo_runtime.replay_writes})"
     )
-    return {"ok": True, "test_mode": pulpo_runtime.test_mode}
+    return {
+        "ok": True, "test_mode": pulpo_runtime.test_mode,
+        "write_enabled": pulpo_runtime.write_enabled,
+        "replay_writes": pulpo_runtime.replay_writes,
+    }
+
+
+@app.put("/api/v1/settings/pulpo/writeback")
+async def set_pulpo_writeback(body: dict):
+    """Schaltet das automatische Pulpo-RÜCKSCHREIBEN (deferred Replay:
+    accept→box→label→finish→close bei END status=1) an/aus — UNABHÄNGIG vom
+    Test-Modus. Body: {"enabled": true|false}.
+
+    enabled=False (Default): bei END wird NICHTS in Pulpo geschrieben (nur
+    simuliert) — du machst accept/box/finish/close manuell in Pulpo.
+    enabled=True: der Replay schreibt automatisch — ABER nur im Echtbetrieb
+    (Test-Modus AUS). In der Sandbox bleibt es wirkungslos (Schutz)."""
+    enabled = bool(body.get("enabled", False)) if isinstance(body, dict) else False
+    pulpo_runtime.write_enabled = enabled
+    await _persist_pulpo_flag("pulpo_write_enabled", enabled)
+    logger.warning(
+        f"Pulpo-Rückschreiben = {enabled} (wirksam={pulpo_runtime.replay_writes}; "
+        f"test_mode={pulpo_runtime.test_mode})"
+    )
+    return {
+        "ok": True, "write_enabled": pulpo_runtime.write_enabled,
+        "test_mode": pulpo_runtime.test_mode,
+        "replay_writes": pulpo_runtime.replay_writes,
+    }
 
 
 @app.post("/api/v1/settings/pulpo/probe")

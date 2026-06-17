@@ -114,6 +114,8 @@ def test_replay_full_sequence_in_order():
     sm = _fresh_db(); fake = FakePulpo()
     real = _with_fake(fake); prev = pulpo_runtime.write_enabled
     pulpo_runtime.write_enabled = True
+    prev_tm = pulpo_runtime.test_mode
+    pulpo_runtime.test_mode = False
 
     async def run():
         async with sm() as db:
@@ -130,14 +132,14 @@ def test_replay_full_sequence_in_order():
     try:
         _run(run())
     finally:
-        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev
+        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev; pulpo_runtime.test_mode = prev_tm
 
 
 # ── Test-Modus → NULL echte Writes (simuliert) ────────────────────────────
 def test_replay_simulated_in_test_mode():
     sm = _fresh_db(); fake = FakePulpo()
     real = _with_fake(fake); prev = pulpo_runtime.write_enabled
-    pulpo_runtime.write_enabled = False  # Test-Modus
+    pulpo_runtime.write_enabled = False  # Rückschreiben aus → simuliert
 
     async def run():
         async with sm() as db:
@@ -145,7 +147,7 @@ def test_replay_simulated_in_test_mode():
             res = await replay_mod.replay_to_pulpo(db, o)
             assert res["ok"] and res["simulated"] is True
             assert o.pulpo_replay_state == "DONE"
-            assert fake.calls == [], f"Im Test-Modus darf KEIN Pulpo-Call passieren: {fake.calls}"
+            assert fake.calls == [], f"Ohne Rückschreiben darf KEIN Pulpo-Call passieren: {fake.calls}"
     try:
         _run(run())
     finally:
@@ -157,6 +159,8 @@ def test_replay_failure_keeps_payload():
     sm = _fresh_db(); fake = FakePulpo(); fake.fail_on = "finish"
     real = _with_fake(fake); prev = pulpo_runtime.write_enabled
     pulpo_runtime.write_enabled = True
+    prev_tm = pulpo_runtime.test_mode
+    pulpo_runtime.test_mode = False
 
     async def run():
         async with sm() as db:
@@ -172,7 +176,7 @@ def test_replay_failure_keeps_payload():
     try:
         _run(run())
     finally:
-        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev
+        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev; pulpo_runtime.test_mode = prev_tm
 
 
 # ── Retry eines FAILED mit vorhandenem Tracking → kein attach_label ───────
@@ -181,6 +185,8 @@ def test_retry_skips_carrier_call_when_tracking_exists():
     fake = FakePulpo(); fake.existing_trackings = [{"tracking_code": "00340TRACK"}]
     real = _with_fake(fake); prev = pulpo_runtime.write_enabled
     pulpo_runtime.write_enabled = True
+    prev_tm = pulpo_runtime.test_mode
+    pulpo_runtime.test_mode = False
 
     async def run():
         async with sm() as db:
@@ -197,7 +203,7 @@ def test_retry_skips_carrier_call_when_tracking_exists():
     try:
         _run(run())
     finally:
-        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev
+        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev; pulpo_runtime.test_mode = prev_tm
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -118,13 +118,16 @@ async def replay_to_pulpo(db: AsyncSession, order, *, is_retry: bool = False) ->
             result.update(ok=True, state="DONE", note="bereits abgespielt")
             return result
 
-        # Write-Guard: im Test-Modus NUR simulieren, kein echter Write.
-        if not pulpo_runtime.write_enabled:
+        # Write-Guard: echter Pulpo-Write nur im Echtbetrieb MIT aktiviertem
+        # Rückschreiben (write_enabled=True UND test_mode=False). Sonst NUR
+        # simulieren — Sandbox oder „Rückschreiben aus" → Pulpo machst du manuell.
+        if not pulpo_runtime.replay_writes:
             order.pulpo_replay_state = "DONE"
             order.pulpo_replay_error = None
             await db.commit()
+            reason = "Test-Modus" if pulpo_runtime.test_mode else "Rückschreiben AUS"
             logger.info(
-                f"Replay SIMULIERT (Test-Modus, kein Pulpo-Write): "
+                f"Replay SIMULIERT ({reason}, kein Pulpo-Write): "
                 f"pulpo_order={pulpo_order_id} ref={order.reference_id}"
             )
             result.update(ok=True, state="DONE", simulated=True)
