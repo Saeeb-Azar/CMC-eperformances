@@ -46,10 +46,14 @@ class FakePulpo:
         self.calls: list[str] = []
         self.fail_on: str | None = None
         self.existing_trackings: list[dict] = []
+        self.existing_boxes: list[dict] = []
 
     def _maybe_fail(self, step):
         if self.fail_on == step:
             raise Exception(f"boom@{step}")
+
+    async def list_packing_order_boxes(self, oid):
+        self.calls.append("list_boxes"); return list(self.existing_boxes)
 
     async def accept_packing_order(self, oid):
         self.calls.append("accept"); self._maybe_fail("accept")
@@ -124,9 +128,10 @@ def test_replay_full_sequence_in_order():
             assert res["ok"], res
             assert o.pulpo_replay_state == "DONE"
             assert o.state == "COMPLETED"
-            # Reihenfolge (Tracking-Lookup vor attach):
+            # Reihenfolge: erst vorhandene Boxen prüfen (keine → anlegen), dann
+            # Maße, Tracking-Lookup, attach, finish, close.
             assert fake.calls == [
-                "accept", "create_box", "update_box", "list_tracking",
+                "accept", "list_boxes", "create_box", "update_box", "list_tracking",
                 "attach_label", "finish", "ship_loc", "close",
             ], fake.calls
     try:
@@ -206,9 +211,36 @@ def test_retry_skips_carrier_call_when_tracking_exists():
         replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev; pulpo_runtime.test_mode = prev_tm
 
 
+# ── Pulpo hat Box+Tracking schon (Pre-Label) → reuse, KEIN create/attach ──
+def test_reuses_pulpo_precreated_box_and_skips_label():
+    sm = _fresh_db()
+    fake = FakePulpo()
+    fake.existing_boxes = [{"id": "PBOX9"}]               # Pulpo hat die Box selbst angelegt
+    fake.existing_trackings = [{"tracking_code": "00340434799515091374"}]  # inkl. Tracking
+    real = _with_fake(fake); prev = pulpo_runtime.write_enabled
+    pulpo_runtime.write_enabled = True
+    prev_tm = pulpo_runtime.test_mode
+    pulpo_runtime.test_mode = False
+
+    async def run():
+        async with sm() as db:
+            o = await _seed(db)
+            res = await replay_mod.replay_to_pulpo(db, o)
+            assert res["ok"] and o.pulpo_replay_state == "DONE"
+            assert "create_box" not in fake.calls, fake.calls   # vorhandene Box wiederverwendet
+            assert "update_box" not in fake.calls, fake.calls
+            assert "attach_label" not in fake.calls, fake.calls  # Tracking existiert → übersprungen
+            assert fake.calls == ["accept", "list_boxes", "list_tracking", "finish", "ship_loc", "close"], fake.calls
+    try:
+        _run(run())
+    finally:
+        replay_mod.pulpo = real; pulpo_runtime.write_enabled = prev; pulpo_runtime.test_mode = prev_tm
+
+
 if __name__ == "__main__":  # pragma: no cover
     test_replay_full_sequence_in_order()
     test_replay_simulated_in_test_mode()
     test_replay_failure_keeps_payload()
     test_retry_skips_carrier_call_when_tracking_exists()
+    test_reuses_pulpo_precreated_box_and_skips_label()
     print("OK")

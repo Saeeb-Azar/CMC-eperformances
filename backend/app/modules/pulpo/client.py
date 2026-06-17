@@ -427,12 +427,17 @@ class PulpoClient:
         *, product_id: int | None = None, box_number: int | None = None,
         quantity: int | None = None,
     ) -> dict:
-        """Step 2a: create a packing box. Pulpo expects form-encoded fields and
-        returns the box (with ``id``)."""
+        """Step 2a: create a packing box. Pulpo expects form-encoded fields und
+        verlangt ``packing_order_id`` AUCH im Body (nicht nur im Pfad — sonst
+        ``422 {"errors":{"packing_order_id":"can't be blank"}}``). Liefert die
+        Box (mit ``id``)."""
         self._require_writes()
         return await self._request(
             "POST", f"/packing/orders/{order_id}/box",
-            data={"product_id": product_id, "box_number": box_number, "quantity": quantity},
+            data={
+                "packing_order_id": order_id,
+                "product_id": product_id, "box_number": box_number, "quantity": quantity,
+            },
         )
 
     async def update_box(

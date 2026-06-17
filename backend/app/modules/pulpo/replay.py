@@ -147,22 +147,34 @@ async def replay_to_pulpo(db: AsyncSession, order, *, is_retry: bool = False) ->
             await pulpo.accept_packing_order(pulpo_order_id)
             steps.append("accept")
 
-            # 2) box (idempotent über pulpo_box_id) + Maße/Gewicht
+            # 2) box. WICHTIG: Pulpo legt im Pre-Label-Workflow die Box SELBST an
+            #    (mit Maßen, Tracking, Label). Deshalb ZUERST vorhandene Boxen
+            #    prüfen und wiederverwenden — sonst doppelte Box / 422. Nur wenn
+            #    es wirklich keine gibt, eine anlegen (packing_order_id im Body!).
             box_id = order.pulpo_box_id
             if not box_id:
-                product_id = await _first_product_id(db, order)
-                box = await pulpo.create_box(
-                    pulpo_order_id, product_id=product_id, box_number=1, quantity=1,
-                )
-                box_id = (box.get("id") if isinstance(box, dict) else None) or ""
-                order.pulpo_box_id = str(box_id)
-                await db.commit()
-                steps.append("box.create")
-            await pulpo.update_box(
-                pulpo_order_id, box_id,
-                length_mm=length, width_mm=width, height_mm=height, weight_g=weight,
-            )
-            steps.append("box.update")
+                existing_boxes = await pulpo.list_packing_order_boxes(pulpo_order_id)
+                if existing_boxes:
+                    box_id = (existing_boxes[0] or {}).get("id")
+                    order.pulpo_box_id = str(box_id)
+                    await db.commit()
+                    steps.append("box.reuse")
+                else:
+                    product_id = await _first_product_id(db, order)
+                    box = await pulpo.create_box(
+                        pulpo_order_id, product_id=product_id, box_number=1, quantity=1,
+                    )
+                    box_id = (box.get("id") if isinstance(box, dict) else None) or ""
+                    order.pulpo_box_id = str(box_id)
+                    await db.commit()
+                    steps.append("box.create")
+                    # Maße/Gewicht nur auf einer SELBST angelegten Box setzen —
+                    # eine von Pulpo vorbefüllte Box hat sie schon (kein 422-Risiko).
+                    await pulpo.update_box(
+                        pulpo_order_id, box_id,
+                        length_mm=length, width_mm=width, height_mm=height, weight_g=weight,
+                    )
+                    steps.append("box.update")
 
             # 3) label — idempotent: existiert schon ein tracking_code, überspringen.
             existing = await pulpo.list_box_shipment_trackings(pulpo_order_id, box_id)
