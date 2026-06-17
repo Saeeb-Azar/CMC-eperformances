@@ -1441,15 +1441,25 @@ class ConnectionManager:
             #    Die synchronisierte Queue-Order (/packing/orders?state=queue)
             #    trägt nur sales_order_id — daher (b)/(c) als Nachladung.
             is_test_order = str(order.pulpo_order_id or "").startswith("TEST-")
-            ship_to = _extract_ship_to(raw) or {}
+            # NUR die KANONISCHE Adresse: sales_order.ship_to. NICHT rekursiv
+            # über den ganzen Auftrag suchen — bei Multi-Orders steckt im Payload
+            # (packing_boxes/fulfillment_order) teils eine FREMDE/Default-ship_to,
+            # die rekursiv fälschlich gegriffen würde ("Florian"-Bug). Single &
+            # Multi laufen damit identisch: lokal kanonisch, sonst Verkaufsauftrag.
+            def _canon(d: object) -> dict:
+                so = (d or {}).get("sales_order") if isinstance(d, dict) else None
+                st = so.get("ship_to") if isinstance(so, dict) else None
+                if not _ship_to_usable(st) and isinstance(d, dict) and _ship_to_usable(d.get("ship_to")):
+                    st = d.get("ship_to")
+                return st or {}
+
+            ship_to = _canon(raw)
 
             if not _ship_to_usable(ship_to) and not is_test_order:
                 sales_order_id = raw.get("sales_order_id")
                 if sales_order_id:
                     so = await pulpo_client.get_sales_order(sales_order_id)
-                    st = _extract_ship_to(so) or (
-                        so.get("ship_to") if isinstance(so, dict) else None
-                    )
+                    st = so.get("ship_to") if isinstance(so, dict) else None
                     if _ship_to_usable(st):
                         ship_to = st
                         logger.info(
@@ -1458,11 +1468,10 @@ class ConnectionManager:
                             f"Name={ship_to.get('name')!r})"
                         )
 
-                # Fallback: Packauftrags-Detail (Pulpo bettet die Adresse dort
-                # ein — genau die „Detail → Adresse"-Ansicht).
+                # Fallback: Packauftrags-Detail → dessen sales_order.ship_to.
                 if not _ship_to_usable(ship_to):
                     po = await pulpo_client.get_packing_order(order.pulpo_order_id)
-                    st = _extract_ship_to(po)
+                    st = _canon(po)
                     if _ship_to_usable(st):
                         ship_to = st
                         logger.info(

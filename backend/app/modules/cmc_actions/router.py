@@ -359,11 +359,10 @@ async def package_details(
                     "weclapp_article_id": str((prod.get("attributes") or {}).get("weclapp_article_id") or ""),
                 })
 
-        # Empfänger (Label): lokal → Verkaufsauftrags-Detail (Pulpo „Detail →
-        # Adresse") → als letzte Quelle die tatsächlich aufs Label gedruckte
-        # Adresse aus dem Shipment.
-        from app.gateway.connection import _extract_ship_to
-        ship = _extract_ship_to(rp) or {}
+        # Empfänger (Label): KANONISCH (sales_order.ship_to) — nicht rekursiv,
+        # sonst greift bei Multi-Orders eine fremde verschachtelte ship_to.
+        # Reihenfolge: lokal kanonisch → Verkaufsauftrags-Detail → Shipment.
+        ship = (rp.get("sales_order") or {}).get("ship_to") or {}
         # Verkaufsauftrags-Detail nur abrufen, wenn lokal nichts da ist UND noch
         # KEIN Label existiert (sonst nutzen wir die Shipment-Adresse unten —
         # spart einen Pulpo-Call pro Modal-Poll bei fertigen Aufträgen).
