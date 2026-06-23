@@ -48,10 +48,52 @@ async def bootstrap_defaults() -> None:
         try:
             tenant = await _get_or_create_default_tenant(db)
             await _get_or_create_default_admin(db, tenant)
+            await _heal_orphaned_user_tenants(db)
             await db.commit()
         except Exception as e:
             await db.rollback()
             logger.error(f"bootstrap_defaults failed: {e}", exc_info=True)
+
+
+async def _free_slug(db, base: str) -> str:
+    """Find a tenant slug that is not yet taken (slug is UNIQUE)."""
+    slug, i = base, 1
+    while (await db.execute(
+        select(Tenant).where(Tenant.slug == slug)
+    )).scalar_one_or_none() is not None:
+        i += 1
+        slug = f"{base}-{i}"
+    return slug
+
+
+async def _heal_orphaned_user_tenants(db) -> None:
+    """Self-heal: ein User, dessen tenant_id KEINE Zeile in `tenants` hat, lässt
+    jeden tenant-gebundenen Write (Maschine anlegen, print-queue, …) mit einer
+    ForeignKey-Verletzung crashen. Wir legen den fehlenden Tenant mit DERSELBEN
+    id neu an — so bleiben bestehende Sessions/JWTs und Kind-Zeilen gültig, ohne
+    dass sich jemand neu einloggen muss.
+    """
+    user_tids = set(
+        (await db.execute(select(User.tenant_id).distinct())).scalars().all()
+    )
+    user_tids.discard(None)
+    if not user_tids:
+        return
+    existing = set(
+        (await db.execute(
+            select(Tenant.id).where(Tenant.id.in_(user_tids))
+        )).scalars().all()
+    )
+    for tid in sorted(user_tids - existing):
+        slug = await _free_slug(db, f"{DEFAULT_TENANT_SLUG}-restored")
+        db.add(Tenant(
+            id=tid, name=DEFAULT_TENANT_NAME, slug=slug,
+            plan="enterprise", is_active=True,
+        ))
+        await db.flush()
+        logger.warning(
+            f"Self-heal: re-created missing tenant {tid} referenced by a user"
+        )
 
 
 def _int(v: Any) -> int | None:
