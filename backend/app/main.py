@@ -259,8 +259,12 @@ async def _pulpo_replay_sweep_loop() -> None:
 
 
 async def _retention_loop() -> None:
-    """Daily cleanup: delete persisted orders + audit logs older than the
-    retention window (warned via the bell beforehand)."""
+    """Cleanup: delete persisted orders + granular audit logs.
+    Policy:
+      - Orders: older than settings.retention_days
+      - Audit INFO: older than 24h
+      - Audit ERROR/PROBLEM: older than 15d
+    """
     from datetime import datetime, timedelta, timezone
     from sqlalchemy import delete
     from app.core.database import async_session
@@ -269,14 +273,43 @@ async def _retention_loop() -> None:
 
     while True:
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=settings.retention_days)
+            now = datetime.now(timezone.utc)
             async with async_session() as db:
-                r1 = await db.execute(delete(OrderState).where(OrderState.created_at < cutoff))
-                r2 = await db.execute(delete(AuditLog).where(AuditLog.timestamp < cutoff))
-                audit_deleted = r2.rowcount or 0
+                # Orders: nach retention_days
+                cutoff_orders = now - timedelta(days=settings.retention_days)
+                r_orders = await db.execute(
+                    delete(OrderState).where(OrderState.created_at < cutoff_orders)
+                )
+                orders_deleted = r_orders.rowcount or 0
+
+                # Audit INFO: nach 24h
+                cutoff_info = now - timedelta(hours=24)
+                r_info = await db.execute(
+                    delete(AuditLog).where(
+                        (AuditLog.event_type == "INFO") &
+                        (AuditLog.timestamp < cutoff_info)
+                    )
+                )
+                info_deleted = r_info.rowcount or 0
+
+                # Audit ERROR/PROBLEM: nach 15d
+                cutoff_error = now - timedelta(days=15)
+                r_error = await db.execute(
+                    delete(AuditLog).where(
+                        (AuditLog.event_type.in_(["ERROR", "PROBLEM"])) &
+                        (AuditLog.timestamp < cutoff_error)
+                    )
+                )
+                error_deleted = r_error.rowcount or 0
+
                 await db.commit()
-                if (r1.rowcount or 0) or audit_deleted:
-                    logger.info(f"Retention: deleted {r1.rowcount} orders, {audit_deleted} audit rows older than {settings.retention_days}d")
+                total_deleted = orders_deleted + info_deleted + error_deleted
+                if total_deleted:
+                    logger.info(
+                        f"Retention: deleted {orders_deleted} orders, "
+                        f"{info_deleted} INFO-logs (>24h), "
+                        f"{error_deleted} ERROR/PROBLEM (>15d)"
+                    )
         except asyncio.CancelledError:
             break
         except Exception as e:
