@@ -14,7 +14,9 @@ type LogEntry = {
   logger: string; module: string; message: string; exception?: string;
 };
 
-const LEVELS = ['ALLE', 'INFO', 'WARNING', 'ERROR'] as const;
+// INFO/DEBUG werden serverseitig nicht mehr gepuffert (nur WARNING/ERROR) —
+// daher hier kein INFO-Filter mehr, der ohnehin leer bliebe.
+const LEVELS = ['ALLE', 'WARNING', 'ERROR'] as const;
 const LEVEL_COLOR: Record<string, string> = {
   DEBUG: '#64748b', INFO: '#0f172a', WARNING: '#b45309', ERROR: '#dc2626', CRITICAL: '#dc2626',
 };

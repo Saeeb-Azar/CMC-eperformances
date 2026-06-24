@@ -17,6 +17,10 @@ class RingBufferHandler(logging.Handler):
 
     def __init__(self, capacity: int = 4000) -> None:
         super().__init__()
+        # Nur WARNING/ERROR/CRITICAL aufbewahren — INFO/DEBUG fluten die
+        # Dashboard-Logansicht (httpx-Requests, Pulpo-Resync, …) und fressen
+        # Platz. Operator interessiert nur, wenn etwas schiefläuft.
+        self.setLevel(logging.WARNING)
         self._buf: deque = deque(maxlen=capacity)
         self._lock = threading.Lock()
         self._ids = itertools.count(1)
