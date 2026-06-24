@@ -546,6 +546,70 @@ class ConnectionManager:
         )
         return None
 
+    async def _enq_claim_and_bind(
+        self, protocol_id: str, ref: str, barcode: str, *,
+        matched_cw_list=None, filter_passed: bool = False,
+        response: dict | None = None, msg_data: dict | None = None,
+        session_factory=None,
+    ) -> str | None:
+        """Bei akzeptiertem ENQ (kein Resume): optional den CW-Slot abbuchen UND
+        IMMER einen freien Pulpo-Auftrag binden.
+
+        Die Bindung läuft BEWUSST unabhängig von der CW-Liste. Früher hing sie
+        im CW-Listen-Zweig — lief die Maschine ohne Liste, blieb die ``ref``
+        ungebunden und die Label-Auflösung griff bei LAB1 den ältesten
+        EAN-Treffer (``.limit(1)``). Folge: ALLE Pakete mit derselben EAN
+        bekamen denselben Auftrag und damit dasselbe Label (Doppel-Label-Bug;
+        die Maschine warf die Duplikate bei der Label-Verifikation aus).
+
+        Aufruf erfolgt SYNCHRON im Read-Loop in Scan-Reihenfolge → kein Race.
+        Bei ``response``/``msg_data`` (dicts) wird im Reject-Fall sauber auf
+        ``no_free_order`` gesetzt. Gibt die gebundene ``pulpo_order_id`` oder
+        ``None`` zurück.
+        """
+        from app.core.database import async_session
+
+        # 1) CW-Slot abbuchen — NUR wenn eine Kommissionierliste matcht.
+        consumed_slot = False
+        if (
+            matched_cw_list and filter_passed
+            and self.consume_cw_entry(protocol_id, matched_cw_list, barcode)
+        ):
+            self.record_cw_consumption(protocol_id, ref, matched_cw_list, barcode)
+            consumed_slot = True
+
+        # 2) Pulpo-Auftrag binden (unabhängig von der CW-Liste).
+        sf = session_factory or async_session
+        try:
+            async with sf() as _db:
+                _tid = await self._tenant_for(_db, protocol_id)
+                claimed = await self._claim_pulpo_order(_db, protocol_id, _tid, ref, barcode)
+                if claimed is not None:
+                    await self._bind_order_state(_db, protocol_id, ref, barcode, claimed)
+                    await _db.commit()
+                    if isinstance(msg_data, dict):
+                        msg_data["pulpo_order_id"] = str(claimed.pulpo_order_id or "")
+                    return claimed.pulpo_order_id
+                if not pulpo_runtime.test_mode:
+                    # Kein freier Auftrag (mehr Pakete als Aufträge, oder gar kein
+                    # Pulpo-Auftrag zum Barcode) → NICHT annehmen, sonst entsteht
+                    # ein Doppel-/Falsch-Label. Slot zurückgeben, sauber ablehnen.
+                    if consumed_slot:
+                        self.release_cw_for_ref(protocol_id, ref)
+                    if isinstance(response, dict):
+                        response["result"] = 0
+                        response["item_validated"] = False
+                        response["rejection_reason"] = "no_free_order"
+                    if isinstance(msg_data, dict):
+                        msg_data["rejection_reason"] = "no_free_order"
+                    logger.warning(
+                        f"ENQ abgelehnt: ref={ref} barcode={barcode} "
+                        f"— kein freier Pulpo-Auftrag (no_free_order)"
+                    )
+        except Exception as e:
+            logger.warning(f"ENQ-Bindung fehlgeschlagen ref={ref}: {e!r}")
+        return None
+
     async def _replay_pulpo_on_end(self, protocol_id: str, ref: str) -> None:
         """Hintergrund-Task nach END status=1: gesammelte Schreibvorgänge EINMAL
         nach Pulpo abspielen (gelockt + idempotent, siehe pulpo/replay.py).
@@ -2200,45 +2264,17 @@ class ConnectionManager:
                             ):
                                 bc = str(msg_data.get("barcode", "") or "").strip()
                                 ref_enq = str(response.get("reference_id", "") or "")
-                                # Wiederaufnahme verbraucht keinen neuen Slot.
-                                if matched_cw_list and filter_passed and not is_resume:
-                                    if self.consume_cw_entry(conn.protocol_id, matched_cw_list, bc):
-                                        self.record_cw_consumption(
-                                            conn.protocol_id, ref_enq, matched_cw_list, bc,
-                                        )
-                                        try:
-                                            from app.core.database import async_session
-                                            async with async_session() as _db:
-                                                _tid = await self._tenant_for(_db, conn.protocol_id)
-                                                claimed = await self._claim_pulpo_order(
-                                                    _db, conn.protocol_id, _tid, ref_enq, bc,
-                                                )
-                                                if claimed is None:
-                                                    # Kein freier Auftrag → NICHT annehmen
-                                                    # (sonst Doppelbindung → versetzt). Slot
-                                                    # zurückgeben, sauber ablehnen.
-                                                    self.release_cw_for_ref(conn.protocol_id, ref_enq)
-                                                    response["result"] = 0
-                                                    response["item_validated"] = False
-                                                    response["rejection_reason"] = "no_free_order"
-                                                    if isinstance(msg_data, dict):
-                                                        msg_data["rejection_reason"] = "no_free_order"
-                                                    logger.warning(
-                                                        f"ENQ abgelehnt: ref={ref_enq} barcode={bc} "
-                                                        f"— kein freier Pulpo-Auftrag (no_free_order)"
-                                                    )
-                                                else:
-                                                    await self._bind_order_state(
-                                                        _db, conn.protocol_id, ref_enq, bc, claimed,
-                                                    )
-                                                    await _db.commit()
-                                                    if isinstance(msg_data, dict):
-                                                        msg_data["pulpo_order_id"] = str(claimed.pulpo_order_id or "")
-                                        except Exception as e:
-                                            logger.warning(
-                                                f"ENQ-Bindung fehlgeschlagen ref={ref_enq}: {e!r}"
-                                            )
-                                elif is_resume:
+                                if not is_resume:
+                                    # CW-Slot abbuchen UND Pulpo-Auftrag binden —
+                                    # die Bindung läuft UNABHÄNGIG von der CW-Liste
+                                    # (sonst bleibt die ref ungebunden → Doppel-Label).
+                                    await self._enq_claim_and_bind(
+                                        conn.protocol_id, ref_enq, bc,
+                                        matched_cw_list=matched_cw_list,
+                                        filter_passed=filter_passed,
+                                        response=response, msg_data=msg_data,
+                                    )
+                                else:
                                     # Wiederaufnahme: Bindung der noch aktiven ref
                                     # auf die neue ref übertragen (kein neuer Slot).
                                     try:

@@ -15,6 +15,18 @@ from app.modules.machines.models import Machine
 from app.modules.machines.service import effective_online
 
 
+@pytest.fixture(autouse=True)
+def _ensure_event_loop():
+    """Die sync-Tests hier bauen asyncio.StreamReader() (braucht einen aktuellen
+    Loop). Lief vorher ein asyncio.run()/async-Test, ist der Loop geschlossen
+    und nicht gesetzt → 'no current event loop'. Hier robust einen bereitstellen,
+    unabhängig von der Test-Reihenfolge."""
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 class _FakeWriter:
     def __init__(self):
         self.closed = False
