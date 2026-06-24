@@ -840,7 +840,21 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    """Liveness + welcher Code-Stand läuft. Der Commit kommt aus Railways
+    RAILWAY_GIT_COMMIT_SHA — so lässt sich ohne Rätselraten prüfen, ob ein
+    Deploy wirklich den erwarteten Stand fährt."""
+    import os
+    sha = (
+        os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("GIT_COMMIT_SHA")
+        or os.getenv("SOURCE_COMMIT")
+        or ""
+    )
+    return {
+        "status": "ok",
+        "commit": sha[:12] if sha else "unknown",
+        "branch": os.getenv("RAILWAY_GIT_BRANCH", ""),
+    }
 
 
 @app.get("/api/v1/gateway/status")
