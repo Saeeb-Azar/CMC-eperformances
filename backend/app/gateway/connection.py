@@ -1295,6 +1295,7 @@ class ConnectionManager:
                 try:
                     await self._store_shipment(
                         db, tenant_id, ref, scanned_barcode, tracking, label_b64,
+                        order_state_id=os_state_id,
                     )
                 except Exception as e:
                     logger.warning(f"LAB1 shipment persist failed for {ref}: {e!r}")
@@ -1561,6 +1562,7 @@ class ConnectionManager:
         self, db, tenant_id: str, ref: str, barcode: str,
         tracking: str, label_b64: str, *,
         seq: str = "", sales: str = "", label_format: str = "PDF",
+        order_state_id: str | None = None,
     ) -> None:
         """Shipment für (ref, barcode) anlegen/aktualisieren — UND alte,
         ungedruckte Shipments DESSELBEN refs mit ANDEREM Barcode supersedieren.
@@ -1596,12 +1598,20 @@ class ConnectionManager:
                 tracking_number=tracking, label_b64=label_b64, label_format=label_format,
                 carrier="DHL", product="V01PAK", is_test=False,
                 pulpo_sequence_number=seq, pulpo_sales_order_num=sales,
+                # Harte Bindung ans State-Dokument: macht die Detailansicht
+                # eindeutig (kein „neuestes per recycelter ref") UND koppelt die
+                # Druck-Freigabe an den Paketstatus (Auswurf-Gate, Reihenfolge).
+                order_state_id=order_state_id,
             ))
         else:
             if tracking: sh.tracking_number = tracking
             if label_b64: sh.label_b64 = label_b64
             if seq: sh.pulpo_sequence_number = seq
             if sales: sh.pulpo_sales_order_num = sales
+            # Bindung nachtragen, falls ein früher (z.B. precreate ohne State)
+            # angelegtes Shipment sie noch nicht hat.
+            if order_state_id and not sh.order_state_id:
+                sh.order_state_id = order_state_id
         await db.commit()
 
     async def _precreate_label(
@@ -1718,9 +1728,23 @@ class ConnectionManager:
                                 or rp.get("sales_order_ref") or ""
                             )
                     except Exception: pass
+                    # State-Dokument dieses Pakets nachschlagen → Shipment hart
+                    # daran binden (Detailansicht eindeutig + Druck-Freigabe an
+                    # Paketstatus gekoppelt). Precreate läuft bei IND → State ist
+                    # INDUCTED, der Druck wird also erst bei ACK-Annahme frei.
+                    os_state_id = None
+                    if machine is not None:
+                        from app.modules.orders.models import OrderState as _OS
+                        _os = (await db.execute(
+                            select(_OS).where(
+                                _OS.machine_db_id == machine.id,
+                                _OS.reference_id == ref,
+                            ).order_by(_OS.created_at.desc()).limit(1)
+                        )).scalar_one_or_none()
+                        os_state_id = _os.id if _os is not None else None
                     await self._store_shipment(
                         db, tenant_id, ref, barcode, tracking, label_b64,
-                        seq=seq_num, sales=sales_num,
+                        seq=seq_num, sales=sales_num, order_state_id=os_state_id,
                     )
                     bytes_est = len(label_b64) * 3 // 4 if label_b64 else 0
                     logger.info(

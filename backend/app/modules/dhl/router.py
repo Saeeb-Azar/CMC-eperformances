@@ -129,19 +129,42 @@ async def get_print_queue(
     Label-Base64 enthalten (sonst nichts zu drucken)."""
     from datetime import datetime as _dt
     from sqlalchemy import or_
+    from app.modules.orders.models import OrderState
     dhl_runtime.daemon_last_seen = _dt.now(timezone.utc)  # „Daemon lebt"-Marker für die UI
+    # Label erst freigeben, sobald das gebundene Paket die Auswurf-Entscheidung
+    # passiert hat (Status SCANNED = ACK-Annahme, oder weiter LABELED/COMPLETED).
+    # ASSIGNED/INDUCTED → noch nicht drucken (Paket könnte bei ACK ausgeworfen
+    # werden → sonst verwaistes Label auf dem Nachbarpaket). DELETED/EJECTED/
+    # FAILED → NIE drucken. Ungebundene (Test-)Sendungen ohne order_state_id
+    # drucken weiterhin sofort.
+    _PRINTABLE = ("SCANNED", "LABELED", "COMPLETED")
     # Nur noch NICHT-fehlerhafte Jobs automatisch ausliefern. Ein bereits
     # fehlgeschlagener Druck (print_error gesetzt) wird NICHT alle 2 s neu
     # versucht — das erzeugte sonst die PRINT_FAILED-Flut. Der Job bleibt in
     # der „Probleme"-Liste sichtbar und kann manuell aufgelöst/neu gedruckt
     # werden (setzt print_error zurück → landet wieder in dieser Queue).
     res = await db.execute(
-        select(Shipment).where(
+        select(Shipment)
+        .outerjoin(OrderState, Shipment.order_state_id == OrderState.id)
+        .where(
             Shipment.tenant_id == user["tenant_id"],
             Shipment.printed_at.is_(None),
             Shipment.label_b64 != "",
             or_(Shipment.print_error == "", Shipment.print_error.is_(None)),
-        ).order_by(Shipment.created_at.asc()).limit(limit)
+            or_(
+                Shipment.order_state_id.is_(None),
+                OrderState.state.in_(_PRINTABLE),
+            ),
+        )
+        # PHYSISCHE Reihenfolge: nach Maschine + ENQ-Sequenz (synchron bei ENQ in
+        # Scan-Reihenfolge vergeben) — NICHT nach created_at (das spiegelt den
+        # async Precreate-Abschluss und führt zu versetzten Labels).
+        .order_by(
+            func.coalesce(OrderState.machine_db_id, "").asc(),
+            func.coalesce(OrderState.enq_sequence, 2_000_000_000).asc(),
+            Shipment.created_at.asc(),
+        )
+        .limit(limit)
     )
     return [
         PrintQueueItem(
