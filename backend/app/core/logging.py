@@ -86,8 +86,19 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logging(debug: bool = False) -> logging.Logger:
+    # Default: nur WARNING/ERROR/CRITICAL — INFO/DEBUG fluten Logviewer und
+    # Container-Logs (httpx-Requests, Pulpo-Resync, …). Per Env wieder anhebbar:
+    #   CMC_LOG_LEVEL=INFO  bzw.  =DEBUG   (oder debug=True).
+    import os
+    if debug:
+        level = logging.DEBUG
+    else:
+        level = _LEVEL_ORDER.get(
+            os.getenv("CMC_LOG_LEVEL", "WARNING").upper(), logging.WARNING
+        )
+
     logger = logging.getLogger("cmc_eperformances")
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    logger.setLevel(level)
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JSONFormatter())
@@ -98,8 +109,14 @@ def setup_logging(debug: bool = False) -> logging.Logger:
     root = logging.getLogger()
     if log_ring not in root.handlers:
         root.addHandler(log_ring)
-    if root.level == logging.NOTSET or root.level > logging.INFO:
-        root.setLevel(logging.INFO)
+    # Root auf dasselbe Level → drittanbieter-Logger (httpx, …), die per
+    # Propagation am Root hängen, erzeugen kein INFO mehr.
+    root.setLevel(level)
+
+    # Geschwätzige Drittanbieter-Logger hart auf WARNING — der „HTTP Request:
+    # GET … 200 OK"-Strom pro Pulpo-Poll ist nie nützlich und frisst Platz.
+    for noisy in ("httpx", "httpcore", "uvicorn.access"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     return logger
 
