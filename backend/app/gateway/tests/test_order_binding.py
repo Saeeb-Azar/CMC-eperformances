@@ -155,6 +155,45 @@ def test_ejected_order_is_free_again():
     asyncio.run(run())
 
 
+# ── COMPLETED/EJECTED bleiben reserviert (kein erneutes Greifen → Doppel-Label) ─
+def test_completed_order_not_reclaimed():
+    """Fertig versandter Auftrag (COMPLETED) darf vom nächsten gleiche-EAN-Scan
+    NICHT erneut gegriffen werden — sonst Doppel-Label-Kaskade (Feld-Bug)."""
+    sm = _fresh_db()
+    cm = ConnectionManager()
+
+    async def run():
+        async with sm() as db:
+            await _seed(db, n=1)  # nur PA-A
+            c = await cm._claim_pulpo_order(db, PROTO, TENANT, "ref0001", EAN)
+            os_row = await cm._bind_order_state(db, PROTO, "ref0001", EAN, c)
+            os_row.state = "COMPLETED"
+            cm._ref_pulpo_order.get(PROTO, {}).pop("ref0001", None)  # in-memory frei
+            await db.flush()
+            # DB-Reservierung muss greifen → kein freier Auftrag mehr
+            assert await cm._claim_pulpo_order(db, PROTO, TENANT, "ref0002", EAN) is None
+
+    asyncio.run(run())
+
+
+def test_ejected_after_labeling_not_reclaimed():
+    """EJECTED (END status!=1, Label war schon vergeben) bleibt reserviert."""
+    sm = _fresh_db()
+    cm = ConnectionManager()
+
+    async def run():
+        async with sm() as db:
+            await _seed(db, n=1)
+            c = await cm._claim_pulpo_order(db, PROTO, TENANT, "ref0001", EAN)
+            os_row = await cm._bind_order_state(db, PROTO, "ref0001", EAN, c)
+            os_row.state = "EJECTED"
+            cm._ref_pulpo_order.get(PROTO, {}).pop("ref0001", None)
+            await db.flush()
+            assert await cm._claim_pulpo_order(db, PROTO, TENANT, "ref0002", EAN) is None
+
+    asyncio.run(run())
+
+
 # ── DRY-RUN: A,B,C in Scan-Reihenfolge, Überzahl REJECT, nichts persistiert ─
 def test_dry_run_fifo_and_no_persistence():
     sm = _fresh_db()

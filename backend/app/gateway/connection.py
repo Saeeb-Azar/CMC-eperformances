@@ -513,8 +513,16 @@ class ConnectionManager:
         if not rows:
             return None
 
-        # PERSISTIERTE Reservierungen (aktive States dieser Maschine, ohne die
-        # eigene ref). FAILED zählt bewusst mit.
+        # PERSISTIERTE Reservierungen (States dieser Maschine, ohne die eigene
+        # ref). Reserviert bleibt ein Auftrag, sobald ein Paket ihn beansprucht
+        # hat UND er nicht vor der Labelvergabe verworfen wurde:
+        #   - aktiv: ASSIGNED/INDUCTED/SCANNED/LABELED
+        #   - FAILED: gelabelt, Pulpo-Abschluss offen → kein Doppel-Versand
+        #   - COMPLETED: fertig versandt → NIE erneut greifen (sonst Doppel-Label)
+        #   - EJECTED: bei END (status!=1) ausgeworfen — Label war schon vergeben
+        #     → erneut greifen würde dasselbe Label ein zweites Mal erzeugen
+        # NICHT reserviert: DELETED (ACK-Maßauswurf VOR der Labelvergabe → das
+        # Paket geht zurück in die Packqueue, der Auftrag ist wieder frei).
         reserved_rows = (await db.execute(
             select(OrderState.pulpo_order_id)
             .join(Machine, OrderState.machine_db_id == Machine.id)
@@ -523,7 +531,8 @@ class ConnectionManager:
                 OrderState.reference_id != ref,
                 OrderState.pulpo_order_id.isnot(None),
                 OrderState.state.in_(
-                    ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED", "FAILED")
+                    ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED",
+                     "FAILED", "COMPLETED", "EJECTED")
                 ),
             )
         )).scalars().all()
