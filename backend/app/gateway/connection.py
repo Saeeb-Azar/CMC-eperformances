@@ -967,6 +967,7 @@ class ConnectionManager:
 
     def set_pulpo_cw_lists(
         self, protocol_id: str, lists: dict[str, dict[str, int]], *, active: bool = False,
+        orders_by_list: dict[str, dict[str, list[dict]]] | None = None,
     ) -> None:
         """Replace ALL Pulpo-sourced CW-Listen of a machine with one named list
         per Lagerplatz (e.g. "CW1", "CW6", "CW10"). Each maps barcode→expected.
@@ -994,6 +995,11 @@ class ConnectionManager:
                 "active": active if not existing else bool(existing.get("active", active)),
                 "items": new_items,
                 "source": "pulpo",
+                # Auftrags-Infos pro Barcode (PA/Verkaufsauftrag/Kunde) — SEPARAT
+                # von `items` gehalten, damit die items-Struktur unverändert
+                # bleibt (Bestandstests prüfen sie exakt). Wird beim Serialisieren
+                # je Zeile beigemischt → Zielliste zeigt die erwarteten Aufträge.
+                "orders": (orders_by_list or {}).get(name, {}),
             }
 
     def reset_cw_consumed(self, protocol_id: str | None = None) -> int:
@@ -1021,11 +1027,14 @@ class ConnectionManager:
     @staticmethod
     def _serialize_cw_list(name: str, lst: dict) -> dict:
         items = lst.get("items", {})
+        orders_by_bc = lst.get("orders", {}) or {}
         rows = [
             {
                 "barcode": barcode,
                 "expected": entry["expected"],
                 "consumed": entry["consumed"],
+                # erwartete Aufträge an dieser EAN (leer bei manuellen Listen)
+                "orders": orders_by_bc.get(barcode, []),
             }
             for barcode, entry in sorted(items.items())
         ]

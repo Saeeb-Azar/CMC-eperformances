@@ -227,10 +227,17 @@ function naturalCw(a: string, b: string): number {
   return na - nb;
 }
 
+interface CWOrderInfo {
+  pa: string;
+  sales_order: string;
+  customer: string;
+}
+
 interface CWListItem {
   barcode: string;
   expected: number;
   consumed: number;
+  orders?: CWOrderInfo[];  // erwartete Pulpo-Aufträge an dieser EAN (read-only Pulpo-Listen)
 }
 
 interface CWList {
@@ -1616,7 +1623,8 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
               const full = it.consumed >= it.expected;
               const product = products[it.barcode] ?? null;
               return (
-                <div key={it.barcode} style={{
+                <div key={it.barcode} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '6px 10px', fontSize: 12,
                   background: full ? '#f0fdf4' : 'var(--clr-bg-subtle, #f8fafc)',
@@ -1695,6 +1703,27 @@ function CWListModal({ list, onClose, onSave, onDelete }: CWListModalProps) {
                       ><X size={13} /></button>
                     </>
                   )}
+                </div>
+                {it.orders && it.orders.length > 0 && (
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: 1,
+                    margin: '0 0 4px 32px', paddingLeft: 8,
+                    borderLeft: '2px solid var(--clr-border)',
+                  }}>
+                    {it.orders.map((o, i) => (
+                      <div key={`${o.pa}-${i}`} style={{
+                        display: 'flex', gap: 6, fontSize: 11, alignItems: 'baseline',
+                        flexWrap: 'wrap',
+                      }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4338ca' }}>{o.pa}</span>
+                        {o.sales_order && (
+                          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--clr-text-muted)' }}>{o.sales_order}</span>
+                        )}
+                        {o.customer && <span style={{ color: '#0f172a' }}>· {o.customer}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 </div>
               );
             })

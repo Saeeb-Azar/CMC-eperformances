@@ -91,6 +91,45 @@ def test_sync_pushes_list_into_connection_manager():
         cw_sync.connection_manager = connection_manager  # restore
 
 
+def test_orders_per_barcode_flow_into_serialized_list():
+    """Gleiche EAN, mehrere Aufträge → die Zielliste muss pro Barcode die
+    konkreten Aufträge (PA/Verkaufsauftrag/Kunde) mitführen, damit der Operator
+    vorab sieht, welche Aufträge erwartet werden."""
+    sm = _fresh_db()
+    cm = ConnectionManager()
+    cw_sync.connection_manager = cm
+    try:
+        async def run():
+            async with sm() as db:
+                db.add(Machine(tenant_id="t1", machine_id="0001", name="CW",
+                               pulpo_pick_location="", is_active=True))
+                for oid, cust, son in (("9", "Jochen Heide", "302-1"),
+                                        ("8", "Arjan Singha", "306-2")):
+                    o = PulpoPackingOrder(
+                        tenant_id="t1", pulpo_order_id=oid, pick_location="CW29",
+                        state="queue",
+                        raw_payload={"sequence_number": f"PA-{oid}",
+                                     "sales_order": {"order_num": son,
+                                                     "ship_to": {"name": cust}}},
+                    )
+                    o.items = [PulpoOrderItem(ean="4005", quantity=1)]
+                    db.add(o)
+                await db.commit()
+                await cw_sync.sync_cw_lists_from_cache(db)
+
+        asyncio.run(run())
+        serialized = cm.cw_lists["0001"]
+        cw29 = next(l for l in serialized if l["name"] == "CW29")
+        row = next(r for r in cw29["items"] if r["barcode"] == "4005")
+        assert row["expected"] == 2
+        pas = sorted(o["pa"] for o in row["orders"])
+        assert pas == ["PA-8", "PA-9"], row["orders"]
+        customers = sorted(o["customer"] for o in row["orders"])
+        assert customers == ["Arjan Singha", "Jochen Heide"]
+    finally:
+        cw_sync.connection_manager = connection_manager
+
+
 def test_set_pulpo_cw_list_preserves_consumed_and_marks_source():
     cm = ConnectionManager()
     cm.set_pulpo_cw_list("M1", {"A": 2, "B": 1})

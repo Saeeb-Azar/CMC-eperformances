@@ -97,6 +97,49 @@ async def build_cw_lists_by_location(
     return result
 
 
+async def build_cw_orders_by_location(
+    db: AsyncSession, tenant_id: str, prefix: str | None,
+) -> dict[str, dict[str, list[dict]]]:
+    """Pro Lagerplatz UND Barcode die KONKRETEN Aufträge auflisten, die daran
+    hängen: ``{location: {barcode: [{pa, sales_order, customer}, …]}}``.
+
+    Damit kann die Zielliste pro EAN zeigen, welche Pulpo-Aufträge (Kunde/
+    Verkaufsauftrag) erwartet werden — der Operator sieht VORAB, ob z.B. 3
+    Kartons auch 3 verschiedenen Aufträgen entsprechen."""
+    stmt = (
+        select(PulpoPackingOrder)
+        .where(
+            PulpoPackingOrder.tenant_id == tenant_id,
+            PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
+        )
+        .options(selectinload(PulpoPackingOrder.items))
+    )
+    if prefix:
+        stmt = stmt.where(PulpoPackingOrder.pick_location.like(f"{prefix}%"))
+    orders = (await db.execute(stmt)).scalars().all()
+
+    result: dict[str, dict[str, list[dict]]] = {}
+    for o in orders:
+        loc = (o.pick_location or "?").strip() or "?"
+        bucket = result.setdefault(loc, {})
+        rp = o.raw_payload if isinstance(o.raw_payload, dict) else {}
+        so = rp.get("sales_order") if isinstance(rp.get("sales_order"), dict) else {}
+        ship_to = so.get("ship_to") if isinstance(so.get("ship_to"), dict) else {}
+        info = {
+            "pa": str(rp.get("sequence_number") or o.pulpo_order_id or ""),
+            "sales_order": str(so.get("order_num") or rp.get("sales_order_ref") or ""),
+            "customer": str(ship_to.get("name") or so.get("customer_name") or ""),
+        }
+        # Welche Barcodes adressiert dieser Auftrag? Multi-Order → cart_box,
+        # sonst die Artikel-EANs (jeder Auftrag genau EINMAL pro Barcode).
+        if o.cart_box_barcode:
+            bucket.setdefault(o.cart_box_barcode, []).append(info)
+        else:
+            for ean in {it.ean for it in o.items if it.ean}:
+                bucket.setdefault(ean, []).append(info)
+    return result
+
+
 async def sync_cw_lists_from_cache(db: AsyncSession) -> int:
     """Rebuild the Pulpo CW-Listen of every active machine — one list per
     Lagerplatz. ``pulpo_pick_location`` is the location prefix filter (empty =
@@ -105,8 +148,10 @@ async def sync_cw_lists_from_cache(db: AsyncSession) -> int:
         await db.execute(select(Machine).where(Machine.is_active.is_(True)))
     ).scalars().all()
     for m in machines:
-        lists = await build_cw_lists_by_location(db, m.tenant_id, m.pulpo_pick_location or None)
-        connection_manager.set_pulpo_cw_lists(m.machine_id, lists)
+        prefix = m.pulpo_pick_location or None
+        lists = await build_cw_lists_by_location(db, m.tenant_id, prefix)
+        orders = await build_cw_orders_by_location(db, m.tenant_id, prefix)
+        connection_manager.set_pulpo_cw_lists(m.machine_id, lists, orders_by_list=orders)
     return len(machines)
 
 
