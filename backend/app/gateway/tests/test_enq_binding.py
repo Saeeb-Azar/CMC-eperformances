@@ -123,3 +123,42 @@ async def test_overscan_without_cw_list_rejected():
         assert md4["rejection_reason"] == "no_free_order"
     finally:
         pulpo_runtime.test_mode = prev
+
+
+@pytest.mark.asyncio
+async def test_resume_branch_still_claims_free_orders():
+    """Mehrere gleiche-EAN-Pakete GLEICHZEITIG auf dem Band: der Tracker meldet
+    den Barcode als „aktiv" → Resume-Zweig (reject_if_none=False). Solange ein
+    FREIER Auftrag existiert, MUSS jedes Paket einen EIGENEN bekommen — sonst
+    erben alle den Auftrag des ersten (Feld-Bug: gleiche Auftragsnummer/Label).
+    Erst wenn kein Auftrag mehr frei ist, liefert die Bindung None → der
+    Aufrufer macht dann ein echtes Resume (Bindung erben)."""
+    sm = await _fresh_db()
+    cm = ConnectionManager()
+    async with sm() as db:
+        await _seed(db, n=3)
+
+    bound = []
+    for i in range(3):
+        resp = {"result": 1, "reference_id": f"ref{i+1:04d}"}
+        md = {"barcode": EAN}
+        poid = await cm._enq_claim_and_bind(
+            PROTO, f"ref{i+1:04d}", EAN,
+            response=resp, msg_data=md, session_factory=sm,
+            reject_if_none=False,  # Resume-Zweig: NICHT ablehnen
+        )
+        assert resp["result"] == 1, f"Scan {i+1} fälschlich abgelehnt: {resp}"
+        bound.append(poid)
+
+    # Drei gleichzeitige gleiche-EAN-Pakete → drei VERSCHIEDENE Aufträge.
+    assert set(bound) == {"PA-A", "PA-B", "PA-C"}, bound
+
+    # Viertes Paket: kein freier Auftrag mehr → None (kein Reject im Resume-Zweig);
+    # der Read-Loop würde hier _transfer_binding_on_resume aufrufen.
+    resp4 = {"result": 1, "reference_id": "ref0004"}
+    poid4 = await cm._enq_claim_and_bind(
+        PROTO, "ref0004", EAN, response=resp4, msg_data={"barcode": EAN},
+        session_factory=sm, reject_if_none=False,
+    )
+    assert poid4 is None
+    assert resp4["result"] == 1  # NICHT abgelehnt — Resume entscheidet der Aufrufer

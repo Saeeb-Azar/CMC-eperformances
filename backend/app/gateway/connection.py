@@ -559,52 +559,47 @@ class ConnectionManager:
         self, protocol_id: str, ref: str, barcode: str, *,
         matched_cw_list=None, filter_passed: bool = False,
         response: dict | None = None, msg_data: dict | None = None,
-        session_factory=None,
+        session_factory=None, reject_if_none: bool = True,
     ) -> str | None:
-        """Bei akzeptiertem ENQ (kein Resume): optional den CW-Slot abbuchen UND
-        IMMER einen freien Pulpo-Auftrag binden.
+        """Bei akzeptiertem ENQ einen FREIEN Pulpo-Auftrag binden (unabhängig von
+        der CW-Liste) und optional den CW-Slot abbuchen.
 
         Die Bindung läuft BEWUSST unabhängig von der CW-Liste. Früher hing sie
         im CW-Listen-Zweig — lief die Maschine ohne Liste, blieb die ``ref``
         ungebunden und die Label-Auflösung griff bei LAB1 den ältesten
         EAN-Treffer (``.limit(1)``). Folge: ALLE Pakete mit derselben EAN
-        bekamen denselben Auftrag und damit dasselbe Label (Doppel-Label-Bug;
-        die Maschine warf die Duplikate bei der Label-Verifikation aus).
+        bekamen denselben Auftrag und damit dasselbe Label (Doppel-Label-Bug).
+
+        ``reject_if_none``: ist kein freier Auftrag verfügbar, wird der ENQ live
+        abgelehnt (no_free_order). Im Resume-Pfad (gleiche EAN noch aktiv) wird
+        das auf False gesetzt — dort entscheidet der Aufrufer (kein freier
+        Auftrag → echtes Resume, Bindung erben).
 
         Aufruf erfolgt SYNCHRON im Read-Loop in Scan-Reihenfolge → kein Race.
-        Bei ``response``/``msg_data`` (dicts) wird im Reject-Fall sauber auf
-        ``no_free_order`` gesetzt. Gibt die gebundene ``pulpo_order_id`` oder
-        ``None`` zurück.
+        Gibt die gebundene ``pulpo_order_id`` oder ``None`` zurück.
         """
         from app.core.database import async_session
 
-        # 1) CW-Slot abbuchen — NUR wenn eine Kommissionierliste matcht.
-        consumed_slot = False
-        if (
-            matched_cw_list and filter_passed
-            and self.consume_cw_entry(protocol_id, matched_cw_list, barcode)
-        ):
-            self.record_cw_consumption(protocol_id, ref, matched_cw_list, barcode)
-            consumed_slot = True
-
-        # 2) Pulpo-Auftrag binden (unabhängig von der CW-Liste).
         sf = session_factory or async_session
         try:
             async with sf() as _db:
                 _tid = await self._tenant_for(_db, protocol_id)
                 claimed = await self._claim_pulpo_order(_db, protocol_id, _tid, ref, barcode)
                 if claimed is not None:
+                    # CW-Slot ERST jetzt abbuchen — nur bei tatsächlicher Bindung
+                    # eines neuen Auftrags (kein Verbrauch bei Fehlschlag/Resume).
+                    if matched_cw_list and filter_passed:
+                        if self.consume_cw_entry(protocol_id, matched_cw_list, barcode):
+                            self.record_cw_consumption(protocol_id, ref, matched_cw_list, barcode)
                     await self._bind_order_state(_db, protocol_id, ref, barcode, claimed)
                     await _db.commit()
                     if isinstance(msg_data, dict):
                         msg_data["pulpo_order_id"] = str(claimed.pulpo_order_id or "")
                     return claimed.pulpo_order_id
-                if not pulpo_runtime.test_mode:
+                if reject_if_none and not pulpo_runtime.test_mode:
                     # Kein freier Auftrag (mehr Pakete als Aufträge, oder gar kein
                     # Pulpo-Auftrag zum Barcode) → NICHT annehmen, sonst entsteht
-                    # ein Doppel-/Falsch-Label. Slot zurückgeben, sauber ablehnen.
-                    if consumed_slot:
-                        self.release_cw_for_ref(protocol_id, ref)
+                    # ein Doppel-/Falsch-Label. Sauber ablehnen.
                     if isinstance(response, dict):
                         response["result"] = 0
                         response["item_validated"] = False
@@ -2284,14 +2279,29 @@ class ConnectionManager:
                                         response=response, msg_data=msg_data,
                                     )
                                 else:
-                                    # Wiederaufnahme: Bindung der noch aktiven ref
-                                    # auf die neue ref übertragen (kein neuer Slot).
-                                    try:
-                                        await self._transfer_binding_on_resume(
-                                            conn.protocol_id, bc, ref_enq,
-                                        )
-                                    except Exception as e:
-                                        logger.warning(f"Resume-Bindungsübertrag fehlgeschlagen: {e!r}")
+                                    # „Gleiche EAN noch aktiv" ist ZWEIDEUTIG: es kann
+                                    # ein NEUES Paket sein (mehrere Aufträge mit
+                                    # derselben EAN gleichzeitig auf dem Band) ODER ein
+                                    # wieder aufgelegtes (Resume). Unterscheidung über
+                                    # die Auftragsverfügbarkeit: erst einen FREIEN
+                                    # Auftrag zu binden versuchen → klappt das, ist es
+                                    # ein neues Paket mit eigenem Label. Nur wenn KEIN
+                                    # freier Auftrag mehr da ist, die Bindung des
+                                    # aktiven Pakets erben (echtes Resume, kein Slot).
+                                    poid = await self._enq_claim_and_bind(
+                                        conn.protocol_id, ref_enq, bc,
+                                        matched_cw_list=matched_cw_list,
+                                        filter_passed=filter_passed,
+                                        response=response, msg_data=msg_data,
+                                        reject_if_none=False,
+                                    )
+                                    if poid is None:
+                                        try:
+                                            await self._transfer_binding_on_resume(
+                                                conn.protocol_id, bc, ref_enq,
+                                            )
+                                        except Exception as e:
+                                            logger.warning(f"Resume-Bindungsübertrag fehlgeschlagen: {e!r}")
                                 self.record_scan(conn.protocol_id, bc, now=time.monotonic())
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
