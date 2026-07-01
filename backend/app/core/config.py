@@ -72,8 +72,10 @@ class Settings(BaseSettings):
     # (origin_location_code in GET /packing/orders).
     pulpo_pick_location: str = ""
     # Intervall (Sekunden) des Hintergrund-Tasks, der die CW-Listen aus der
-    # Pulpo-Queue neu aufbaut (Self-Heal für verpasste Webhooks).
-    cw_sync_interval_s: int = 8
+    # Pulpo-Queue neu aufbaut (Self-Heal für verpasste Webhooks). War 8 s →
+    # zu häufig, erschöpfte die DB (alle ~444 Aufträge jede Runde). Webhooks
+    # halten die Queue in Echtzeit aktuell; der Resync ist nur Absicherung.
+    cw_sync_interval_s: int = 30
 
     # ENQ-Antwort, Feld "Feeders": Maschine erwartet hier eine EINZELNE
     # Ziffer = welche Karton-/Pappe-Bahn benutzt werden soll (siehe HMI-

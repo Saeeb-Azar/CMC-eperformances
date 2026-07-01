@@ -226,13 +226,33 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
             loc_counts[code] = loc_counts.get(code, 0) + 1
         logger.info(f"Pulpo queue Lagerplatz distribution: {loc_counts}")
 
+        # DB-Last senken: nur GEÄNDERTE Aufträge neu schreiben. Vorher wurde
+        # jede Runde JEDER Auftrag (+ alle Artikel-Zeilen) neu geschrieben —
+        # bei 444 Aufträgen alle paar Sekunden erschöpft das die DB. Wir laden
+        # die vorhandenen raw_payloads EINMAL und überspringen unveränderte.
+        cached_raw = dict((await db.execute(
+            select(PulpoPackingOrder.pulpo_order_id, PulpoPackingOrder.raw_payload)
+            .where(
+                PulpoPackingOrder.tenant_id == tenant_id,
+                PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
+            )
+        )).all())
+
         pulled_ids: set[str] = set()
+        skipped = 0
         for order in live_orders:
             oid = order.get("id")
             if oid is None:
                 continue
-            pulled_ids.add(str(oid))
+            oid_s = str(oid)
+            pulled_ids.add(oid_s)
+            # Unverändert (identisches Pulpo-Payload) → nichts zu tun.
+            if oid_s in cached_raw and cached_raw[oid_s] == order:
+                skipped += 1
+                continue
             await _upsert_queue_order(db, tenant_id, order, product_cache, loc_map)
+        if skipped:
+            logger.info(f"Pulpo resync: {skipped} unveränderte Aufträge übersprungen (DB-Last gespart)")
 
         # Self-heal: close EVERY non-terminal cached order that the live queue
         # pull no longer returned. The pull is the whole packing queue, so a
