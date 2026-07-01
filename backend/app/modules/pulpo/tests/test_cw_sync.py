@@ -130,6 +130,56 @@ def test_orders_per_barcode_flow_into_serialized_list():
         cw_sync.connection_manager = connection_manager
 
 
+def test_resync_deletes_orders_absent_from_queue():
+    """Pulpo-Daten sind nur ein LIVE-Cache: Aufträge, die nicht mehr in der
+    Queue sind, werden beim Resync GELÖSCHT (samt Items) — nicht ewig behalten.
+    Verhindert das unbegrenzte Anwachsen der Tabellen (DB-Überlauf)."""
+    from sqlalchemy import select as _sel
+    from app.modules.tenants.models import Tenant as _Tenant
+    sm = _fresh_db()
+    cm = ConnectionManager()
+    orig_pulpo = cw_sync.pulpo
+    orig_cm = cw_sync.connection_manager
+    cw_sync.connection_manager = cm
+
+    class _FakePulpo:
+        configured = True
+        async def list_queue_orders(self, _loc):
+            return [{"id": 111, "state": "queue",
+                     "items": [{"product": {"barcodes": ["4005"], "sku": "X", "name": "Art"},
+                                "quantity": 1}]}]
+        async def get_location(self, _lid):
+            return {"code": "CW1"}
+
+    cw_sync.pulpo = _FakePulpo()
+    try:
+        async def run():
+            async with sm() as db:
+                db.add(_Tenant(id="t1", name="T", slug="t"))
+                db.add(Machine(tenant_id="t1", machine_id="0001", name="CW",
+                               pulpo_pick_location="", is_active=True))
+                for oid in ("111", "222"):  # 111 bleibt in Queue, 222 nicht mehr
+                    o = PulpoPackingOrder(tenant_id="t1", pulpo_order_id=oid,
+                                          state="queue", pick_location="CW1", raw_payload={})
+                    o.items = [PulpoOrderItem(ean="4005", quantity=1)]
+                    db.add(o)
+                await db.commit()
+
+                await cw_sync.resync_and_rebuild(db)
+
+                ids = [r for (r,) in (await db.execute(
+                    _sel(PulpoPackingOrder.pulpo_order_id))).all()]
+                assert "111" in ids and "222" not in ids, ids
+                # Items von 222 ebenfalls weg (keine verwaisten Zeilen).
+                items = (await db.execute(_sel(PulpoOrderItem))).scalars().all()
+                assert len(items) == 1, len(items)
+
+        asyncio.run(run())
+    finally:
+        cw_sync.pulpo = orig_pulpo
+        cw_sync.connection_manager = orig_cm
+
+
 def test_get_or_create_order_row_is_race_idempotent():
     """Zweifacher get_or_create für dieselbe (tenant, pulpo_order_id) → EINE
     Zeile, kein duplicate-key. created=True nur beim ersten Mal. (Deckt die

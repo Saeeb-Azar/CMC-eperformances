@@ -254,31 +254,33 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
         if skipped:
             logger.info(f"Pulpo resync: {skipped} unveränderte Aufträge übersprungen (DB-Last gespart)")
 
-        # Self-heal: close EVERY non-terminal cached order that the live queue
-        # pull no longer returned. The pull is the whole packing queue, so a
-        # cached order that's absent has left the queue — regardless of which
-        # non-terminal state it currently sits in (queue/taken/draft/locked).
-        # (Closing only state=="queue" let orders that a webhook had marked
-        # "taken" linger forever, so e.g. CW2/CW9 stayed in the sidebar even
-        # though Pulpo only had CW10.)
-        close_stmt = (
-            update(PulpoPackingOrder)
-            .where(
-                PulpoPackingOrder.tenant_id == tenant_id,
-                PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
-                # Demo-/Test-Aufträge (lokal angelegt, nie in Pulpos Queue) vom
-                # Self-Heal ausnehmen — sonst schließt der Resync sie sofort.
-                ~PulpoPackingOrder.pulpo_order_id.like("TEST-%"),
-            )
-            .values(state="closed", updated_at=datetime.now(timezone.utc))
-        )
+        # Self-heal: Aufträge, die NICHT mehr in der Live-Queue sind, aus dem
+        # Cache LÖSCHEN (samt Artikel-Zeilen). Pulpo-Daten brauchen wir nur
+        # live — früher wurden sie nur auf „closed" gesetzt und für immer
+        # aufbewahrt → pulpo_packing_orders/_items wuchsen unbegrenzt → DB-
+        # Überlauf. Nur löschen, wenn die Queue-Abfrage überhaupt etwas lieferte
+        # (leerer Pull = transienter Fehler → NICHT den ganzen Cache leeren).
+        deleted = 0
         if pulled_ids:
-            close_stmt = close_stmt.where(PulpoPackingOrder.pulpo_order_id.notin_(pulled_ids))
-        closed = await db.execute(close_stmt)
+            gone_q = select(PulpoPackingOrder.id).where(
+                PulpoPackingOrder.tenant_id == tenant_id,
+                # Demo-/Test-Aufträge (lokal, nie in Pulpos Queue) ausnehmen.
+                ~PulpoPackingOrder.pulpo_order_id.like("TEST-%"),
+                PulpoPackingOrder.pulpo_order_id.notin_(pulled_ids),
+            )
+            gone_ids = [r for (r,) in (await db.execute(gone_q)).all()]
+            if gone_ids:
+                await db.execute(
+                    delete(PulpoOrderItem).where(PulpoOrderItem.order_db_id.in_(gone_ids))
+                )
+                res = await db.execute(
+                    delete(PulpoPackingOrder).where(PulpoPackingOrder.id.in_(gone_ids))
+                )
+                deleted = res.rowcount or len(gone_ids)
         await db.flush()
         logger.info(
-            f"Pulpo resync self-heal: {closed.rowcount} cached order(s) closed "
-            f"(no longer in queue); {len(pulled_ids)} still queued"
+            f"Pulpo resync self-heal: {deleted} erledigte Auftrag/Aufträge aus "
+            f"dem Cache gelöscht; {len(pulled_ids)} noch in der Queue"
         )
     except PulpoError as e:
         logger.warning(f"Pulpo resync failed: {e} — keeping existing cache")
