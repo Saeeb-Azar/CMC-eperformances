@@ -1815,6 +1815,10 @@ class ConnectionManager:
             return
         logger.info(f"PRECREATE start: ref={ref} barcode={barcode} machine={protocol_id}")
         try:
+            # ── Phase 1: kurze DB-Session NUR zum Lesen (Bindung/State). KEIN
+            #    externer HTTP-Call in dieser Session — F1: die Connection darf
+            #    nicht über Pulpo/DHL-Requests gehalten werden (sonst Pool-
+            #    Erschöpfung → ENQ wartet auf eine Connection → Timeout).
             async with async_session() as db:
                 machine = (await db.execute(
                     select(Machine).where(Machine.machine_id == protocol_id).limit(1)
@@ -1828,9 +1832,6 @@ class ConnectionManager:
                     _note(False, f"ref={ref}: kein Tenant auflösbar")
                     return
 
-                # Nur skippen, wenn schon ein Shipment für GENAU dieses
-                # (ref, barcode) existiert. Bei recyceltem ref (anderer Barcode)
-                # NICHT skippen → frisch anlegen + altes supersedieren.
                 existing = (await db.execute(
                     select(Shipment).where(
                         Shipment.tenant_id == tenant_id,
@@ -1846,8 +1847,7 @@ class ConnectionManager:
                     _note(True, f"ref={ref}: bereits vorhanden ({existing.tracking_number})")
                     return
 
-                # Precreate trifft KEINE Bindungsentscheidung mehr — die Bindung
-                # entstand synchron bei ENQ. Hier nur LESEN; ohne Bindung skip.
+                # Bindung nur LESEN (entstand synchron bei ENQ).
                 claimed_order = await self._bound_order_for_ref(db, protocol_id, ref)
                 if claimed_order is None:
                     logger.warning(
@@ -1856,51 +1856,51 @@ class ConnectionManager:
                     _note(False, f"ref={ref}: keine Bindung — Precreate übersprungen")
                     return
 
-                # Empfängeradresse (ship_to fürs Label) am OrderState persistieren
-                # — EINE Quelle für Label UND Dashboard-Anzeige. Läuft hier im
-                # Hintergrund (nicht im 2-s-LAB1-Budget) und deckt ALLE Label-Pfade
-                # ab (Pulpo-Pre-Label, Cache, DHL-Fallback).
-                try:
-                    addr = await self._resolve_pulpo_recipient(
-                        db, tenant_id, barcode, order=claimed_order,
-                    )
-                    if addr is not None:
-                        await self._persist_recipient_on_order(db, protocol_id, ref, addr)
-                except Exception as e:
-                    logger.warning(f"PRECREATE recipient persist failed ref={ref}: {e!r}")
+                # State-Dokument dieses Pakets (Shipment wird hart daran gebunden).
+                os_state_id = None
+                if machine is not None:
+                    from app.modules.orders.models import OrderState as _OS
+                    _os = (await db.execute(
+                        select(_OS).where(
+                            _OS.machine_db_id == machine.id,
+                            _OS.reference_id == ref,
+                        ).order_by(_OS.created_at.desc()).limit(1)
+                    )).scalar_one_or_none()
+                    os_state_id = _os.id if _os is not None else None
+            # Session ist ZU. claimed_order-Attribute bleiben lesbar
+            # (async_session: expire_on_commit=False).
 
-                pulpo_hit = await self._try_pulpo_label(db, tenant_id, barcode, order=claimed_order)
+            # ── Phase 2: externe Calls OHNE gehaltene DB-Connection ──────────
+            #    (order übergeben → die Helfer brauchen kein db).
+            addr = None
+            try:
+                addr = await self._resolve_pulpo_recipient(
+                    None, tenant_id, barcode, order=claimed_order,
+                )
+            except Exception as e:
+                logger.warning(f"PRECREATE recipient lookup failed ref={ref}: {e!r}")
+            pulpo_hit = await self._try_pulpo_label(None, tenant_id, barcode, order=claimed_order)
+
+            # Pulpo-Refs aus dem bereits geladenen Auftrag (kein db nötig).
+            seq_num = ""; sales_num = ""
+            try:
+                rp = claimed_order.raw_payload if isinstance(claimed_order.raw_payload, dict) else {}
+                seq_num = str(rp.get("sequence_number") or "")
+                sales_num = str(
+                    (rp.get("sales_order") or {}).get("order_num")
+                    or rp.get("sales_order_ref") or ""
+                )
+            except Exception: pass
+
+            # ── Phase 3: kurze DB-Session NUR zum Schreiben ──────────────────
+            async with async_session() as db:
+                if addr is not None:
+                    try:
+                        await self._persist_recipient_on_order(db, protocol_id, ref, addr)
+                    except Exception as e:
+                        logger.warning(f"PRECREATE recipient persist failed ref={ref}: {e!r}")
                 if pulpo_hit:
                     tracking, label_b64 = pulpo_hit
-                    # Pulpo-IDs für die OrderState-Reconstruction speichern
-                    # (siehe persistence.py: wenn ENQ verpasst wurde, baut
-                    # ein späterer Event-Handler den OrderState aus diesen
-                    # Feldern wieder zusammen — Barcode/PA/Verkaufsauftrag).
-                    seq_num = ""; sales_num = ""
-                    try:
-                        po = claimed_order
-                        if po and isinstance(po.raw_payload, dict):
-                            rp = po.raw_payload
-                            seq_num = str(rp.get("sequence_number") or "")  # „PA-…"
-                            sales_num = str(
-                                (rp.get("sales_order") or {}).get("order_num")
-                                or rp.get("sales_order_ref") or ""
-                            )
-                    except Exception: pass
-                    # State-Dokument dieses Pakets nachschlagen → Shipment hart
-                    # daran binden (Detailansicht eindeutig + Druck-Freigabe an
-                    # Paketstatus gekoppelt). Precreate läuft bei IND → State ist
-                    # INDUCTED, der Druck wird also erst bei ACK-Annahme frei.
-                    os_state_id = None
-                    if machine is not None:
-                        from app.modules.orders.models import OrderState as _OS
-                        _os = (await db.execute(
-                            select(_OS).where(
-                                _OS.machine_db_id == machine.id,
-                                _OS.reference_id == ref,
-                            ).order_by(_OS.created_at.desc()).limit(1)
-                        )).scalar_one_or_none()
-                        os_state_id = _os.id if _os is not None else None
                     await self._store_shipment(
                         db, tenant_id, ref, barcode, tracking, label_b64,
                         seq=seq_num, sales=sales_num, order_state_id=os_state_id,
@@ -1913,11 +1913,11 @@ class ConnectionManager:
                     _note(True, f"ref={ref}: Pulpo-Label {tracking}")
                     return
 
-                logger.warning(
-                    f"PRECREATE miss: ref={ref} barcode={barcode} — Pulpo hat noch "
-                    f"kein Label, LAB1 wird DHL-Fallback versuchen"
-                )
-                _note(False, f"ref={ref}: kein Pulpo-Label, DHL-Fallback bei LAB1")
+            logger.warning(
+                f"PRECREATE miss: ref={ref} barcode={barcode} — Pulpo hat noch "
+                f"kein Label, LAB1 wird DHL-Fallback versuchen"
+            )
+            _note(False, f"ref={ref}: kein Pulpo-Label, DHL-Fallback bei LAB1")
         except Exception as e:
             logger.exception(f"PRECREATE crash: ref={ref}: {e!r}")
             _note(False, f"ref={ref}: Ausnahme {e!r}"[:300])

@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     # verwischt die Spur. Per Env CMC_ENABLE_AUTO_EJECT_STALE=true wieder an.
     enable_auto_eject_stale: bool = False
 
+    # DB-Connection-Pool (F4). Explizit dimensioniert + KURZER Timeout: ist der
+    # Pool erschöpft, soll eine ENQ-Query NICHT bis zu 30 s (SQLAlchemy-Default)
+    # auf eine Connection warten — das riss das ~2-s-Maschinenbudget → Timeout →
+    # Auswurf. Lieber schnell scheitern (ein Paket) als den Read-Loop blockieren.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout_s: float = 2.0
+
     # ENQ-Antwort, Feld "Feeders": Maschine erwartet hier eine EINZELNE
     # Ziffer = welche Karton-/Pappe-Bahn benutzt werden soll (siehe HMI-
     # Dekodierung "Feeders=1 InvSel=0 Lab1Sel=…"). 0 = Maschine wählt
