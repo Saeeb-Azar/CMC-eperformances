@@ -1381,16 +1381,20 @@ class ConnectionManager:
                 and str(claimed_order.pulpo_order_id or "").startswith("TEST-")
             )
 
-            cached = None if is_test_ctx else (await db.execute(
-                select(Shipment).where(
-                    Shipment.tenant_id == tenant_id,
-                    Shipment.reference_id == ref,
-                ).order_by(Shipment.created_at.desc()).limit(1)
-            )).scalar_one_or_none()
-            # Cache NUR nutzen, wenn der Barcode zum AKTUELLEN Scan passt.
-            # Leerer Scan-Barcode (Tracker-Miss) darf KEINEN Cache-Treffer
-            # geben — sonst wird das letzte (womöglich fremde) Shipment der
-            # recycelten ref wiederverwendet.
+            # Cache-Treffer NUR für GENAU dieses Paket (order_state_id) — NICHT
+            # über die reference_id. Sonst wird bei recycelter ref + gleicher EAN
+            # das alte Shipment eines FRÜHEREN Pakets wiederverwendet → falsches/
+            # altes Label (Feld-Bug: „Susanne Albrecht" auf Irmgards Karton).
+            cached = None
+            if not is_test_ctx and os_state_id:
+                cached = (await db.execute(
+                    select(Shipment).where(
+                        Shipment.tenant_id == tenant_id,
+                        Shipment.order_state_id == os_state_id,
+                    ).order_by(Shipment.created_at.desc()).limit(1)
+                )).scalar_one_or_none()
+            # Zusätzlich: Barcode muss zum aktuellen Scan passen (Tracker-Miss →
+            # leerer Barcode darf keinen Treffer geben).
             if cached and cached.tracking_number and scanned_barcode and (
                 (cached.barcode or "") == scanned_barcode
             ):
@@ -1705,26 +1709,48 @@ class ConnectionManager:
         früheren Pakets drucken → falsches Label trotz korrektem Pulpo-Label.
         """
         from app.modules.dhl.models import Shipment
-        from sqlalchemy import select as _sel, update as _upd
+        from sqlalchemy import select as _sel, update as _upd, or_ as _or
         from datetime import datetime as _dt
-        # 1) Alte Inkarnationen (anderer Barcode, noch nicht gedruckt) aus der
-        #    Druck-Queue nehmen → markieren als „superseded".
-        await db.execute(
-            _upd(Shipment).where(
-                Shipment.tenant_id == tenant_id,
-                Shipment.reference_id == ref,
-                Shipment.barcode != barcode,
-                Shipment.printed_at.is_(None),
-            ).values(printed_at=_dt.now(timezone.utc), print_error="superseded: reference_id recycelt")
-        )
-        # 2) Vorhandenes (ref, barcode) aktualisieren oder neu anlegen.
-        sh = (await db.execute(
-            _sel(Shipment).where(
-                Shipment.tenant_id == tenant_id,
-                Shipment.reference_id == ref,
-                Shipment.barcode == barcode,
-            ).order_by(Shipment.created_at.desc()).limit(1)
-        )).scalar_one_or_none()
+        if order_state_id:
+            # Shipment ist EINDEUTIG an das physische Paket (order_state_id)
+            # gebunden. 1) Alte, ungedruckte Inkarnationen DERSELBEN ref, die zu
+            # einem ANDEREN Paket gehören (recycelte ref ODER gleiche EAN,
+            # früheres Paket), aus der Druck-Queue nehmen → sonst druckt der
+            # QZ-Agent ein altes/falsches Label.
+            await db.execute(
+                _upd(Shipment).where(
+                    Shipment.tenant_id == tenant_id,
+                    Shipment.reference_id == ref,
+                    Shipment.printed_at.is_(None),
+                    _or(Shipment.order_state_id.is_(None),
+                        Shipment.order_state_id != order_state_id),
+                ).values(printed_at=_dt.now(timezone.utc),
+                         print_error="superseded: reference_id/EAN recycelt")
+            )
+            # 2) Shipment DIESES Pakets suchen (über order_state_id).
+            sh = (await db.execute(
+                _sel(Shipment).where(
+                    Shipment.tenant_id == tenant_id,
+                    Shipment.order_state_id == order_state_id,
+                ).order_by(Shipment.created_at.desc()).limit(1)
+            )).scalar_one_or_none()
+        else:
+            # Legacy/Test ohne State-Dokument: altes Verhalten (ref, barcode).
+            await db.execute(
+                _upd(Shipment).where(
+                    Shipment.tenant_id == tenant_id,
+                    Shipment.reference_id == ref,
+                    Shipment.barcode != barcode,
+                    Shipment.printed_at.is_(None),
+                ).values(printed_at=_dt.now(timezone.utc), print_error="superseded: reference_id recycelt")
+            )
+            sh = (await db.execute(
+                _sel(Shipment).where(
+                    Shipment.tenant_id == tenant_id,
+                    Shipment.reference_id == ref,
+                    Shipment.barcode == barcode,
+                ).order_by(Shipment.created_at.desc()).limit(1)
+            )).scalar_one_or_none()
         if sh is None:
             db.add(Shipment(
                 tenant_id=tenant_id, reference_id=ref, barcode=barcode,

@@ -126,6 +126,41 @@ async def test_overscan_without_cw_list_rejected():
 
 
 @pytest.mark.asyncio
+async def test_store_shipment_keyed_by_order_state_supersedes_stale():
+    """Recycelte ref + gleiche EAN, aber anderes physisches Paket (order_state):
+    jedes Paket bekommt SEIN eigenes Shipment; das alte (früheres Paket) wird
+    superseded (aus der Druck-Queue). Behebt: altes/falsches Label auf neuem
+    Karton (Feld-Bug „Susanne auf Irmgards Paket")."""
+    from app.modules.dhl.models import Shipment
+    from sqlalchemy import select as _sel
+    sm = await _fresh_db()
+    cm = ConnectionManager()
+    async with sm() as db:
+        await _seed(db, n=0)  # Tenant + Machine m1
+        db.add(OrderState(id="OS1", tenant_id=TENANT, machine_db_id="m1",
+                          reference_id="ref1", barcode=EAN, state="INDUCTED", enq_sequence=1))
+        db.add(OrderState(id="OS2", tenant_id=TENANT, machine_db_id="m1",
+                          reference_id="ref1", barcode=EAN, state="INDUCTED", enq_sequence=2))
+        await db.commit()
+
+        # Paket A (order_state OS1)
+        await cm._store_shipment(db, TENANT, "ref1", EAN, "TRACK-A", "QQ", order_state_id="OS1")
+        # Paket B: recycelte ref1 + gleiche EAN, ANDERES Paket (OS2)
+        await cm._store_shipment(db, TENANT, "ref1", EAN, "TRACK-B", "RR", order_state_id="OS2")
+
+        rows = (await db.execute(_sel(Shipment).where(Shipment.tenant_id == TENANT))).scalars().all()
+        by_os = {r.order_state_id: r for r in rows}
+        assert set(by_os) == {"OS1", "OS2"}, [r.order_state_id for r in rows]
+        assert by_os["OS1"].tracking_number == "TRACK-A"
+        assert by_os["OS2"].tracking_number == "TRACK-B"
+        # Früheres Paket (OS1) aus der Druck-Queue genommen (superseded).
+        assert by_os["OS1"].printed_at is not None
+        assert "superseded" in (by_os["OS1"].print_error or "")
+        # Aktuelles Paket (OS2) ist druckbar.
+        assert by_os["OS2"].printed_at is None
+
+
+@pytest.mark.asyncio
 async def test_free_order_exists_gates_duplicate_detection():
     """Kern des „2. Karton wird ausgeworfen"-Fixes: solange ein freier Auftrag
     existiert, meldet _free_order_exists True → der zweite gleiche-EAN-Scan wird
