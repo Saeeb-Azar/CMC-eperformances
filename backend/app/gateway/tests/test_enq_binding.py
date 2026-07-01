@@ -126,6 +126,28 @@ async def test_overscan_without_cw_list_rejected():
 
 
 @pytest.mark.asyncio
+async def test_free_order_exists_gates_duplicate_detection():
+    """Kern des „2. Karton wird ausgeworfen"-Fixes: solange ein freier Auftrag
+    existiert, meldet _free_order_exists True → der zweite gleiche-EAN-Scan wird
+    NICHT als Doppel-Scan/Resume behandelt. Nach dem Binden aller Aufträge →
+    False (dann ist es wirklich Überzahl)."""
+    sm = await _fresh_db()
+    cm = ConnectionManager()
+    async with sm() as db:
+        await _seed(db, n=2)  # 2 Aufträge, gleiche EAN
+
+    assert await cm._free_order_exists(PROTO, EAN, session_factory=sm) is True
+
+    # Beide binden → kein freier Auftrag mehr.
+    for i in range(2):
+        await cm._enq_claim_and_bind(
+            PROTO, f"ref{i+1:04d}", EAN, response={"result": 1},
+            msg_data={"barcode": EAN}, session_factory=sm,
+        )
+    assert await cm._free_order_exists(PROTO, EAN, session_factory=sm) is False
+
+
+@pytest.mark.asyncio
 async def test_resume_branch_still_claims_free_orders():
     """Mehrere gleiche-EAN-Pakete GLEICHZEITIG auf dem Band: der Tracker meldet
     den Barcode als „aktiv" → Resume-Zweig (reject_if_none=False). Solange ein

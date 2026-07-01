@@ -745,6 +745,62 @@ class ConnectionManager:
             ).limit(1)
         )).scalar_one_or_none()
 
+    async def _free_order_exists(
+        self, protocol_id: str, barcode: str, *, session_factory=None,
+    ) -> bool:
+        """True, wenn es für ``barcode`` mindestens einen NOCH NICHT reservierten
+        Pulpo-Auftrag gibt. Nicht-mutierend.
+
+        Dient dazu, einen zweiten gleiche-EAN-Scan von einem echten Doppel-Scan/
+        Resume zu unterscheiden: liegen mehrere Kunden-Aufträge mit derselben EAN
+        vor und ist noch einer frei, ist der zweite Karton ein NEUES Paket (eigenes
+        Label) — kein Doppel-Scan. Nur wenn wirklich kein Auftrag mehr frei ist,
+        bleibt es bei Ablehnung/Resume."""
+        if not barcode:
+            return False
+        from sqlalchemy import select, or_
+        from app.core.database import async_session
+        from app.modules.pulpo.models import PulpoPackingOrder, PulpoOrderItem
+        from app.modules.orders.models import OrderState
+        from app.modules.machines.models import Machine
+        sf = session_factory or async_session
+        try:
+            async with sf() as db:
+                tenant_id = await self._tenant_for(db, protocol_id)
+                cand_rows = (await db.execute(
+                    select(PulpoPackingOrder.pulpo_order_id)
+                    .outerjoin(PulpoOrderItem, PulpoOrderItem.order_db_id == PulpoPackingOrder.id)
+                    .where(
+                        PulpoPackingOrder.tenant_id == tenant_id,
+                        PulpoPackingOrder.state.notin_(("ended", "closed", "cancelled")),
+                        or_(
+                            PulpoPackingOrder.cart_box_barcode == barcode,
+                            PulpoOrderItem.ean == barcode,
+                        ),
+                    )
+                )).scalars().unique().all()
+                candidates = {r for r in cand_rows if r}
+                if not candidates:
+                    return False
+                reserved_rows = (await db.execute(
+                    select(OrderState.pulpo_order_id)
+                    .join(Machine, OrderState.machine_db_id == Machine.id)
+                    .where(
+                        Machine.machine_id == protocol_id,
+                        OrderState.pulpo_order_id.isnot(None),
+                        OrderState.state.in_(
+                            ("ASSIGNED", "INDUCTED", "SCANNED", "LABELED",
+                             "FAILED", "COMPLETED", "EJECTED")
+                        ),
+                    )
+                )).scalars().all()
+            reserved = {r for r in reserved_rows if r}
+            reserved |= {oid for oid in self._ref_pulpo_order.get(protocol_id, {}).values()}
+            return bool(candidates - reserved)
+        except Exception as e:
+            logger.warning(f"free-order-check fehlgeschlagen ({barcode}): {e!r}")
+            return False
+
     async def _transfer_binding_on_resume(self, protocol_id: str, barcode: str, new_ref: str):
         """Wiederaufnahme (Paket neu aufgelegt): die neue ``ref`` erbt die
         bestehende Bindung des noch aktiven Pakets mit demselben Barcode — kein
@@ -2165,6 +2221,17 @@ class ConnectionManager:
                                 )
                                 if not filter_passed:
                                     is_unknown_barcode = True
+
+                            # Zweiter gleiche-EAN-Scan ist NUR dann ein Doppel-Scan
+                            # bzw. Resume, wenn KEIN freier Pulpo-Auftrag mehr da
+                            # ist. Liegen mehrere Kunden-Aufträge mit derselben EAN
+                            # vor und ist noch einer frei → NEUES Paket (eigenes
+                            # Label), also durchlassen und normal binden. Behebt:
+                            # „2. Karton mit gleicher EAN wird ausgeworfen".
+                            if (is_duplicate or is_resume) and barcode:
+                                if await self._free_order_exists(conn.protocol_id, barcode):
+                                    is_duplicate = False
+                                    is_resume = False
 
                         try:
                             multi_only = (
