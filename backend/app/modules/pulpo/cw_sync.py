@@ -15,6 +15,7 @@ Two mechanisms keep it live:
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -270,6 +271,28 @@ async def resync_cache_from_pulpo(db: AsyncSession) -> dict[str, Any]:
     pulpo_runtime.last_locations = loc_counts
     await sync_cw_lists_from_cache(db)
     return {"ok": True, "orders": len(live_orders), "locations": loc_counts}
+
+
+# Serialisiert ALLE Resync-Läufe im Prozess (Single-Worker). Ohne diesen Lock
+# konnten der periodische Loop und ein manueller/Trigger-Resync GLEICHZEITIG
+# denselben neuen Pulpo-Auftrag anlegen → check-then-insert-Race →
+# „duplicate key … ix_pulpo_orders_tenant_pulpo" → Sync-Loop crasht → Cache
+# bleibt stale (alte PAs, Timeouts, falsche „Doppel-Scan"-Auswürfe).
+_RESYNC_LOCK = asyncio.Lock()
+
+
+async def resync_and_rebuild(db: AsyncSession) -> dict[str, Any]:
+    """Resync aus Pulpo + CW-Rebuild + commit — SERIALISIERT.
+
+    Der Lock deckt das commit MIT ab: ein zweiter Resync wartet, bis der erste
+    committet hat, sieht die Zeilen dann per SELECT und macht ein UPDATE statt
+    eines konkurrierenden INSERT. So kann die Unique-Violation nicht mehr
+    entstehen."""
+    async with _RESYNC_LOCK:
+        result = await resync_cache_from_pulpo(db)
+        await sync_cw_lists_from_cache(db)
+        await db.commit()
+    return result
 
 
 def _looks_like_cartbox(v: object) -> bool:

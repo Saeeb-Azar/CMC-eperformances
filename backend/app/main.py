@@ -201,9 +201,9 @@ async def _cw_sync_loop() -> None:
             # Sync first, then sleep — so a fresh deploy and every cycle reflect
             # Pulpo's queue promptly (stale Lagerplätze drop off within one tick).
             async with async_session() as db:
-                await cw_sync.resync_cache_from_pulpo(db)   # no-op if Pulpo unconfigured
-                await cw_sync.sync_cw_lists_from_cache(db)
-                await db.commit()
+                # Serialisiert (Lock inkl. commit) → kein paralleler Doppel-Insert
+                # desselben Pulpo-Auftrags mehr (unique-violation-Crash).
+                await cw_sync.resync_and_rebuild(db)   # no-op if Pulpo unconfigured
         except asyncio.CancelledError:
             break
         except Exception as e:  # never let the loop die
@@ -504,9 +504,7 @@ async def trigger_pulpo_resync():
     from app.modules.pulpo import cw_sync
 
     async with async_session() as db:
-        result = await cw_sync.resync_cache_from_pulpo(db)
-        await cw_sync.sync_cw_lists_from_cache(db)
-        await db.commit()
+        result = await cw_sync.resync_and_rebuild(db)
     return result
 
 
