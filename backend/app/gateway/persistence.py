@@ -424,7 +424,12 @@ async def _apply_event(
         # Sequence-based cleanup: any older active state on this machine
         # that never reached END has been removed from the belt. Eject them
         # so they stop showing as "on conveyor" in the dashboard.
-        await _eject_stale_predecessors(db, machine, order.enq_sequence)
+        # VORÜBERGEHEND per Flag AUS (Default False): verwischt sonst die Spur
+        # eines ENQ-Timeouts (markiert hängengebliebene Zustände nachträglich
+        # als „übersprungen"). Siehe settings.enable_auto_eject_stale.
+        from app.core.config import get_settings as _get_settings
+        if _get_settings().enable_auto_eject_stale:
+            await _eject_stale_predecessors(db, machine, order.enq_sequence)
 
     elif event_type == "REM":
         order.rem_at = now

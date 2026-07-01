@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # halten die Queue in Echtzeit aktuell; der Resync ist nur Absicherung.
     cw_sync_interval_s: int = 30
 
+    # Sequenzbasierte Auto-Ejection (_eject_stale_predecessors): markiert bei
+    # jedem END ältere, noch ASSIGNED-Pakete als EJECTED ("skipped_by_subsequent
+    # _end"). VORÜBERGEHEND AUS, bis FIFO/Timeout geklärt ist — sie räumt sonst
+    # den durch einen ENQ-Timeout hängengebliebenen Zustand nachträglich ab und
+    # verwischt die Spur. Per Env CMC_ENABLE_AUTO_EJECT_STALE=true wieder an.
+    enable_auto_eject_stale: bool = False
+
     # ENQ-Antwort, Feld "Feeders": Maschine erwartet hier eine EINZELNE
     # Ziffer = welche Karton-/Pappe-Bahn benutzt werden soll (siehe HMI-
     # Dekodierung "Feeders=1 InvSel=0 Lab1Sel=…"). 0 = Maschine wählt

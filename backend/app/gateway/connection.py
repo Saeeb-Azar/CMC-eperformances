@@ -2164,6 +2164,7 @@ class ConnectionManager:
                 for event in events:
                     msg_type = event["type"]
                     msg_data = event["data"]
+                    _ev_t0 = time.monotonic()  # Timing-Instrumentierung (ENQ)
 
                     # Jedes Event trägt den Modus, in dem es entstand — das
                     # Frontend blendet damit Test-Aufträge im Produktiv-Modus
@@ -2405,6 +2406,15 @@ class ConnectionManager:
                                         except Exception as e:
                                             logger.warning(f"Resume-Bindungsübertrag fehlgeschlagen: {e!r}")
                                 self.record_scan(conn.protocol_id, bc, now=time.monotonic())
+                                # Timing-Instrumentierung: wie lange die komplette
+                                # ENQ-Verarbeitung (inkl. Bindung/DB) gedauert hat.
+                                # WARNING, damit es beim Default-Log-Level sichtbar
+                                # ist. Zeigt, ob das ~2-s-Budget gerissen wird.
+                                _enq_ms = (time.monotonic() - _ev_t0) * 1000
+                                logger.warning(
+                                    f"ENQ-TIMING ref={ref_enq} bc={bc} "
+                                    f"result={response.get('result')} {_enq_ms:.0f}ms"
+                                )
                             msg_machine_id = msg_data.get("machine_id", "") if isinstance(msg_data, dict) else ""
                             response_bytes = serialize_response(msg_type, dict(response), msg_machine_id)
                         except Exception as e:
