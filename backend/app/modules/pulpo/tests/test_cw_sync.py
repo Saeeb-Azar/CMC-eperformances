@@ -130,6 +130,29 @@ def test_orders_per_barcode_flow_into_serialized_list():
         cw_sync.connection_manager = connection_manager
 
 
+def test_get_or_create_order_row_is_race_idempotent():
+    """Zweifacher get_or_create für dieselbe (tenant, pulpo_order_id) → EINE
+    Zeile, kein duplicate-key. created=True nur beim ersten Mal. (Deckt die
+    Insert-Race zwischen Resync-Loop und Webhook ab.)"""
+    from sqlalchemy import select as _sel
+    sm = _fresh_db()
+
+    async def run():
+        async with sm() as db:
+            r1, c1 = await cw_sync.get_or_create_order_row(db, "t1", "12345")
+            await db.commit()
+            r2, c2 = await cw_sync.get_or_create_order_row(db, "t1", "12345")
+            await db.commit()
+            assert c1 is True and c2 is False
+            assert r1.id == r2.id
+            rows = (await db.execute(
+                _sel(PulpoPackingOrder).where(PulpoPackingOrder.pulpo_order_id == "12345")
+            )).scalars().all()
+            assert len(rows) == 1
+
+    asyncio.run(run())
+
+
 def test_set_pulpo_cw_list_preserves_consumed_and_marks_source():
     cm = ConnectionManager()
     cm.set_pulpo_cw_list("M1", {"A": 2, "B": 1})

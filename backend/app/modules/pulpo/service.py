@@ -84,22 +84,10 @@ async def handle_packing_order_created(db: AsyncSession, raw_payload: dict) -> d
 
     tenant_id = _tenant_id_from(raw_payload) or await _get_default_tenant_id(db)
 
-    # Upsert-Check
-    res = await db.execute(
-        select(PulpoPackingOrder).where(
-            PulpoPackingOrder.tenant_id == tenant_id,
-            PulpoPackingOrder.pulpo_order_id == str(pulpo_order_id),
-        )
-    )
-    order = res.scalar_one_or_none()
-    is_new = order is None
-
-    if order is None:
-        order = PulpoPackingOrder(
-            tenant_id=tenant_id,
-            pulpo_order_id=str(pulpo_order_id),
-        )
-        db.add(order)
+    # Race-sicherer Upsert (atomar) — verhindert die unique-violation, wenn der
+    # Webhook und der periodische Resync denselben neuen Auftrag zeitgleich anlegen.
+    from .cw_sync import get_or_create_order_row
+    order, is_new = await get_or_create_order_row(db, tenant_id, str(pulpo_order_id))
 
     # Kommissionier-box (M-Nummer) robust ziehen — auch aus items[].batches
     # (Multi-Order). Sonst landet sie nicht in der CW-Liste.

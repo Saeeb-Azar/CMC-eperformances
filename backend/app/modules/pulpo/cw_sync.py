@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -420,6 +421,42 @@ async def _resolve_ean(item: dict, cache: dict[str, str]) -> str:
     return barcode
 
 
+async def get_or_create_order_row(
+    db: AsyncSession, tenant_id: str, pulpo_order_id: str,
+) -> tuple[PulpoPackingOrder, bool]:
+    """Race-sichere Zeile für (tenant, pulpo_order_id): atomar anlegen ODER die
+    bestehende zurückgeben. Gibt ``(row, created)``.
+
+    Behebt den Feld-Crash „duplicate key … ix_pulpo_orders_tenant_pulpo": der
+    periodische Resync-Loop UND der Pulpo-Webhook legen denselben neuen Auftrag
+    zeitgleich an; check-then-insert sah in beiden „nicht da" → doppeltes
+    INSERT. ``INSERT … ON CONFLICT DO NOTHING`` wartet auf die konkurrierende
+    Transaktion und legt KEIN Duplikat an; danach existiert die Zeile garantiert.
+    """
+    poid = str(pulpo_order_id)
+    dname = db.bind.dialect.name
+    if dname == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as _ins
+    else:  # sqlite (Tests/Dev) unterstützt on_conflict ebenfalls
+        from sqlalchemy.dialects.sqlite import insert as _ins
+    now = datetime.now(timezone.utc)
+    stmt = (
+        _ins(PulpoPackingOrder)
+        .values(id=str(uuid.uuid4()), tenant_id=tenant_id, pulpo_order_id=poid,
+                state="queue", created_at=now, updated_at=now)
+        .on_conflict_do_nothing(index_elements=["tenant_id", "pulpo_order_id"])
+    )
+    res = await db.execute(stmt)
+    await db.flush()
+    row = (await db.execute(
+        select(PulpoPackingOrder).where(
+            PulpoPackingOrder.tenant_id == tenant_id,
+            PulpoPackingOrder.pulpo_order_id == poid,
+        )
+    )).scalar_one()
+    return row, bool(res.rowcount and res.rowcount > 0)
+
+
 async def _upsert_queue_order(
     db: AsyncSession, tenant_id: str, order: dict, product_cache: dict[str, str],
     loc_map: dict[str, str] | None = None,
@@ -428,16 +465,7 @@ async def _upsert_queue_order(
     pulpo_order_id = order.get("id")
     if pulpo_order_id is None:
         return
-    res = await db.execute(
-        select(PulpoPackingOrder).where(
-            PulpoPackingOrder.tenant_id == tenant_id,
-            PulpoPackingOrder.pulpo_order_id == str(pulpo_order_id),
-        )
-    )
-    row = res.scalar_one_or_none()
-    if row is None:
-        row = PulpoPackingOrder(tenant_id=tenant_id, pulpo_order_id=str(pulpo_order_id))
-        db.add(row)
+    row, _created = await get_or_create_order_row(db, tenant_id, str(pulpo_order_id))
     row.state = "queue"
     row.pick_location = _extract_location_code(order, loc_map)
     row.cart_box_barcode = _extract_cartbox(order)
